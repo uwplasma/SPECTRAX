@@ -332,6 +332,7 @@ def main():
     
     # Unpack parameters.
     Nx, Ny, Nz = parameters['Nx'], parameters['Ny'], parameters['Nz']
+    Nvx, Nvy, Nvz = parameters['Nvx'], parameters['Nvy'], parameters['Nvz']
     Lx, Ly, Lz = parameters['Lx'], parameters['Ly'], parameters['Lz']
     Nn, Nm, Np, Ns = parameters['Nn'], parameters['Nm'], parameters['Np'], parameters['Ns']
     mi_me = parameters['mi_me']
@@ -342,7 +343,7 @@ def main():
     nu = parameters['nu']
 
     # Load initial conditions.
-    Ck_0, Fk_0 = initialize_system(Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np)
+    Ck_0, Fk_0 = initialize_system(Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np)
 
     # Combine initial conditions.
     initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
