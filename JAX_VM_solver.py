@@ -215,7 +215,7 @@ def periodic_convolve(H, C):
     return result
 
 
-def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, us, qs, Omega_cs, Nn, Nm, Np, indices):
+def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, indices):
     """
     I have to add docstrings!
     """
@@ -229,7 +229,7 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
     n = indices - s * Nn * Nm * Np - p * Nn * Nm - m * Nn
     
     # Define u, alpha, charge, and gyrofrequency depending on species.
-    u, alpha, q, Omega_c = us[(s * 3):(s * 3 + 2)], alpha_s[(s * 3):(s * 3 + 2)], qs[s], Omega_cs[s]
+    u, alpha, q, Omega_c = u_s[(s * 3):(s * 3 + 2)], alpha_s[(s * 3):(s * 3 + 2)], qs[s], Omega_cs[s]
     
     # Define terms to be used in ODEs below.
     Ck_aux_x = (jnp.sqrt(m * p) * (alpha[2]/alpha[1] - alpha[1]/alpha[2]) * Ck[n + (m-1) * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m) * jnp.sign(p) + 
@@ -282,7 +282,7 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
     return dCk_s_dt
 
 
-def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, us, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):     
+def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):     
     
     # Define wave vectors.
     kx = jnp.arange(-Nx//2, Nx//2 + 1) * 2 * jnp.pi
@@ -304,7 +304,7 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, us, Lx, Ly, Lz, Nx, Ny, Nz, 
     dCk_s_dt = (jax.vmap(
         compute_dCk_s_dt, 
         in_axes=(None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, 0))
-        (Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, us, qs, Omega_cs, Nn, Nm, Np, jnp.arange(Nn * Nm * Np * Ns)))
+        (Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, jnp.arange(Nn * Nm * Np * Ns)))
     
     # Generate ODEs for Bk and Ek.
     dBk_dt = - 1j * cross_product(jnp.array([kx_grid/Lx, ky_grid/Ly, kz_grid/Lz]), Fk[:3, ...])
@@ -313,12 +313,12 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, us, Lx, Ly, Lz, Nx, Ny, Nz, 
              (1 / jnp.sqrt(2)) * jnp.array([alpha_s[0] * Ck[1, ...],
                                             alpha_s[1] * Ck[Nn, ...],
                                             alpha_s[2] * Ck[Nn * Nm, ...]]) + 
-                                 us[:3] * Ck[0, ...]) + \
+                                 u_s[:3] * Ck[0, ...]) + \
                                   qs[1] * alpha_s[3] * alpha_s[4] * alpha_s[5] * (
              (1 / jnp.sqrt(2)) * jnp.array([alpha_s[3] * Ck[1 + Nn * Nm * Np, ...],
                                             alpha_s[4] * Ck[Nn + Nn * Nm * Np, ...],
                                             alpha_s[5] * Ck[Nn * Nm * + Nn * Nm * Np, ...]]) + 
-                                 us[3:] * Ck[Nn * Nm * Np, ...]))
+                                 u_s[3:] * Ck[Nn * Nm * Np, ...]))
 
     # Combine dC/dt and dF/dt into a single array and flatten it into a 1D array for an ODE solver.
     dy_dt = jnp.concatenate([dCk_s_dt.flatten(), dBk_dt.flatten(), dEk_dt.flatten()])
