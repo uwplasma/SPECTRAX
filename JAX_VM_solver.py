@@ -16,7 +16,7 @@ from functools import partial
 import json
 
 
-# Perhaps move initial conditions to separate file.
+# Perhaps move examples to separate file.
 def Orszag_Tang(Lx, Ly, Omega_ce, mi_me):
     """
     I have to add docstrings!
