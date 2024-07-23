@@ -99,9 +99,9 @@ def generate_Hermite_basis(xi_x, xi_y, xi_z, Nn, Nm, Np, indices):
     """
     
     # Indices below represent order of Hermite polynomials.
-    p = jnp.floor(indices / (Nn * Nm))
-    m = jnp.floor((indices - p * Nn * Nm) / Nn)
-    n = indices - p * Nn * Nm - m * Nn
+    p = jnp.floor(indices / (Nn * Nm)).astype(int)
+    m = jnp.floor((indices - p * Nn * Nm) / Nn).astype(int)
+    n = (indices - p * Nn * Nm - m * Nn).astype(int)
     
     # Generate element of AW Hermite basis in 3D space.
     Hermite_basis = (Hermite(n, xi_x) * Hermite(m, xi_y) * Hermite(p, xi_z) * 
@@ -117,9 +117,9 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nvx, Nvy, Nvz, Nn, Nm, Np
     """
     
     # Indices below represent order of Hermite polynomials.
-    p = jnp.floor(indices / (Nn * Nm))
-    m = jnp.floor((indices - p * Nn * Nm) / Nn)
-    n = indices - p * Nn * Nm - m * Nn
+    p = jnp.floor(indices / (Nn * Nm)).astype(int)
+    m = jnp.floor((indices - p * Nn * Nm) / Nn).astype(int)
+    n = (indices - p * Nn * Nm - m * Nn).astype(int)
     
     # Generate 6D space for particle distribution function f.
     x = jnp.linspace(0, Lx, Nx)
@@ -221,12 +221,12 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
     """
     
     # Species. s = 0 corresponds to electrons and s = 1 corresponds to ions.
-    s = jnp.floor(indices / (Nn * Nm * Np))
+    s = jnp.floor(indices / (Nn * Nm * Np)).astype(int)
     
     # Indices below represent order of Hermite polynomials (they identify the Hermite-Fourier coefficients Ck[n, p, m]).
-    p = jnp.floor((indices - s * Nn * Nm * Np) / (Nn * Nm))
-    m = jnp.floor((indices - s * Nn * Nm * Np - p * Nn * Nm) / Nn)
-    n = indices - s * Nn * Nm * Np - p * Nn * Nm - m * Nn
+    p = jnp.floor((indices - s * Nn * Nm * Np) / (Nn * Nm)).astype(int)
+    m = jnp.floor((indices - s * Nn * Nm * Np - p * Nn * Nm) / Nn).astype(int)
+    n = (indices - s * Nn * Nm * Np - p * Nn * Nm - m * Nn).astype(int)
     
     # Define u, alpha, charge, and gyrofrequency depending on species.
     u, alpha, q, Omega_c = u_s[(s * 3):(s * 3 + 2)], alpha_s[(s * 3):(s * 3 + 2)], qs[s], Omega_cs[s]
@@ -285,9 +285,9 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
 def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):     
     
     # Define wave vectors.
-    kx = jnp.arange(-Nx//2, Nx//2 + 1) * 2 * jnp.pi
-    ky = jnp.arange(-Ny//2, Nz//2 + 1) * 2 * jnp.pi
-    kz = jnp.arange(-Ny//2, Nz//2 + 1) * 2 * jnp.pi
+    kx = jnp.arange(-Nx//2, Nx//2) * 2 * jnp.pi
+    ky = jnp.arange(-Ny//2, Ny//2) * 2 * jnp.pi
+    kz = jnp.arange(-Nz//2, Nz//2) * 2 * jnp.pi
 
     # Create 3D grids of kx, ky, kz.
     kx_grid, ky_grid, kz_grid = jnp.meshgrid(kx, ky, kz, indexing='ij')
