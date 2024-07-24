@@ -229,7 +229,9 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
     n = (indices - s * Nn * Nm * Np - p * Nn * Nm - m * Nn).astype(int)
     
     # Define u, alpha, charge, and gyrofrequency depending on species.
-    u, alpha, q, Omega_c = u_s[(s * 3):(s * 3 + 2)], alpha_s[(s * 3):(s * 3 + 2)], qs[s], Omega_cs[s]
+    u = jax.lax.dynamic_slice(u_s, (s * 3,), (3,))
+    alpha = jax.lax.dynamic_slice(alpha_s, (s * 3,), (3,))
+    q, Omega_c = qs[s], Omega_cs[s]
     
     # Define terms to be used in ODEs below.
     Ck_aux_x = (jnp.sqrt(m * p) * (alpha[2]/alpha[1] - alpha[1]/alpha[2]) * Ck[n + (m-1) * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m) * jnp.sign(p) + 
