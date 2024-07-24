@@ -296,8 +296,8 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     
     # Separate between initial conditions for distribution functions (coefficients Ck)
     # and electric and magnetic fields (coefficients Fk).
-    Ck = Ck_Fk[:(-6*Nx*Ny*Nz)]
-    Fk = Ck_Fk[(-6*Nx*Ny*Nz):]
+    Ck = Ck_Fk[:(-6*Nx*Ny*Nz)].reshape(Ns * Nn * Nm * Np, Nx, Ny, Nz)
+    Fk = Ck_Fk[(-6*Nx*Ny*Nz):].reshape(6, Nx, Ny, Nz)
       
     # Initialize dCk_s_dt with the same shape as Ck.
     dCk_s_dt = jnp.zeros_like(Ck)
