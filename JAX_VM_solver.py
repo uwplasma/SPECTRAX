@@ -37,7 +37,7 @@ def Orszag_Tang(Lx, Ly, Omega_ce, mi_me):
     
     # Magnetic and electric fields.
     B = lambda x, y, z: jnp.array([-deltaB * jnp.sin(ky * y), deltaB * jnp.sin(2 * kx * x), jnp.ones_like(x)])
-    E = lambda x, y, z: jnp.array([jnp.zeros_like(x), jnp.zeros_like(x), jnp.zeros_like(x)])
+    E = lambda x, y, z: jnp.array([jnp.zeros_like(x), jnp.zeros_like(x), jnp.zeros_like(x)]) # Is this consistent with fe, fi?
     
     # Electron and ion distribution functions.
     fe = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vte ** 3) * 
@@ -145,7 +145,7 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nvx, Nvy, Nvz, Nn, Nm, Np
     return C_nmp
 
 
-@partial(jax.jit, static_argnums=[7,8,9,10,11,12,13,14,15])
+@partial(jax.jit, static_argnums=[7, 8, 9, 10, 11, 12, 13, 14, 15])
 def initialize_system(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np):
     """
     I have to add docstrings!
@@ -283,7 +283,7 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
     
     return dCk_s_dt
 
-
+@partial(jax.jit, static_argnums=[10, 11, 12, 13, 14, 15, 16])
 def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):     
     
     # Define wave vectors.
@@ -351,15 +351,10 @@ def main():
     initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
 
     # Define the time array.
-    t = jnp.linspace(0, 10, 100)  # Example time array from 0 to 10 with 100 points
+    t = jnp.linspace(0, 1, 10)  # Example time array from 0 to 10 with 100 points
 
     # Solve the ODE system (I have to rewrite this part of the code).
-    result = odeint(
-        ode_system, 
-        initial_conditions, 
-        t, 
-        args=(qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns)
-        )
+    result = odeint(ode_system, initial_conditions, t, (qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns))
 
 if __name__ == "__main__":
     main()
