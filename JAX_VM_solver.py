@@ -315,15 +315,20 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
              (1 / jnp.sqrt(2)) * jnp.array([alpha_s[0] * Ck[1, ...],
                                             alpha_s[1] * Ck[Nn, ...],
                                             alpha_s[2] * Ck[Nn * Nm, ...]]) + 
-                                 u_s[:3] * Ck[0, ...]) + \
+                                 jnp.array([u_s[0] * Ck[0, ...],
+                                            u_s[1] * Ck[0, ...],
+                                            u_s[2] * Ck[0, ...]])) + \
                                   qs[1] * alpha_s[3] * alpha_s[4] * alpha_s[5] * (
              (1 / jnp.sqrt(2)) * jnp.array([alpha_s[3] * Ck[1 + Nn * Nm * Np, ...],
                                             alpha_s[4] * Ck[Nn + Nn * Nm * Np, ...],
                                             alpha_s[5] * Ck[Nn * Nm * + Nn * Nm * Np, ...]]) + 
-                                 u_s[3:] * Ck[Nn * Nm * Np, ...]))
+                                 jnp.array([u_s[3] * Ck[Nn * Nm * Np, ...],
+                                            u_s[4] * Ck[Nn * Nm * Np, ...],
+                                            u_s[5] * Ck[Nn * Nm * Np, ...]])))
 
     # Combine dC/dt and dF/dt into a single array and flatten it into a 1D array for an ODE solver.
-    dy_dt = jnp.concatenate([dCk_s_dt.flatten(), dBk_dt.flatten(), dEk_dt.flatten()])
+    dFk_dt = jnp.concatenate([dBk_dt, dEk_dt])
+    dy_dt = jnp.concatenate([dCk_s_dt.flatten(), dFk_dt.flatten()])
     
     return dy_dt
 
@@ -354,7 +359,7 @@ def main():
     t = jnp.linspace(0, 1, 10)  # Example time array from 0 to 10 with 100 points
 
     # Solve the ODE system (I have to rewrite this part of the code).
-    result = odeint(ode_system, initial_conditions, t, (qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns))
+    result = odeint(ode_system, initial_conditions, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns)
 
 if __name__ == "__main__":
     main()
