@@ -358,8 +358,11 @@ def main():
     # Define the time array.
     t = jnp.linspace(0, 1, 10)  # Example time array from 0 to 10 with 100 points
 
+    dy_dt = partial(ode_system, qs=qs, nu=nu, Omega_cs=Omega_cs, alpha_s=alpha_s, u_s=u_s, Lx=Lx, Ly=Ly, Lz=Lz, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns)
+
     # Solve the ODE system (I have to rewrite this part of the code).
-    result = odeint(ode_system, initial_conditions, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns)
+    result = odeint(dy_dt, initial_conditions, t)
+    
 
 if __name__ == "__main__":
     main()
