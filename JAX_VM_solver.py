@@ -8,7 +8,7 @@ Created on Sun Jun 23 10:55:45 2024
 import jax
 import jax.numpy as jnp
 from jax.scipy.signal import convolve
-from jax.numpy.fft import fftn, fftshift
+from jax.numpy.fft import fftn, ifftn, fftshift, ifftshift
 from jax.scipy.special import factorial
 from jax.scipy.integrate import trapezoid
 from jax.experimental.ode import odeint
@@ -296,8 +296,8 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     
     # Separate between initial conditions for distribution functions (coefficients Ck)
     # and electric and magnetic fields (coefficients Fk).
-    Ck = Ck_Fk[:(-6*Nx*Ny*Nz)].reshape(Ns * Nn * Nm * Np, Nx, Ny, Nz)
-    Fk = Ck_Fk[(-6*Nx*Ny*Nz):].reshape(6, Nx, Ny, Nz)
+    Ck = Ck_Fk[:(-6 * Nx * Ny * Nz)].reshape(Ns * Nn * Nm * Np, Nx, Ny, Nz)
+    Fk = Ck_Fk[(-6 * Nx * Ny * Nz):].reshape(6, Nx, Ny, Nz)
       
     # Initialize dCk_s_dt with the same shape as Ck.
     dCk_s_dt = jnp.zeros_like(Ck)
@@ -332,6 +332,50 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     
     return dy_dt
 
+@partial(jax.jit, static_argnums=[7, 8, 9, 10, 11, 12, 13, 14, 15])
+def anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np):
+    
+    F = ifftn(ifftshift(Fk, axes=(-3, -2, -1)), axes=(-3, -2, -1))
+    E, B = F[:, :3, ...], F[:, 3:, ...]
+    
+    C = ifftn(ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1))
+    
+    Ce = C[:, :(Nn * Nm * Np), ...]
+    Ci = C[:, (Nn * Nm * Np):, ...]
+    
+    x = jnp.linspace(0, Lx, Nx)
+    y = jnp.linspace(0, Ly, Ny)
+    z = jnp.linspace(0, Lz, Nz)
+    vx = jnp.linspace(-5, 5, Nvx)
+    vy = jnp.linspace(-5, 5, Nvy)
+    vz = jnp.linspace(-5, 5, Nvz)
+    _, _, _, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx, vy, vz, indexing='ij')
+    
+    xi_x = (Vx - u_s[0]) / alpha_s[0]
+    xi_y = (Vy - u_s[1]) / alpha_s[1]
+    xi_z = (Vz - u_s[2]) / alpha_s[2]
+    
+    full_Hermite_basis_e = jax.vmap(generate_Hermite_basis, in_axes=(None, None, None, None, None, None, 0))(xi_x, xi_y, xi_z, Nn, Nm, Np, jnp.arange(Nn * Nm * Np))
+    
+    xi_x = (Vx - u_s[3]) / alpha_s[3]
+    xi_y = (Vy - u_s[4]) / alpha_s[4]
+    xi_z = (Vz - u_s[5]) / alpha_s[5]
+    
+    full_Hermite_basis_i = jax.vmap(generate_Hermite_basis, in_axes=(None, None, None, None, None, None, 0))(xi_x, xi_y, xi_z, Nn, Nm, Np, jnp.arange(Nn * Nm * Np))
+    
+    shape_C_expanded = Ce.shape + (Nvx, Nvy, Nvz)
+    
+    Ce_expanded = jnp.expand_dims(Ce, (4, 5, 6))
+    Ci_expanded = jnp.expand_dims(Ci, (4, 5, 6))
+    
+    Ce_expanded = jnp.broadcast_to(Ce_expanded, shape_C_expanded)
+    Ci_expanded = jnp.broadcast_to(Ci_expanded, shape_C_expanded)
+    
+    fe = jnp.array([jnp.sum(Ce_expanded[i, ...] * full_Hermite_basis_e, axis=0) for i in jnp.arange(Ce.shape[0])])
+    fi = jnp.array([jnp.sum(Ci_expanded[i, ...] * full_Hermite_basis_i, axis=0) for i in jnp.arange(Ce.shape[0])])
+    
+    return B, E, fe, fi
+
 def main():
     # Load simulation parameters.
     with open('plasma_parameters.json', 'r') as file:
@@ -363,6 +407,10 @@ def main():
     # Solve the ODE system (I have to rewrite this part of the code).
     result = odeint(dy_dt, initial_conditions, t)
     
+    Ck = result[:,:(-6 * Nx * Ny * Nz)].reshape(len(t), Ns * Nn * Nm * Np, Nx, Ny, Nz)
+    Fk = result[:,(-6 * Nx * Ny * Nz):].reshape(len(t), 6, Nx, Ny, Nz)
+    
+    B, E, fe, fi = anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np)
 
 if __name__ == "__main__":
     main()
