@@ -298,16 +298,13 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     # and electric and magnetic fields (coefficients Fk).
     Ck = Ck_Fk[:(-6 * Nx * Ny * Nz)].reshape(Ns * Nn * Nm * Np, Nx, Ny, Nz)
     Fk = Ck_Fk[(-6 * Nx * Ny * Nz):].reshape(6, Nx, Ny, Nz)
-      
-    # Initialize dCk_s_dt with the same shape as Ck.
-    dCk_s_dt = jnp.zeros_like(Ck)
     
     # Vectorize over n, m, p, and s to generate ODEs for all coefficients Ck.
     dCk_s_dt = (jax.vmap(
         compute_dCk_s_dt, 
         in_axes=(None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, 0))
         (Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, jnp.arange(Nn * Nm * Np * Ns)))
-    
+        
     # Generate ODEs for Bk and Ek.
     dBk_dt = - 1j * cross_product(jnp.array([kx_grid/Lx, ky_grid/Ly, kz_grid/Lz]), Fk[:3, ...])
     dEk_dt = 1j * cross_product(jnp.array([kx_grid/Lx, ky_grid/Ly, kz_grid/Lz]), Fk[3:6, ...]) - \
