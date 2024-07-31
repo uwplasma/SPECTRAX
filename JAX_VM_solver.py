@@ -111,7 +111,7 @@ def generate_Hermite_basis(xi_x, xi_y, xi_z, Nn, Nm, Np, indices):
     return Hermite_basis
 
 
-def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nvx, Nvy, Nvz, Nn, Nm, Np, indices):
+def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
     """
     I have to add docstrings!
     """
@@ -139,14 +139,14 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nvx, Nvy, Nvz, Nn, Nm, Np
     # Possible improvement: integrate using quadax.quadgk.
     C_nmp = (trapezoid(trapezoid(trapezoid(
                 (f(X, Y, Z, Vx, Vy, Vz) * Hermite(n, xi_x) * Hermite(m, xi_y) * Hermite(p, xi_z)) /
-                jnp.sqrt((factorial(n) * factorial(m) * factorial(p)) * 2 ** (n + m + p)),
+                jnp.sqrt(factorial(n) * factorial(m) * factorial(p) * 2 ** (n + m + p)),
                 (vx - u[0]) / alpha[0], axis=-3), (vx - u[0]) / alpha[0], axis=-2), (vx - u[0]) / alpha[0], axis=-1))
     
     return C_nmp
 
 
-@partial(jax.jit, static_argnums=[7, 8, 9, 10, 11, 12, 13, 14, 15])
-def initialize_system(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np):
+@partial(jax.jit, static_argnums=[7, 8, 9, 10, 11, 12])
+def initialize_system(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np):
     """
     I have to add docstrings!
     """
@@ -157,12 +157,12 @@ def initialize_system(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx
     # Hermite decomposition of dsitribution funcitons.
     Ce_0 = (jax.vmap(
         compute_C_nmp, in_axes=(
-            None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, 0))
-        (fe, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nvx, Nvy, Nvz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
+            None, None, None, None, None, None, None, None, None, None, None, None, 0))
+        (fe, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
     Ci_0 = (jax.vmap(
         compute_C_nmp, in_axes=(
-            None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, 0))
-        (fi, alpha_s[3:], u_s[3:], Nx, Ny, Nz, Lx, Ly, Lz, Nvx, Nvy, Nvz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
+            None, None, None, None, None, None, None, None, None, None, None, None, 0))
+        (fi, alpha_s[3:], u_s[3:], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
 
     # Combine Ce_0 and Ci_0 into single array and compute the fast Fourier transform.
     C_0 = jnp.concatenate([Ce_0, Ci_0])
@@ -394,7 +394,7 @@ def main():
     nu = parameters['nu']
 
     # Load initial conditions.
-    Ck_0, Fk_0 = initialize_system(Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np)
+    Ck_0, Fk_0 = initialize_system(Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np)
 
     # Combine initial conditions.
     initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
