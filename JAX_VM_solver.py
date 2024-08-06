@@ -315,9 +315,9 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
 def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):     
     
     # Define wave vectors.
-    kx = jnp.arange(-Nx//2, Nx//2) * 2 * jnp.pi
-    ky = jnp.arange(-Ny//2, Ny//2) * 2 * jnp.pi
-    kz = jnp.arange(-Nz//2, Nz//2) * 2 * jnp.pi
+    kx = (jnp.arange(-Nx//2, Nx//2) + 1) * 2 * jnp.pi
+    ky = (jnp.arange(-Ny//2, Ny//2) + 1) * 2 * jnp.pi
+    kz = (jnp.arange(-Nz//2, Nz//2) + 1) * 2 * jnp.pi
 
     # Create 3D grids of kx, ky, kz.
     kx_grid, ky_grid, kz_grid = jnp.meshgrid(kx, ky, kz, indexing='ij')
