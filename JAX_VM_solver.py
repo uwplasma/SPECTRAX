@@ -15,7 +15,7 @@ from jax.experimental.ode import odeint
 from functools import partial
 import json
 
-
+#######################################################################################################################
 # Perhaps move examples to separate file.
 def Orszag_Tang(Lx, Ly, Omega_ce, mi_me):
     """
@@ -77,6 +77,34 @@ def simple_example(Lx, Ly):
     
     return B, E, fe, fi
 
+
+def density_perturbation(Lx, Omega_ce, mi_me):
+    """
+    I have to add docstrings!
+    """
+    
+    vte = jnp.sqrt(0.25 / 2) # Electron thermal velocity.
+    vti = vte * jnp.sqrt(1 / mi_me) # Ion thermal velocity.
+    
+    # Wavenumbers.
+    kx = 2 * jnp.pi / Lx
+    
+    # Magnetic and electric fields.
+    B = lambda x, y, z: jnp.array([Omega_ce * jnp.ones_like(x), jnp.zeros_like(y), jnp.zeros_like(z)])
+    E = lambda x, y, z: jnp.array([jnp.zeros_like(x), jnp.zeros_like(y), jnp.zeros_like(z)]) # Is this consistent with fe, fi?
+    
+    # Electron and ion distribution functions.
+    fe = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vte ** 3) * 
+                                        jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vte ** 2))) * 
+                                (1 + 0.1 * jnp.sin(kx * x)))
+    fi = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vti ** 3) * 
+                                        jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vti ** 2))) * 
+                                (1 + 0.1 * jnp.sin(kx * x)))
+    
+    return B, E, fe, fi
+
+
+#######################################################################################################################
 
 def Hermite(n, x):
     """
@@ -152,7 +180,7 @@ def initialize_system(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn,
     """
     
     # Initialize fields and distributions.
-    B, E, fe, fi = Orszag_Tang(Lx, Ly, Omega_ce, mi_me)
+    B, E, fe, fi = density_perturbation(Lx, Omega_ce, mi_me)
         
     # Hermite decomposition of dsitribution funcitons.
     Ce_0 = (jax.vmap(
@@ -375,7 +403,7 @@ def anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, 
 
 def main():
     # Load simulation parameters.
-    with open('plasma_parameters.json', 'r') as file:
+    with open('plasma_parameters_density_perturbation.json', 'r') as file:
         parameters = json.load(file)
     
     # Unpack parameters.
@@ -397,7 +425,7 @@ def main():
     initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
 
     # Define the time array.
-    t = jnp.linspace(0, 1, 10)  # Example time array from 0 to 10 with 100 points
+    t = jnp.linspace(0, 10, 100)  # Example time array from 0 to 10 with 100 points
 
     dy_dt = partial(ode_system, qs=qs, nu=nu, Omega_cs=Omega_cs, alpha_s=alpha_s, u_s=u_s, Lx=Lx, Ly=Ly, Lz=Lz, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns)
 
