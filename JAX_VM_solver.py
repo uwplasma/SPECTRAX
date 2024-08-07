@@ -14,6 +14,7 @@ from jax.scipy.integrate import trapezoid
 from jax.experimental.ode import odeint
 from functools import partial
 import json
+import matplotlib.pyplot as plt
 
 #######################################################################################################################
 # Perhaps move examples to separate file.
@@ -396,10 +397,10 @@ def anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, 
     Ce_expanded = jnp.broadcast_to(Ce_expanded, shape_C_expanded)
     Ci_expanded = jnp.broadcast_to(Ci_expanded, shape_C_expanded)
     
-    fe = jnp.array([jnp.sum(Ce_expanded[i, ...] * full_Hermite_basis_e, axis=0) for i in jnp.arange(Ce.shape[0])])
-    fi = jnp.array([jnp.sum(Ci_expanded[i, ...] * full_Hermite_basis_i, axis=0) for i in jnp.arange(Ce.shape[0])])
+    # fe = jnp.array([jnp.sum(Ce_expanded[i, ...] * full_Hermite_basis_e, axis=0) for i in jnp.arange(Ce.shape[0])])
+    # fi = jnp.array([jnp.sum(Ci_expanded[i, ...] * full_Hermite_basis_i, axis=0) for i in jnp.arange(Ce.shape[0])])
     
-    return B, E, fe, fi
+    return B, E, Ce, Ci
 
 def main():
     # Load simulation parameters.
@@ -425,7 +426,7 @@ def main():
     initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
 
     # Define the time array.
-    t = jnp.linspace(0, 10, 100)  # Example time array from 0 to 10 with 100 points
+    t = jnp.linspace(0, 2.7, 28)
 
     dy_dt = partial(ode_system, qs=qs, nu=nu, Omega_cs=Omega_cs, alpha_s=alpha_s, u_s=u_s, Lx=Lx, Ly=Ly, Lz=Lz, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns)
 
@@ -435,7 +436,24 @@ def main():
     Ck = result[:,:(-6 * Nx * Ny * Nz)].reshape(len(t), Ns * Nn * Nm * Np, Nx, Ny, Nz)
     Fk = result[:,(-6 * Nx * Ny * Nz):].reshape(len(t), 6, Nx, Ny, Nz)
     
-    B, E, fe, fi = anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np)
+    B, E, Ce, Ci = anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np)
+    
+    
+    # Plot magnetic field.
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(t, jnp.sqrt(jnp.mean(B[:,0, :, 1, 1].real ** 2, axis=1)), label=r'$B_{x,rms}$', linestyle='-', color='red')
+    ax.plot(t, jnp.sqrt(jnp.mean(B[:,1, :, 1, 1].real ** 2, axis=1)), label=r'$B_{y,rms}$', linestyle='--', color='blue')
+    ax.plot(t, jnp.sqrt(jnp.mean(B[:,2, :, 1, 1].real ** 2, axis=1)), label=r'$B_{z,rms}$', linestyle='-.', color='green')
+
+    ax.set_xlabel(r'$t\omega_{pe}$')
+    ax.set_ylabel(r'$B_{rms}$')
+    ax.set_title('Magnetic field vs. Time')
+
+    ax.legend()
+
+    ax.grid(True)
+    plt.show()
 
 if __name__ == "__main__":
     main()
