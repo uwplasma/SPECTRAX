@@ -464,12 +464,12 @@ def main():
     # Plot magnetic field.
     
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(t, jnp.sqrt(jnp.mean(B[:,0, :, 1, 1].real ** 2, axis=1)), label=r'$B_{x,rms}$', linestyle='-', color='red')
-    ax.plot(t, jnp.sqrt(jnp.mean(B[:,1, :, 1, 1].real ** 2, axis=1)), label=r'$B_{y,rms}$', linestyle='--', color='blue')
-    ax.plot(t, jnp.sqrt(jnp.mean(B[:,2, :, 1, 1].real ** 2, axis=1)), label=r'$B_{z,rms}$', linestyle='-.', color='green')
+    ax.plot(t, jnp.sqrt(jnp.mean(B[:,0, :, 1, 1].real ** 2, axis=1)), label='$B_{x,rms}$', linestyle='-', color='red')
+    ax.plot(t, jnp.sqrt(jnp.mean(B[:,1, :, 1, 1].real ** 2, axis=1)), label='$B_{y,rms}$', linestyle='--', color='blue')
+    ax.plot(t, jnp.sqrt(jnp.mean(B[:,2, :, 1, 1].real ** 2, axis=1)), label='$B_{z,rms}$', linestyle='-.', color='green')
 
-    ax.set_xlabel(r'$t\omega_{pe}$')
-    ax.set_ylabel(r'$B_{rms}$')
+    ax.set_xlabel('$t\omega_{pe}$')
+    ax.set_ylabel('$B_{rms}$')
     ax.set_title('Magnetic field vs. Time')
 
     ax.legend()
