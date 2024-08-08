@@ -169,7 +169,7 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
     C_nmp = (trapezoid(trapezoid(trapezoid(
                 (f(X, Y, Z, Vx, Vy, Vz) * Hermite(n, xi_x) * Hermite(m, xi_y) * Hermite(p, xi_z)) /
                 jnp.sqrt(factorial(n) * factorial(m) * factorial(p) * 2 ** (n + m + p)),
-                (vx - u[0]) / alpha[0], axis=-3), (vx - u[0]) / alpha[0], axis=-2), (vx - u[0]) / alpha[0], axis=-1))
+                (vx - u[0]) / alpha[0], axis=-3), (vy - u[1]) / alpha[1], axis=-2), (vz - u[2]) / alpha[2], axis=-1))
     
     return C_nmp
 
@@ -363,7 +363,7 @@ def anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, 
     
     F = ifftn(ifftshift(Fk, axes=(-3, -2, -1)), axes=(-3, -2, -1))
     E, B = F[:, :3, ...], F[:, 3:, ...]
-    
+        
     C = ifftn(ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1))
     
     Ce = C[:, :(Nn * Nm * Np), ...]
@@ -375,7 +375,7 @@ def anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, 
     vx = jnp.linspace(-5, 5, Nvx)
     vy = jnp.linspace(-5, 5, Nvy)
     vz = jnp.linspace(-5, 5, Nvz)
-    _, _, _, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx, vy, vz, indexing='ij')
+    X, Y, Z, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx, vy, vz, indexing='ij')
     
     xi_x = (Vx - u_s[0]) / alpha_s[0]
     xi_y = (Vy - u_s[1]) / alpha_s[1]
@@ -397,10 +397,22 @@ def anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, 
     Ce_expanded = jnp.broadcast_to(Ce_expanded, shape_C_expanded)
     Ci_expanded = jnp.broadcast_to(Ci_expanded, shape_C_expanded)
     
-    # fe = jnp.array([jnp.sum(Ce_expanded[i, ...] * full_Hermite_basis_e, axis=0) for i in jnp.arange(Ce.shape[0])])
-    # fi = jnp.array([jnp.sum(Ci_expanded[i, ...] * full_Hermite_basis_i, axis=0) for i in jnp.arange(Ce.shape[0])])
+    fe = jnp.array([jnp.sum(Ce_expanded[i, ...] * full_Hermite_basis_e, axis=0) for i in jnp.arange(Ce.shape[0])])
+    fi = jnp.array([jnp.sum(Ci_expanded[i, ...] * full_Hermite_basis_i, axis=0) for i in jnp.arange(Ce.shape[0])])
     
-    return B, E, Ce, Ci
+    electron_energy_dens = 0.5 * (trapezoid(trapezoid(trapezoid(
+                fe * (Vx ** 2 + Vy ** 2 + Vz ** 2),
+                vx, axis=-3), vy, axis=-2), vz, axis=-1))
+    
+    ion_energy_dens = 0.5 * (trapezoid(trapezoid(trapezoid(
+                fi * (Vx ** 2 + Vy ** 2 + Vz ** 2),
+                vx, axis=-3), vy, axis=-2), vz, axis=-1))
+    
+    plasma_energy = jnp.mean(electron_energy_dens, axis=[1, 2, 3]) + jnp.mean(ion_energy_dens, axis=[1, 2, 3])
+    
+    EM_energy = jnp.mean((E ** 2 + B ** 2) / 2, axis=[1, 2, 3]) 
+    
+    return B, E, Ce, Ci, plasma_energy, EM_energy
 
 def main():
     # Load simulation parameters.
@@ -436,7 +448,17 @@ def main():
     Ck = result[:,:(-6 * Nx * Ny * Nz)].reshape(len(t), Ns * Nn * Nm * Np, Nx, Ny, Nz)
     Fk = result[:,(-6 * Nx * Ny * Nz):].reshape(len(t), 6, Nx, Ny, Nz)
     
-    B, E, Ce, Ci = anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np)
+    # Define wave vectors.
+    kx = (jnp.arange(-Nx//2, Nx//2) + 1) * 2 * jnp.pi
+    ky = (jnp.arange(-Ny//2, Ny//2) + 1) * 2 * jnp.pi
+    kz = (jnp.arange(-Nz//2, Nz//2) + 1) * 2 * jnp.pi
+    
+    # Create 3D grids of kx, ky, kz.
+    kx_grid, ky_grid, kz_grid = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    
+    divBk2_mean = jnp.mean(jnp.array([kx_grid * Fk[i, 3, ...] + ky_grid * Fk[i, 4, ...] + kz_grid * Fk[i, 5, ...] for i in jnp.arange(len(t))]) ** 2, axis=[1, 2, 3])
+    
+    B, E, Ce, Ci, plasma_energy, EM_energy = anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np)
     
     
     # Plot magnetic field.
@@ -452,7 +474,6 @@ def main():
 
     ax.legend()
 
-    ax.grid(True)
     plt.show()
 
 if __name__ == "__main__":
