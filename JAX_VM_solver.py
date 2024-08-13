@@ -12,6 +12,7 @@ from jax.numpy.fft import fftn, ifftn, fftshift, ifftshift
 from jax.scipy.special import factorial
 from jax.scipy.integrate import trapezoid
 from jax.experimental.ode import odeint
+from quadax import quadgk
 from functools import partial
 import json
 import matplotlib.pyplot as plt
@@ -97,10 +98,10 @@ def density_perturbation(Lx, Omega_ce, mi_me):
     # Electron and ion distribution functions.
     fe = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vte ** 3) * 
                                         jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vte ** 2))) * 
-                                (1 + 0.1 * jnp.sin(kx * x)))
+                                        (1 + 0.1 * jnp.sin(kx * x)))
     fi = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vti ** 3) * 
                                         jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vti ** 2))) * 
-                                (1 + 0.1 * jnp.sin(kx * x)))
+                                        (1 + 0.1 * jnp.sin(kx * x)))
     
     return B, E, fe, fi
 
@@ -171,6 +172,29 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
                 jnp.sqrt(factorial(n) * factorial(m) * factorial(p) * 2 ** (n + m + p)),
                 (vx - u[0]) / alpha[0], axis=-3), (vy - u[1]) / alpha[1], axis=-2), (vz - u[2]) / alpha[2], axis=-1))
     
+    # def integral_vz(x, y, z, vx, vy):
+    #     interval = jnp.array([-jnp.inf, jnp.inf])
+    #     integral = quadgk(lambda vz: f(x, y, z, vx, vy, vz) * Hermite(n, (vx - u[0]) / alpha[0]) * 
+    #                   Hermite(m, (vy - u[1]) / alpha[1]) * Hermite(p, (vz - u[2]) / alpha[2]) /
+    #             jnp.sqrt(factorial(n) * factorial(m) * factorial(p) * 2 ** (n + m + p)), interval)[0]
+    #     return integral
+
+    # def integral_vy(x, y, z, vx):
+    #     interval = jnp.array([-jnp.inf, jnp.inf])
+    #     return quadgk(lambda vy: integral_vz(x, y, z, vx, vy), interval)[0]
+
+    # def C(x, y, z):
+    #     interval = jnp.array([-jnp.inf, jnp.inf])
+    #     return quadgk(lambda vx: integral_vy(x, y, z, vx), interval)[0]
+    
+    
+    # x = jnp.linspace(0, Lx, Nx)
+    # y = jnp.linspace(0, Ly, Ny)
+    # z = jnp.linspace(0, Lz, Nz)
+    # X, Y, Z = jnp.meshgrid(x, y, z, indexing='ij')
+    
+    # C_nmp = C(X, Y, Z)
+    
     return C_nmp
 
 
@@ -227,21 +251,19 @@ def cross_product(k_vec, F_vec):
     return jnp.array([result_x, result_y, result_z])
 
 
-def periodic_convolve(H, C):
-    """
-    I have to add docstrings!
-    """
+# def periodic_convolve(H, C):
+#     """
+#     I have to add docstrings!
+#     """
     
-    # Extend the input array by wrapping around at the boundaries to account for periodic boundary conditions.
-    pad_width = [(k//2, k//2) for k in H.shape]
-    extended_H = jnp.pad(H, pad_width, mode='wrap')
+#     # Extend the input array by wrapping around at the boundaries to account for periodic boundary conditions.
+#     pad_width = [(k//2, k//2) for k in H.shape]
+#     extended_H = jnp.pad(H, pad_width, mode='wrap')
     
-    # Perform convolution on the extended array.
-    # Possible improvement: write my own convolve() function with built in periodic boundary conditions so that
-    # the padding above is not required or even let the user choose berween different boundary conditions.
-    result = convolve(extended_H, C, mode='valid')
+#     # Perform convolution on the extended array.
+#     result = convolve(extended_H, C, mode='valid')
         
-    return result
+#     return result
 
 
 def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, indices):
@@ -301,13 +323,13 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
         jnp.sqrt(p / 2) * Ck[n + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p) +
         (u[2] / alpha[2]) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
     ) + q * Omega_c * (
-        (jnp.sqrt(2 * n) / alpha[0]) * periodic_convolve(Fk[0, ...], Ck[n-1 + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n)) +
-        (jnp.sqrt(2 * m) / alpha[1]) * periodic_convolve(Fk[1, ...], Ck[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m)) +
-        (jnp.sqrt(2 * p) / alpha[2]) * periodic_convolve(Fk[2, ...], Ck[n + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p))
+        (jnp.sqrt(2 * n) / alpha[0]) * convolve(Fk[0, ...], Ck[n-1 + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n), mode='same') +
+        (jnp.sqrt(2 * m) / alpha[1]) * convolve(Fk[1, ...], Ck[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m), mode='same') +
+        (jnp.sqrt(2 * p) / alpha[2]) * convolve(Fk[2, ...], Ck[n + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p), mode='same')
     ) + q * Omega_c * (
-        periodic_convolve(Fk[3, ...], Ck_aux_x) + 
-        periodic_convolve(Fk[4, ...], Ck_aux_y) + 
-        periodic_convolve(Fk[5, ...], Ck_aux_z)
+        convolve(Fk[3, ...], Ck_aux_x, mode='same') + 
+        convolve(Fk[4, ...], Ck_aux_y, mode='same') + 
+        convolve(Fk[5, ...], Ck_aux_z, mode='same')
     ) + Col)
     
     return dCk_s_dt
@@ -353,7 +375,7 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
                                             u_s[5] * Ck[Nn * Nm * Np, ...]])))
 
     # Combine dC/dt and dF/dt into a single array and flatten it into a 1D array for an ODE solver.
-    dFk_dt = jnp.concatenate([dBk_dt, dEk_dt])
+    dFk_dt = jnp.concatenate([dEk_dt, dBk_dt])
     dy_dt = jnp.concatenate([dCk_s_dt.flatten(), dFk_dt.flatten()])
     
     return dy_dt
@@ -410,7 +432,7 @@ def anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, 
     
     plasma_energy = jnp.mean(electron_energy_dens, axis=[1, 2, 3]) + jnp.mean(ion_energy_dens, axis=[1, 2, 3])
     
-    EM_energy = jnp.mean((E ** 2 + B ** 2) / 2, axis=[1, 2, 3]) 
+    EM_energy = jnp.mean((E ** 2 + B ** 2) / 2, axis=[1, 2, 3, 4])
     
     return B, E, Ce, Ci, plasma_energy, EM_energy
 
@@ -438,7 +460,7 @@ def main():
     initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
 
     # Define the time array.
-    t = jnp.linspace(0, 2.7, 28)
+    t = jnp.linspace(0, 2.7, 100)
 
     dy_dt = partial(ode_system, qs=qs, nu=nu, Omega_cs=Omega_cs, alpha_s=alpha_s, u_s=u_s, Lx=Lx, Ly=Ly, Lz=Lz, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns)
 
@@ -462,7 +484,6 @@ def main():
     
     
     # Plot magnetic field.
-    
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(t, jnp.sqrt(jnp.mean(B[:,0, :, 1, 1].real ** 2, axis=1)), label='$B_{x,rms}$', linestyle='-', color='red')
     ax.plot(t, jnp.sqrt(jnp.mean(B[:,1, :, 1, 1].real ** 2, axis=1)), label='$B_{y,rms}$', linestyle='--', color='blue')
