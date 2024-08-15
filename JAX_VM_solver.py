@@ -98,12 +98,38 @@ def density_perturbation(Lx, Omega_ce, mi_me):
     # Electron and ion distribution functions.
     fe = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vte ** 3) * 
                                         jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vte ** 2))) * 
-                                        (1 + 0.1 * jnp.sin(kx * x)))
+                                        (1 + 0.3 * jnp.sin(kx * x)))
     fi = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vti ** 3) * 
                                         jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vti ** 2))) * 
-                                        (1 + 0.1 * jnp.sin(kx * x)))
+                                        (1 + 0.3 * jnp.sin(kx * x)))
     
     return B, E, fe, fi
+
+
+def density_perturbation_solution(Lx, Omega_ce, mi_me):
+    """
+    I have to add docstrings!
+    """
+    
+    vte = jnp.sqrt(0.25 / 2) # Electron thermal velocity.
+    vti = vte * jnp.sqrt(1 / mi_me) # Ion thermal velocity.
+    
+    # Wavenumbers.
+    kx = 2 * jnp.pi / Lx
+    
+    # Magnetic and electric fields.
+    B = lambda x, y, z: jnp.array([Omega_ce * jnp.ones_like(x), jnp.zeros_like(y), jnp.zeros_like(z)])
+    E = lambda x, y, z: jnp.array([jnp.zeros_like(x), jnp.zeros_like(y), jnp.zeros_like(z)]) # Is this consistent with fe, fi?
+    
+    # Electron and ion distribution functions.
+    fe_sol = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vte ** 3) * 
+                                        jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vte ** 2))) * 
+                                        (1 + 0.3 * jnp.sin(kx * (x - vx * 2.0))))
+    fi_sol = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vti ** 3) * 
+                                        jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vti ** 2))) * 
+                                        (1 + 0.3 * jnp.sin(kx * (x - vx * 2.0))))
+    
+    return B, E, fe_sol, fi_sol
 
 
 #######################################################################################################################
@@ -155,9 +181,9 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
     x = jnp.linspace(0, Lx, Nx)
     y = jnp.linspace(0, Ly, Ny)
     z = jnp.linspace(0, Lz, Nz)
-    vx = jnp.linspace(-5, 5, 50) # Possibly define limits in terms of thermal velocity or alpha.
-    vy = jnp.linspace(-5, 5, 50)
-    vz = jnp.linspace(-5, 5, 50)
+    vx = jnp.linspace(-4, 4, 40) # Possibly define limits in terms of thermal velocity or alpha.
+    vy = jnp.linspace(-4, 4, 40)
+    vz = jnp.linspace(-4, 4, 40)
     X, Y, Z, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx, vy, vz, indexing='ij')
     
     # Define variables for Hermite polynomials.
@@ -304,9 +330,11 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
         jnp.sqrt(2 * m) * (u[0] / alpha[1]) * Ck[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m))
     
     # Define "unphysical" collision operator to eliminate recurrence.
-    Col = -nu * ((n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) + 
-                 (m * (m - 1) * (m - 2)) / ((Nm - 1) * (Nm - 2) * (Nm - 3)) +
-                 (p * (p - 1) * (p - 2)) / ((Np - 1) * (Np - 2) * (Np - 3))) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
+    # Col = -nu * ((n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) + 
+    #              (m * (m - 1) * (m - 2)) / ((Nm - 1) * (Nm - 2) * (Nm - 3)) +
+    #              (p * (p - 1) * (p - 2)) / ((Np - 1) * (Np - 2) * (Np - 3))) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
+    
+    Col = 0
     
     # Define ODEs for Hermite-Fourier coefficients.
     # Clossure is achieved by setting to zero coefficients with index out of range.
@@ -422,6 +450,7 @@ def anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, 
     # fe = jnp.array([jnp.sum(Ce_expanded[i, ...] * full_Hermite_basis_e, axis=0) for i in jnp.arange(Ce.shape[0])])
     # fi = jnp.array([jnp.sum(Ci_expanded[i, ...] * full_Hermite_basis_i, axis=0) for i in jnp.arange(Ce.shape[0])])
     
+    # The electron and ion energy formulas below assume that us = 0. Generalize them.
     electron_energy_dens = 0.5 * ((3 / 2) * Ce[:, 0, ...] + Ce[:, 2, ...] + Ce[:, Nn + 2, ...] + Ce[:, Nn * Nm + 2, ...])
     ion_energy_dens = 0.5 * ((3 / 2) * Ci[:, 0, ...] + Ci[:, 2, ...] + Ci[:, Nn + 2, ...] + Ci[:, Nn * Nm + 2, ...])
      
@@ -455,7 +484,7 @@ def main():
     initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
 
     # Define the time array.
-    t = jnp.linspace(0, 2.7, 100)
+    t = jnp.linspace(0, 3, 31)
 
     dy_dt = partial(ode_system, qs=qs, nu=nu, Omega_cs=Omega_cs, alpha_s=alpha_s, u_s=u_s, Lx=Lx, Ly=Ly, Lz=Lz, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns)
 
@@ -477,6 +506,14 @@ def main():
     
     B, E, Ce, Ci, plasma_energy, EM_energy = anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np)
     
+    Cn002 = jnp.mean(Ce[:, :Nn, ...], axis=[2, 3, 4])
+    
+    B_exact, E_exact, fe_exact, fi_exact = density_perturbation_solution(Lx, Omega_cs[0], mi_me)
+    
+    Ce_exact = (jax.vmap(
+        compute_C_nmp, in_axes=(
+            None, None, None, None, None, None, None, None, None, None, None, None, 0))
+        (fe_exact, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
     
     # Plot magnetic field.
     fig, ax = plt.subplots(figsize=(10, 6))
