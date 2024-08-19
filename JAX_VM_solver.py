@@ -121,15 +121,19 @@ def density_perturbation_solution(Lx, Omega_ce, mi_me):
     B = lambda x, y, z: jnp.array([Omega_ce * jnp.ones_like(x), jnp.zeros_like(y), jnp.zeros_like(z)])
     E = lambda x, y, z: jnp.array([jnp.zeros_like(x), jnp.zeros_like(y), jnp.zeros_like(z)]) # Is this consistent with fe, fi?
     
-    # Electron and ion distribution functions.
-    fe_sol = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vte ** 3) * 
-                                        jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vte ** 2))) * 
-                                        (1 + 0.3 * jnp.sin(kx * (x - vx * 2.0))))
-    fi_sol = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vti ** 3) * 
-                                        jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vti ** 2))) * 
-                                        (1 + 0.3 * jnp.sin(kx * (x - vx * 2.0))))
+    dn = 0.3
     
-    return B, E, fe_sol, fi_sol
+    # Electron and ion distribution functions.
+    fe_exact = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vte ** 3) * 
+                                        jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vte ** 2))) * 
+                                        (1 + dn * jnp.sin(kx * (x - vx * 2.0))))
+    fi_exact = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vti ** 3) * 
+                                        jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vti ** 2))) * 
+                                        (1 + dn * jnp.sin(kx * (x - vx * 2.0))))
+    
+    C0_exact = (lambda t, x: 8 * (1 + dn * jnp.sin(kx * x) * jnp.exp(-(kx * vte * t) ** 2 / 2)))
+    
+    return B, E, fe_exact, fi_exact, C0_exact
 
 
 #######################################################################################################################
@@ -484,7 +488,7 @@ def main():
     initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
 
     # Define the time array.
-    t = jnp.linspace(0, 3, 31)
+    t = jnp.linspace(0, 10, 11)
 
     dy_dt = partial(ode_system, qs=qs, nu=nu, Omega_cs=Omega_cs, alpha_s=alpha_s, u_s=u_s, Lx=Lx, Ly=Ly, Lz=Lz, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns)
 
@@ -508,26 +512,63 @@ def main():
     
     Cn002 = jnp.mean(Ce[:, :Nn, ...], axis=[2, 3, 4])
     
-    B_exact, E_exact, fe_exact, fi_exact = density_perturbation_solution(Lx, Omega_cs[0], mi_me)
+    B_exact, E_exact, fe_exact, fi_exact, C0_exact = density_perturbation_solution(Lx, Omega_cs[0], mi_me)
     
-    Ce_exact = (jax.vmap(
-        compute_C_nmp, in_axes=(
-            None, None, None, None, None, None, None, None, None, None, None, None, 0))
-        (fe_exact, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
+    x = jnp.linspace(0, Lx, Nx)
+    
+    T, X = jnp.meshgrid(t, x, indexing='ij')
+    
+    C0_x_t_exact = C0_exact(T, X)
+    
     
     # Plot magnetic field.
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(t, jnp.sqrt(jnp.mean(B[:,0, :, 1, 1].real ** 2, axis=1)), label='$B_{x,rms}$', linestyle='-', color='red')
-    ax.plot(t, jnp.sqrt(jnp.mean(B[:,1, :, 1, 1].real ** 2, axis=1)), label='$B_{y,rms}$', linestyle='--', color='blue')
-    ax.plot(t, jnp.sqrt(jnp.mean(B[:,2, :, 1, 1].real ** 2, axis=1)), label='$B_{z,rms}$', linestyle='-.', color='green')
+    plt.plot(t, jnp.sqrt(jnp.mean(E[:,0, :, 1, 1].real ** 2, axis=1)), label='$B_{x,rms}$', linestyle='-', color='red')
+    plt.plot(t, jnp.sqrt(jnp.mean(E[:,1, :, 1, 1].real ** 2, axis=1)), label='$B_{y,rms}$', linestyle='--', color='blue')
+    plt.plot(t, jnp.sqrt(jnp.mean(E[:,2, :, 1, 1].real ** 2, axis=1)), label='$B_{z,rms}$', linestyle='-.', color='green')
 
-    ax.set_xlabel('$t\omega_{pe}$')
-    ax.set_ylabel('$B_{rms}$')
-    ax.set_title('Magnetic field vs. Time')
+    plt.xlabel('$t\omega_{pe}$')
+    plt.ylabel('$B_{rms}$')
+    plt.title('Magnetic field vs. Time')
 
-    ax.legend()
+    plt.legend()
 
     plt.show()
+    
+    # C0 vs t.
+    
+    plt.figure(figsize=(8, 6))
+    plt.plot(x, Ce[0 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 0', linestyle='-', color='red')
+    plt.plot(x, C0_x_t_exact[0, :].real, label='Exact solution, t\omega_{pe} = 0', linestyle='--', color='black')
+    plt.plot(x, Ce[5 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 5', linestyle='-', color='blue')
+    plt.plot(x, C0_x_t_exact[5, :].real, label='Exact solution, t\omega_{pe} = 5', linestyle=':', color='black')
+    plt.plot(x, Ce[10 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 10', linestyle='-', color='green')
+    plt.plot(x, C0_x_t_exact[10, :].real, label='Exact solution, t\omega_{pe} = 10', linestyle='-.', color='black')
+
+    plt.xlabel(r'$x/d_e$', fontsize=16)
+    plt.ylabel(r'$C_{e, 0}$', fontsize=16)
+    plt.xlim((0,3))
+    plt.ylim((4,12))
+    plt.title(r'$\nu = 0$', fontsize=16)
+    plt.legend()
+
+    plt.show()
+    
+    # Hermite coefficients at fixed times.
+    
+    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce[0 , :, ...]) ** 2, axis=[-3, -2, -1]), label='Approx. solution, t\omega_{pe} = 0', linestyle='-', color='red')
+    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce_exact_0) ** 2, axis=[-3, -2, -1]), label='Exact solution, t\omega_{pe} = 0', linestyle='--', color='black')
+    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce[5 , :, ...]) ** 2, axis=[-3, -2, -1]), label='Approx. solution, t\omega_{pe} = 5', linestyle='-', color='blue')
+    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce_exact_5) ** 2, axis=[-3, -2, -1]), label='Exact solution, t\omega_{pe} = 5', linestyle=':', color='black')
+    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce[10 , :, ...]) ** 2, axis=[-3, -2, -1]), label='Approx. solution, t\omega_{pe} = 10', linestyle='-', color='green')
+    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce_exact_10) ** 2, axis=[-3, -2, -1]), label='Exact solution, t\omega_{pe} = 10', linestyle='-.', color='black')
+    plt.xlabel(r'$n$', fontsize=16)
+    plt.ylabel(r'$\langle|C_{e, n}|^2\rangle$', fontsize=16)
+    plt.title(r'$\nu = 0$', fontsize=16)
+    # plt.legend()
+    plt.yscale('log')
+    plt.show()
+    
+    
 
 if __name__ == "__main__":
     main()
