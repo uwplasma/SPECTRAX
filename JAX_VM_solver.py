@@ -281,21 +281,6 @@ def cross_product(k_vec, F_vec):
     return jnp.array([result_x, result_y, result_z])
 
 
-# def periodic_convolve(H, C):
-#     """
-#     I have to add docstrings!
-#     """
-    
-#     # Extend the input array by wrapping around at the boundaries to account for periodic boundary conditions.
-#     pad_width = [(k//2, k//2) for k in H.shape]
-#     extended_H = jnp.pad(H, pad_width, mode='wrap')
-    
-#     # Perform convolution on the extended array.
-#     result = convolve(extended_H, C, mode='valid')
-        
-#     return result
-
-
 def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, indices):
     """
     I have to add docstrings!
@@ -393,15 +378,15 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     dEk_dt = 1j * cross_product(jnp.array([kx_grid/Lx, ky_grid/Ly, kz_grid/Lz]), Fk[3:, ...]) - \
              (1 / Omega_cs[0]) * (qs[0] * alpha_s[0] * alpha_s[1] * alpha_s[2] * (
              (1 / jnp.sqrt(2)) * jnp.array([alpha_s[0] * Ck[1, ...],
-                                            alpha_s[1] * Ck[Nn, ...],
-                                            alpha_s[2] * Ck[Nn * Nm, ...]]) + 
+                                            alpha_s[1] * Ck[Nn + 1, ...],
+                                            alpha_s[2] * Ck[Nn * Nm + 1, ...]]) + 
                                  jnp.array([u_s[0] * Ck[0, ...],
                                             u_s[1] * Ck[0, ...],
                                             u_s[2] * Ck[0, ...]])) + \
                                   qs[1] * alpha_s[3] * alpha_s[4] * alpha_s[5] * (
-             (1 / jnp.sqrt(2)) * jnp.array([alpha_s[3] * Ck[1 + Nn * Nm * Np, ...],
-                                            alpha_s[4] * Ck[Nn + Nn * Nm * Np, ...],
-                                            alpha_s[5] * Ck[Nn * Nm * + Nn * Nm * Np, ...]]) + 
+             (1 / jnp.sqrt(2)) * jnp.array([alpha_s[3] * Ck[Nn * Nm * Np + 1, ...],
+                                            alpha_s[4] * Ck[Nn + Nn * Nm * Np + 1, ...],
+                                            alpha_s[5] * Ck[Nn * Nm + Nn * Nm * Np + 1, ...]]) + 
                                  jnp.array([u_s[3] * Ck[Nn * Nm * Np, ...],
                                             u_s[4] * Ck[Nn * Nm * Np, ...],
                                             u_s[5] * Ck[Nn * Nm * Np, ...]])))
@@ -458,9 +443,10 @@ def anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, 
     electron_energy_dens = 0.5 * ((3 / 2) * Ce[:, 0, ...] + Ce[:, 2, ...] + Ce[:, Nn + 2, ...] + Ce[:, Nn * Nm + 2, ...])
     ion_energy_dens = 0.5 * ((3 / 2) * Ci[:, 0, ...] + Ci[:, 2, ...] + Ci[:, Nn + 2, ...] + Ci[:, Nn * Nm + 2, ...])
      
-    plasma_energy = jnp.mean(electron_energy_dens, axis=[1, 2, 3]) + jnp.mean(ion_energy_dens, axis=[1, 2, 3])
+    plasma_energy = jnp.mean(electron_energy_dens[:, :, 1, 1], axis=1) + jnp.mean(ion_energy_dens[:, :, 1, 1], axis=1)
     
-    EM_energy = jnp.mean((E ** 2 + B ** 2) / 2, axis=[1, 2, 3, 4])
+    EM_energy = (jnp.mean((E[:, 0, :, 1, 1] ** 2 + E[:, 1, :, 1, 1] ** 2 + E[:, 2, :, 1, 1] ** 2 + 
+                           B[:, 0, :, 1, 1] ** 2 + B[:, 1, :, 1, 1] ** 2 + B[:, 2, :, 1, 1] ** 2) / 2, axis=1))
     
     return B, E, Ce, Ci, plasma_energy, EM_energy
 
@@ -522,9 +508,9 @@ def main():
     
     
     # Plot magnetic field.
-    plt.plot(t, jnp.sqrt(jnp.mean(E[:,0, :, 1, 1].real ** 2, axis=1)), label='$B_{x,rms}$', linestyle='-', color='red')
-    plt.plot(t, jnp.sqrt(jnp.mean(E[:,1, :, 1, 1].real ** 2, axis=1)), label='$B_{y,rms}$', linestyle='--', color='blue')
-    plt.plot(t, jnp.sqrt(jnp.mean(E[:,2, :, 1, 1].real ** 2, axis=1)), label='$B_{z,rms}$', linestyle='-.', color='green')
+    plt.plot(t, jnp.sqrt(jnp.mean(E[:, 0, :, 1, 1].real ** 2, axis=1)), label='$B_{x,rms}$', linestyle='-', color='red')
+    plt.plot(t, jnp.sqrt(jnp.mean(E[:, 1, :, 1, 1].real ** 2, axis=1)), label='$B_{y,rms}$', linestyle='--', color='blue')
+    plt.plot(t, jnp.sqrt(jnp.mean(E[:, 2, :, 1, 1].real ** 2, axis=1)), label='$B_{z,rms}$', linestyle='-.', color='green')
 
     plt.xlabel('$t\omega_{pe}$')
     plt.ylabel('$B_{rms}$')
