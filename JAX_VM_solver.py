@@ -228,7 +228,7 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
     return C_nmp
 
 
-@partial(jax.jit, static_argnums=[7, 8, 9, 10, 11, 12])
+# @partial(jax.jit, static_argnums=[7, 8, 9, 10, 11, 12])
 def initialize_system(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np):
     """
     I have to add docstrings!
@@ -351,7 +351,7 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
     
     return dCk_s_dt
 
-@partial(jax.jit, static_argnums=[10, 11, 12, 13, 14, 15, 16])
+# @partial(jax.jit, static_argnums=[10, 11, 12, 13, 14, 15, 16])
 def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):     
     
     # Define wave vectors.
@@ -377,16 +377,16 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     dBk_dt = - 1j * cross_product(jnp.array([kx_grid/Lx, ky_grid/Ly, kz_grid/Lz]), Fk[:3, ...])
     dEk_dt = 1j * cross_product(jnp.array([kx_grid/Lx, ky_grid/Ly, kz_grid/Lz]), Fk[3:, ...]) - \
              (1 / Omega_cs[0]) * (qs[0] * alpha_s[0] * alpha_s[1] * alpha_s[2] * (
-             (1 / jnp.sqrt(2)) * jnp.array([alpha_s[0] * Ck[1, ...],
-                                            alpha_s[1] * Ck[Nn + 1, ...],
-                                            alpha_s[2] * Ck[Nn * Nm + 1, ...]]) + 
+             (1 / jnp.sqrt(2)) * jnp.array([alpha_s[0] * Ck[1, ...] * jnp.sign(Nn - 1),
+                                            alpha_s[1] * Ck[Nn + 1, ...] * jnp.sign(Nm - 1),
+                                            alpha_s[2] * Ck[Nn * Nm + 1, ...] * jnp.sign(Np - 1)]) + 
                                  jnp.array([u_s[0] * Ck[0, ...],
                                             u_s[1] * Ck[0, ...],
                                             u_s[2] * Ck[0, ...]])) + \
                                   qs[1] * alpha_s[3] * alpha_s[4] * alpha_s[5] * (
-             (1 / jnp.sqrt(2)) * jnp.array([alpha_s[3] * Ck[Nn * Nm * Np + 1, ...],
-                                            alpha_s[4] * Ck[Nn + Nn * Nm * Np + 1, ...],
-                                            alpha_s[5] * Ck[Nn * Nm + Nn * Nm * Np + 1, ...]]) + 
+             (1 / jnp.sqrt(2)) * jnp.array([alpha_s[3] * Ck[Nn * Nm * Np + 1, ...] * jnp.sign(Nn - 1),
+                                            alpha_s[4] * Ck[Nn + Nn * Nm * Np + 1, ...] * jnp.sign(Nm - 1),
+                                            alpha_s[5] * Ck[Nn * Nm + Nn * Nm * Np + 1, ...] * jnp.sign(Np - 1)]) + 
                                  jnp.array([u_s[3] * Ck[Nn * Nm * Np, ...],
                                             u_s[4] * Ck[Nn * Nm * Np, ...],
                                             u_s[5] * Ck[Nn * Nm * Np, ...]])))
@@ -397,7 +397,7 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     
     return dy_dt
 
-@partial(jax.jit, static_argnums=[7, 8, 9, 10, 11, 12, 13, 14, 15])
+# @partial(jax.jit, static_argnums=[7, 8, 9, 10, 11, 12, 13, 14, 15])
 def anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np):
     
     F = ifftn(ifftshift(Fk, axes=(-3, -2, -1)), axes=(-3, -2, -1))
@@ -469,12 +469,15 @@ def main():
 
     # Load initial conditions.
     Ck_0, Fk_0 = initialize_system(Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np)
+    
 
     # Combine initial conditions.
     initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
 
     # Define the time array.
     t = jnp.linspace(0, 10, 11)
+    x = jnp.linspace(0, Lx, Nx)
+    T, X = jnp.meshgrid(t, x, indexing='ij')
 
     dy_dt = partial(ode_system, qs=qs, nu=nu, Omega_cs=Omega_cs, alpha_s=alpha_s, u_s=u_s, Lx=Lx, Ly=Ly, Lz=Lz, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns)
 
@@ -492,18 +495,13 @@ def main():
     # Create 3D grids of kx, ky, kz.
     kx_grid, ky_grid, kz_grid = jnp.meshgrid(kx, ky, kz, indexing='ij')
     
-    divBk2_mean = jnp.mean(jnp.array([kx_grid * Fk[i, 3, ...] + ky_grid * Fk[i, 4, ...] + kz_grid * Fk[i, 5, ...] for i in jnp.arange(len(t))]) ** 2, axis=[1, 2, 3])
+    # divBk2_mean = jnp.mean(jnp.array([kx_grid * Fk[i, 3, ...] + ky_grid * Fk[i, 4, ...] + kz_grid * Fk[i, 5, ...] for i in jnp.arange(len(t))]) ** 2, axis=[1, 2, 3])
     
     B, E, Ce, Ci, plasma_energy, EM_energy = anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np)
     
-    Cn002 = jnp.mean(Ce[:, :Nn, ...], axis=[2, 3, 4])
+    # Cn002 = jnp.mean(Ce[:, :Nn, ...], axis=[2, 3, 4])
     
-    B_exact, E_exact, fe_exact, fi_exact, C0_exact = density_perturbation_solution(Lx, Omega_cs[0], mi_me)
-    
-    x = jnp.linspace(0, Lx, Nx)
-    
-    T, X = jnp.meshgrid(t, x, indexing='ij')
-    
+    B_exact, E_exact, fe_exact, fi_exact, C0_exact = density_perturbation_solution(Lx, Omega_cs[0], mi_me)    
     C0_x_t_exact = C0_exact(T, X)
     
     
@@ -525,8 +523,8 @@ def main():
     plt.figure(figsize=(8, 6))
     plt.plot(x, Ce[0 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 0', linestyle='-', color='red')
     plt.plot(x, C0_x_t_exact[0, :].real, label='Exact solution, t\omega_{pe} = 0', linestyle='--', color='black')
-    plt.plot(x, Ce[5 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 5', linestyle='-', color='blue')
-    plt.plot(x, C0_x_t_exact[5, :].real, label='Exact solution, t\omega_{pe} = 5', linestyle=':', color='black')
+    plt.plot(x, Ce[2 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 5', linestyle='-', color='blue')
+    plt.plot(x, C0_x_t_exact[2, :].real, label='Exact solution, t\omega_{pe} = 5', linestyle=':', color='black')
     plt.plot(x, Ce[10 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 10', linestyle='-', color='green')
     plt.plot(x, C0_x_t_exact[10, :].real, label='Exact solution, t\omega_{pe} = 10', linestyle='-.', color='black')
 
@@ -554,7 +552,7 @@ def main():
     plt.yscale('log')
     plt.show()
     
-    
+
 
 if __name__ == "__main__":
     main()
