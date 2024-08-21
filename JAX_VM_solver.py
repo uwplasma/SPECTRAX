@@ -124,16 +124,25 @@ def density_perturbation_solution(Lx, Omega_ce, mi_me):
     dn = 0.3
     
     # Electron and ion distribution functions.
-    fe_exact = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vte ** 3) * 
+    fe_exact_0 = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vte ** 3) * 
+                                        jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vte ** 2))) * 
+                                        (1 + dn * jnp.sin(kx * (x - vx * 0.0))))
+    
+    fe_exact_2 = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vte ** 3) * 
                                         jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vte ** 2))) * 
                                         (1 + dn * jnp.sin(kx * (x - vx * 2.0))))
-    fi_exact = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vti ** 3) * 
-                                        jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vti ** 2))) * 
-                                        (1 + dn * jnp.sin(kx * (x - vx * 2.0))))
     
-    C0_exact = (lambda t, x: 8 * (1 + dn * jnp.sin(kx * x) * jnp.exp(-(kx * vte * t) ** 2 / 2)))
+    fe_exact_5 = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vte ** 3) * 
+                                        jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vte ** 2))) * 
+                                        (1 + dn * jnp.sin(kx * (x - vx * 5.0))))
+    # fi_exact = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vti ** 3) * 
+    #                                     jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vti ** 2))) * 
+    #                                     (1 + dn * jnp.sin(kx * (x - vx * 0.0))))
     
-    return B, E, fe_exact, fi_exact, C0_exact
+    C0_exact = (lambda t, x: (1 / (jnp.sqrt(2) * vte) ** 3) * (1 + dn * jnp.sin(kx * x) * jnp.exp(-(kx * vte * t) ** 2 / 2)))
+    # C1_exact = (lambda t, x: -(1 / (jnp.sqrt(2) * vte) ** 3) * (kx * t * vte * dn * jnp.cos(kx * x) * jnp.exp(-(kx * vte * t) ** 2 / 2)))
+    
+    return B, E, fe_exact_0, fe_exact_2, fe_exact_5, C0_exact
 
 
 #######################################################################################################################
@@ -398,7 +407,7 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     return dy_dt
 
 # @partial(jax.jit, static_argnums=[7, 8, 9, 10, 11, 12, 13, 14, 15])
-def anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np):
+def anti_transform(Ck, Fk, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np):
     
     F = ifftn(ifftshift(Fk, axes=(-3, -2, -1)), axes=(-3, -2, -1))
     E, B = F[:, :3, ...], F[:, 3:, ...]
@@ -440,8 +449,25 @@ def anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, 
     # fi = jnp.array([jnp.sum(Ci_expanded[i, ...] * full_Hermite_basis_i, axis=0) for i in jnp.arange(Ce.shape[0])])
     
     # The electron and ion energy formulas below assume that us = 0. Generalize them.
-    electron_energy_dens = 0.5 * ((3 / 2) * Ce[:, 0, ...] + Ce[:, 2, ...] + Ce[:, Nn + 2, ...] + Ce[:, Nn * Nm + 2, ...])
-    ion_energy_dens = 0.5 * ((3 / 2) * Ci[:, 0, ...] + Ci[:, 2, ...] + Ci[:, Nn + 2, ...] + Ci[:, Nn * Nm + 2, ...])
+    electron_energy_dens = 0.5 * ((alpha_s[0] * (u_s[0] ** 2 + 0.5 * alpha_s[0] ** 2) + 
+                                   alpha_s[1] * (u_s[1] ** 2 + 0.5 * alpha_s[1] ** 2) +
+                                   alpha_s[2] * (u_s[2] ** 2 + 0.5 * alpha_s[2] ** 2)) * Ce[:, 0, ...] + 
+                                  (jnp.sqrt(2) * alpha_s[0] ** 2) * u_s[0] * Ce[:, 1, ...] * jnp.sign(Nn - 1) +
+                                  (alpha_s[0] ** 3 / jnp.sqrt(2)) * Ce[:, 2, ...] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) + 
+                                  (jnp.sqrt(2) * alpha_s[1] ** 2) * u_s[1] * Ce[:, Nn + 1, ...] * jnp.sign(Nm - 1) +
+                                  (alpha_s[1] ** 3 / jnp.sqrt(2)) * Ce[:, Nn + 2, ...] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) +
+                                  (jnp.sqrt(2) * alpha_s[2] ** 2) * u_s[2] * Ce[:, Nn * Nm + 1, ...] * jnp.sign(Np - 1)+
+                                  (alpha_s[2] ** 3 / jnp.sqrt(2)) * Ce[:, Nn * Nm + 2, ...] * jnp.sign(Np - 1) * jnp.sign(Np - 2))
+                                  
+    ion_energy_dens = 0.5 * mi_me * ((alpha_s[3] * (u_s[3] ** 2 + 0.5 * alpha_s[3] ** 2) + 
+                                      alpha_s[4] * (u_s[4] ** 2 + 0.5 * alpha_s[4] ** 2) +
+                                      alpha_s[5] * (u_s[5] ** 2 + 0.5 * alpha_s[5] ** 2)) * Ci[:, 0, ...] + 
+                                     (jnp.sqrt(2) * alpha_s[3] ** 2) * u_s[3] * Ci[:, 1, ...] * jnp.sign(Nn - 1) +
+                                     (alpha_s[3] ** 3 / jnp.sqrt(2)) * Ci[:, 2, ...] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) + 
+                                     (jnp.sqrt(2) * alpha_s[4] ** 2) * u_s[4] * Ci[:, Nn + 1, ...] * jnp.sign(Nm - 1) +
+                                     (alpha_s[4] ** 3 / jnp.sqrt(2)) * Ci[:, Nn + 2, ...] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) +
+                                     (jnp.sqrt(2) * alpha_s[5] ** 2) * u_s[5] * Ci[:, Nn * Nm + 1, ...] * jnp.sign(Np - 1) +
+                                     (alpha_s[5] ** 3 / jnp.sqrt(2)) * Ci[:, Nn * Nm + 2, ...] * jnp.sign(Np - 1) * jnp.sign(Np - 2))
      
     plasma_energy = jnp.mean(electron_energy_dens[:, :, 1, 1], axis=1) + jnp.mean(ion_energy_dens[:, :, 1, 1], axis=1)
     
@@ -497,18 +523,33 @@ def main():
     
     # divBk2_mean = jnp.mean(jnp.array([kx_grid * Fk[i, 3, ...] + ky_grid * Fk[i, 4, ...] + kz_grid * Fk[i, 5, ...] for i in jnp.arange(len(t))]) ** 2, axis=[1, 2, 3])
     
-    B, E, Ce, Ci, plasma_energy, EM_energy = anti_transform(Ck, Fk, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np)
+    B, E, Ce, Ci, plasma_energy, EM_energy = anti_transform(Ck, Fk, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np)
     
     # Cn002 = jnp.mean(Ce[:, :Nn, ...], axis=[2, 3, 4])
     
-    B_exact, E_exact, fe_exact, fi_exact, C0_exact = density_perturbation_solution(Lx, Omega_cs[0], mi_me)    
+    B_exact, E_exact, fe_exact_0, fe_exact_2, fe_exact_5, C0_exact= density_perturbation_solution(Lx, Omega_cs[0], mi_me)    
     C0_x_t_exact = C0_exact(T, X)
+    C1_x_t_exact = C1_exact(T, X)
     
+    Ce_exact_0 = (jax.vmap(
+        compute_C_nmp, in_axes=(
+            None, None, None, None, None, None, None, None, None, None, None, None, 0))
+        (fe_exact_0, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
+    
+    Ce_exact_2 = (jax.vmap(
+        compute_C_nmp, in_axes=(
+            None, None, None, None, None, None, None, None, None, None, None, None, 0))
+        (fe_exact_2, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
+    
+    Ce_exact_5 = (jax.vmap(
+        compute_C_nmp, in_axes=(
+            None, None, None, None, None, None, None, None, None, None, None, None, 0))
+        (fe_exact_5, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
     
     # Plot magnetic field.
-    plt.plot(t, jnp.sqrt(jnp.mean(E[:, 0, :, 1, 1].real ** 2, axis=1)), label='$B_{x,rms}$', linestyle='-', color='red')
-    plt.plot(t, jnp.sqrt(jnp.mean(E[:, 1, :, 1, 1].real ** 2, axis=1)), label='$B_{y,rms}$', linestyle='--', color='blue')
-    plt.plot(t, jnp.sqrt(jnp.mean(E[:, 2, :, 1, 1].real ** 2, axis=1)), label='$B_{z,rms}$', linestyle='-.', color='green')
+    plt.plot(t, jnp.sqrt(jnp.mean(B[:, 0, :, 1, 1].real ** 2, axis=1)), label='$B_{x,rms}$', linestyle='-', color='red')
+    plt.plot(t, jnp.sqrt(jnp.mean(B[:, 1, :, 1, 1].real ** 2, axis=1)), label='$B_{y,rms}$', linestyle='--', color='blue')
+    plt.plot(t, jnp.sqrt(jnp.mean(B[:, 2, :, 1, 1].real ** 2, axis=1)), label='$B_{z,rms}$', linestyle='-.', color='green')
 
     plt.xlabel('$t\omega_{pe}$')
     plt.ylabel('$B_{rms}$')
@@ -519,39 +560,53 @@ def main():
     plt.show()
     
     # C0 vs t.
-    
     plt.figure(figsize=(8, 6))
-    plt.plot(x, Ce[0 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 0', linestyle='-', color='red')
-    plt.plot(x, C0_x_t_exact[0, :].real, label='Exact solution, t\omega_{pe} = 0', linestyle='--', color='black')
-    plt.plot(x, Ce[2 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 5', linestyle='-', color='blue')
-    plt.plot(x, C0_x_t_exact[2, :].real, label='Exact solution, t\omega_{pe} = 5', linestyle=':', color='black')
-    plt.plot(x, Ce[10 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 10', linestyle='-', color='green')
-    plt.plot(x, C0_x_t_exact[10, :].real, label='Exact solution, t\omega_{pe} = 10', linestyle='-.', color='black')
+    plt.plot(x, Ce[0 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 0', linestyle='-', color='red', linewidth=3.0)
+    plt.plot(x, C0_x_t_exact[0, :].real, label='Exact solution, t\omega_{pe} = 0', linestyle='--', color='black', linewidth=3.0)
+    plt.plot(x, Ce[2 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 2', linestyle='-', color='blue', linewidth=3.0)
+    plt.plot(x, C0_x_t_exact[2, :].real, label='Exact solution, t\omega_{pe} = 2', linestyle=':', color='black', linewidth=3.0)
+    plt.plot(x, Ce[5 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 5', linestyle='-', color='green', linewidth=3.0)
+    plt.plot(x, C0_x_t_exact[5, :].real, label='Exact solution, t\omega_{pe} = 5', linestyle='-.', color='black', linewidth=3.0)
 
     plt.xlabel(r'$x/d_e$', fontsize=16)
-    plt.ylabel(r'$C_{e, 0}$', fontsize=16)
+    plt.ylabel(r'$C_{e, 1}$', fontsize=16)
     plt.xlim((0,3))
-    plt.ylim((4,12))
+    # plt.ylim((4,12))
     plt.title(r'$\nu = 0$', fontsize=16)
     plt.legend()
 
     plt.show()
     
     # Hermite coefficients at fixed times.
-    
-    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce[0 , :, ...]) ** 2, axis=[-3, -2, -1]), label='Approx. solution, t\omega_{pe} = 0', linestyle='-', color='red')
-    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce_exact_0) ** 2, axis=[-3, -2, -1]), label='Exact solution, t\omega_{pe} = 0', linestyle='--', color='black')
-    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce[5 , :, ...]) ** 2, axis=[-3, -2, -1]), label='Approx. solution, t\omega_{pe} = 5', linestyle='-', color='blue')
-    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce_exact_5) ** 2, axis=[-3, -2, -1]), label='Exact solution, t\omega_{pe} = 5', linestyle=':', color='black')
-    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce[10 , :, ...]) ** 2, axis=[-3, -2, -1]), label='Approx. solution, t\omega_{pe} = 10', linestyle='-', color='green')
-    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce_exact_10) ** 2, axis=[-3, -2, -1]), label='Exact solution, t\omega_{pe} = 10', linestyle='-.', color='black')
+    plt.figure(figsize=(8, 6))
+    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce[0 , :, ...]) ** 2, axis=[-3, -2, -1]), label='Approx. solution, t\omega_{pe} = 0', linestyle='-', color='red', linewidth=3.0)
+    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce_exact_0) ** 2, axis=[-3, -2, -1]), label='Exact solution, t\omega_{pe} = 0', linestyle='--', color='black', linewidth=3.0)
+    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce[2 , :, ...]) ** 2, axis=[-3, -2, -1]), label='Approx. solution, t\omega_{pe} = 2', linestyle='-', color='blue', linewidth=3.0)
+    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce_exact_2) ** 2, axis=[-3, -2, -1]), label='Exact solution, t\omega_{pe} = 2', linestyle=':', color='black', linewidth=3.0)
+    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce[5 , :, ...]) ** 2, axis=[-3, -2, -1]), label='Approx. solution, t\omega_{pe} = 5', linestyle='-', color='green', linewidth=3.0)
+    plt.plot(jnp.arange(12), jnp.mean(jnp.abs(Ce_exact_5) ** 2, axis=[-3, -2, -1]), label='Exact solution, t\omega_{pe} = 5', linestyle='-.', color='black', linewidth=3.0)
     plt.xlabel(r'$n$', fontsize=16)
     plt.ylabel(r'$\langle|C_{e, n}|^2\rangle$', fontsize=16)
     plt.title(r'$\nu = 0$', fontsize=16)
-    # plt.legend()
+    plt.legend()
     plt.yscale('log')
     plt.show()
     
+    # Energy vs t.
+    plt.figure(figsize=(8, 6))
+    # plt.yscale("log")
+    plt.plot(t, plasma_energy, label='Plasma energy', linestyle='-', color='red', linewidth=3.0)
+    plt.plot(t, EM_energy, label='EM energy', linestyle='-', color='blue', linewidth=3.0)
+    plt.plot(t, plasma_energy + EM_energy, label='Total energy', linestyle='-', color='green', linewidth=3.0)
+
+    plt.xlabel(r'$t\omega_{pe}$', fontsize=16)
+    plt.ylabel(r'Energy', fontsize=16)
+    plt.xlim((0,3))
+    # plt.ylim((4,12))
+    plt.title(r'$\nu = 0$', fontsize=16)
+    plt.legend()
+
+    plt.show()
 
 
 if __name__ == "__main__":
