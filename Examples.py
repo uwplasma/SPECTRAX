@@ -125,3 +125,29 @@ def density_perturbation_solution(Lx, Omega_ce, mi_me):
     # C1_exact = (lambda t, x: -(1 / (jnp.sqrt(2) * vte) ** 3) * (kx * t * vte * dn * jnp.cos(kx * x) * jnp.exp(-(kx * vte * t) ** 2 / 2)))
     
     return B, E, fe_exact_0, fe_exact_2, fe_exact_5, C0_exact
+
+
+def Landau_damping_1D(Lx, Omega_ce, mi_me):
+    """
+    I have to add docstrings!
+    """
+    
+    vte = jnp.sqrt(0.25 / 2) # Electron thermal velocity.
+    vti = vte * jnp.sqrt(1 / mi_me) # Ion thermal velocity.
+    
+    kx = 2 * jnp.pi / Lx # Wavenumber.
+    
+    dn = 0.1 # Density fluctuation
+    
+    # Magnetic and electric fields.
+    B = lambda x, y, z: jnp.array([Omega_ce * jnp.ones_like(x), jnp.zeros_like(y), jnp.zeros_like(z)])
+    E = lambda x, y, z: jnp.array([(dn / kx) * jnp.cos(kx * x), jnp.zeros_like(y), jnp.zeros_like(z)]) # Is this consistent with fe, fi?
+    
+    # Electron and ion distribution functions.
+    fe = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vte ** 3) * 
+                                        jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vte ** 2))) * 
+                                        (1 + dn * jnp.sin(kx * x)))
+    fi = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vti ** 3) * 
+                                        jnp.exp(-(vx ** 2 + vy ** 2 + vz ** 2) / (2 * vti ** 2))))
+    
+    return B, E, fe, fi
