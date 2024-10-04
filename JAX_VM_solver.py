@@ -420,7 +420,7 @@ def main():
     t_steps, t_max = parameters['t_steps'], parameters['t_max']
     
     # Save parameters into txt.
-    with open('C:\Cristian\Postdoc\Madison\Code\Simulations\Landau_damping_1D_HF_ini\Landau_damping_1D_S2.txt', 'w') as file:
+    with open('C:\Cristian\Postdoc\Madison\Code\Simulations\Landau_damping_1D_HF_ini\Landau_damping_1D_S8.txt', 'w') as file:
         file.write(f"Nx, Ny, Nz: {Nx}, {Ny}, {Nz}\n")
         file.write(f"Nvx, Nvy, Nvz: {Nvx}, {Nvy}, {Nvz}\n")
         file.write(f"Lx, Ly, Lz: {Lx}, {Ly}, {Lz}\n")
@@ -652,10 +652,10 @@ def main():
     # plt.yscale("log")
     # plt.plot(t, plasma_energy, label='Plasma energy', linestyle='-', color='red', linewidth=3.0)
     # plt.plot(t, (plasma_energy_2_Ck) / 3, label='Plasma energy ($C_{200}$)', linestyle='-', color='red', linewidth=3.0)
-    plt.plot(t, (plasma_energy_0_Ck) / 3, label='Plasma energy ($C_{000}$)', linestyle='-', color='red', linewidth=3.0)
+    # plt.plot(t, (plasma_energy_0_Ck) / 3, label='Plasma energy ($C_{000}$)', linestyle='-', color='red', linewidth=3.0)
 
     # plt.plot(t[9:992], plasma_energy_mov_avg, label='mov_avg(Plasma energy)', linestyle='-', color='black', linewidth=3.0)
-    # plt.plot(t, electric_energy_Fk, label='Electric energy', linestyle='-', color='blue', linewidth=3.0)
+    plt.plot(t, electric_energy_Fk, label='Electric energy', linestyle='-', color='blue', linewidth=3.0)
     # plt.plot(t, electric_energy_Fk + plasma_energy_2_Ck / 3, label='Total energy ($C_{200}$)', linestyle='-', color='red', linewidth=3.0)
     # plt.plot(t[:100], plasma_energy_2[:100] / Nx + 
     #          jnp.mean(E[:100, 0, ...] ** 2 + E[:100, 1, ...] ** 2 + E[:100, 2, ...] ** 2, 
