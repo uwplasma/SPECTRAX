@@ -15,11 +15,10 @@ from jax.experimental.ode import odeint
 # from quadax import quadgk
 from functools import partial
 from Examples import density_perturbation, density_perturbation_solution, Landau_damping_1D, Landau_damping_HF_1D
-import json
-import matplotlib.pyplot as plt
-import numpy as np
 
 jax.config.update("jax_enable_x64", True)
+
+
 
 def Hermite(n, x):
     """
@@ -54,6 +53,16 @@ def generate_Hermite_basis(xi_x, xi_y, xi_z, Nn, Nm, Np, indices):
     return Hermite_basis
 
 
+def moving_average(data, window_size):
+    """
+    I have to add docstrings!
+    """
+
+    data_array = jnp.array(data)
+    kernel = jnp.ones(window_size) / window_size
+    return jnp.convolve(data_array, kernel, mode='valid')
+
+
 def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
     """
     I have to add docstrings!
@@ -79,40 +88,17 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
     xi_z = (Vz - u[2]) / alpha[2]
 
     # Compute coefficients of Hermite decomposition of 3D velocity space.
-    # Possible improvement: integrate using quadax.quadgk.
     C_nmp = (trapezoid(trapezoid(trapezoid(
             (f(X, Y, Z, Vx, Vy, Vz) * Hermite(n, xi_x) * Hermite(m, xi_y) * Hermite(p, xi_z)) /
             jnp.sqrt(factorial(n) * factorial(m) * factorial(p) * 2 ** (n + m + p)),
             (vx - u[0]) / alpha[0], axis=-3), (vy - u[1]) / alpha[1], axis=-2), (vz - u[2]) / alpha[2], axis=-1))
 
-    # def integral_vz(x, y, z, vx, vy):
-    #     interval = jnp.array([-jnp.inf, jnp.inf])
-    #     integral = quadgk(lambda vz: f(x, y, z, vx, vy, vz) * Hermite(n, (vx - u[0]) / alpha[0]) * 
-    #                   Hermite(m, (vy - u[1]) / alpha[1]) * Hermite(p, (vz - u[2]) / alpha[2]) /
-    #             jnp.sqrt(factorial(n) * factorial(m) * factorial(p) * 2 ** (n + m + p)), interval)[0]
-    #     return integral
-
-    # def integral_vy(x, y, z, vx):
-    #     interval = jnp.array([-jnp.inf, jnp.inf])
-    #     return quadgk(lambda vy: integral_vz(x, y, z, vx, vy), interval)[0]
-
-    # def C(x, y, z):
-    #     interval = jnp.array([-jnp.inf, jnp.inf])
-    #     return quadgk(lambda vx: integral_vy(x, y, z, vx), interval)[0]
-
-
-    # x = jnp.linspace(0, Lx, Nx)
-    # y = jnp.linspace(0, Ly, Ny)
-    # z = jnp.linspace(0, Lz, Nz)
-    # X, Y, Z = jnp.meshgrid(x, y, z, indexing='ij')
-
-    # C_nmp = C(X, Y, Z)
+  
 
     return C_nmp
 
 
-# @partial(jax.jit, static_argnums=[7, 8, 9, 10, 11, 12])
-def initialize_system(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np):
+def initialize_system_real_space(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np):
     """
     I have to add docstrings!
     """
@@ -236,7 +222,7 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
     
     return dCk_s_dt
 
-# @partial(jax.jit, static_argnums=[10, 11, 12, 13, 14, 15, 16])
+
 def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):     
     
     # Define wave vectors.
@@ -283,7 +269,40 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     
     return dy_dt
 
-# @partial(jax.jit, static_argnums=[7, 8, 9, 10, 11, 12, 13, 14, 15])
+
+@partial(jax.jit, static_argnums=[8, 9, 10, 11, 12, 13, 14, 16])
+def VM_simulation(qs, nu, Omega_cs, alpha_s, mi_me, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns, t_max, t_steps):
+    
+   
+    # Load initial conditions.
+    # Ck_0, Fk_0 = initialize_system_real_space(Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np)
+
+    # Load initial conditions in Hermite-Fourier space.
+    Ck_0, Fk_0 = Landau_damping_HF_1D(Lx, Ly, Lz, Omega_cs[0], alpha_s[0], alpha_s[3], Nn)
+    
+    # Combine initial conditions.
+    initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
+
+    # Define the time array.
+    t = jnp.linspace(0, t_max, t_steps)
+    x = jnp.linspace(0, Lx, Nx)
+    T, X = jnp.meshgrid(t, x, indexing='ij')
+
+    dy_dt = partial(ode_system, qs=qs, nu=nu, Omega_cs=Omega_cs, alpha_s=alpha_s, u_s=u_s, Lx=Lx, Ly=Ly, Lz=Lz, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns)
+
+    # Solve the ODE system (I have to rewrite this part of the code).
+    result = odeint(dy_dt, initial_conditions, t)
+    
+    Ck = result[:,:(-6 * Nx * Ny * Nz)].reshape(len(t), Ns * Nn * Nm * Np, Nx, Ny, Nz)
+    Fk = result[:,(-6 * Nx * Ny * Nz):].reshape(len(t), 6, Nx, Ny, Nz)
+    
+    # jnp.save('Ck.npy', np.array(Ck))
+    # jnp.save('Fk.npy', np.array(Fk))
+    # jnp.save('t.npy', np.array(t))
+
+    return Ck, Fk, t
+
+
 def anti_transform(Ck, Fk, Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np):
     
     F = ifftn(ifftshift(Fk, axes=(-3, -2, -1)), axes=(-3, -2, -1))
@@ -376,370 +395,3 @@ def anti_transform(Ck, Fk, Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz
     
     
     return B, E, Ce, Ci, plasma_energy, EM_energy
-
-
-def moving_average(data, window_size):
-    """
-    Compute the moving average using NumPy's convolution function.
-
-    Parameters:
-    data (list or array-like): The input data.
-    window_size (int): The number of data points to include in each average.
-
-    Returns:
-    numpy.ndarray: An array containing the moving averages.
-    """
-    # if not data:
-    #     raise ValueError("Data array is empty.")
-    # if window_size <= 0:
-    #     raise ValueError("Window size must be a positive integer.")
-    # if window_size > len(data):
-    #     raise ValueError("Window size cannot be larger than the data length.")
-
-    data_array = np.array(data)
-    kernel = np.ones(window_size) / window_size
-    return np.convolve(data_array, kernel, mode='valid')
-
-
-def main():
-    # Load simulation parameters.
-    with open('plasma_parameters_Landau_damping_HF_1D.json', 'r') as file:
-        parameters = json.load(file)
-    
-    # Unpack parameters.
-    Nx, Ny, Nz = parameters['Nx'], parameters['Ny'], parameters['Nz']
-    Nvx, Nvy, Nvz = parameters['Nvx'], parameters['Nvy'], parameters['Nvz']
-    Lx, Ly, Lz = parameters['Lx'], parameters['Ly'], parameters['Lz']
-    Nn, Nm, Np, Ns = parameters['Nn'], parameters['Nm'], parameters['Np'], parameters['Ns']
-    mi_me = parameters['mi_me']
-    Omega_cs = parameters['Omega_ce'] * jnp.array([1.0, 1.0 / mi_me])
-    qs = jnp.array(parameters['qs'])
-    alpha_s = jnp.array(parameters['alpha_s'])
-    u_s = jnp.array(parameters['u_s'])
-    nu = parameters['nu']
-    t_steps, t_max = parameters['t_steps'], parameters['t_max']
-    
-    # Save parameters into txt.
-    with open('C:\Cristian\Postdoc\Madison\Code\Simulations\Landau_damping_1D_HF_ini\Landau_damping_1D_S8.txt', 'w') as file:
-        file.write(f"Nx, Ny, Nz: {Nx}, {Ny}, {Nz}\n")
-        file.write(f"Nvx, Nvy, Nvz: {Nvx}, {Nvy}, {Nvz}\n")
-        file.write(f"Lx, Ly, Lz: {Lx}, {Ly}, {Lz}\n")
-        file.write(f"Nn, Nm, Np, Ns: {Nn}, {Nm}, {Np}, {Ns}\n")
-        file.write(f"mi_me: {mi_me}\n")
-        file.write(f"Omega_cs: {Omega_cs.tolist()}\n")
-        file.write(f"qs: {qs.tolist()}\n")
-        file.write(f"alpha_s: {alpha_s.tolist()}\n")
-        file.write(f"u_s: {u_s.tolist()}\n")
-        file.write(f"nu: {nu}\n")
-        file.write(f"t_steps, t_max: {t_steps}, {t_max}\n")
-
-    # Load initial conditions.
-    # Ck_0, Fk_0 = initialize_system(Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np)
-    
-    
-    # Load initial conditions in Hermite-Fourier space.
-    Ck_0, Fk_0 = Landau_damping_HF_1D(Lx, Omega_cs[0], alpha_s[0], alpha_s[3], Nn)
-    
-
-    # Combine initial conditions.
-    initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
-
-    # Define the time array.
-    t = jnp.linspace(0, t_max, t_steps)
-    x = jnp.linspace(0, Lx, Nx)
-    T, X = jnp.meshgrid(t, x, indexing='ij')
-
-    dy_dt = partial(ode_system, qs=qs, nu=nu, Omega_cs=Omega_cs, alpha_s=alpha_s, u_s=u_s, Lx=Lx, Ly=Ly, Lz=Lz, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns)
-
-    # Solve the ODE system (I have to rewrite this part of the code).
-    result = odeint(dy_dt, initial_conditions, t)
-    
-    Ck = result[:,:(-6 * Nx * Ny * Nz)].reshape(len(t), Ns * Nn * Nm * Np, Nx, Ny, Nz)
-    Fk = result[:,(-6 * Nx * Ny * Nz):].reshape(len(t), 6, Nx, Ny, Nz)
-    
-    # Define wave vectors.
-    # kx = (jnp.arange(-Nx//2, Nx//2) + 1) * 2 * jnp.pi
-    # ky = (jnp.arange(-Ny//2, Ny//2) + 1) * 2 * jnp.pi
-    # kz = (jnp.arange(-Nz//2, Nz//2) + 1) * 2 * jnp.pi
-    
-    # Create 3D grids of kx, ky, kz.
-    # kx_grid, ky_grid, kz_grid = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    
-    # divBk2_mean = jnp.mean(jnp.array([kx_grid * Fk[i, 3, ...] + ky_grid * Fk[i, 4, ...] + kz_grid * Fk[i, 5, ...] for i in jnp.arange(len(t))]) ** 2, axis=[1, 2, 3])
-    
-    B, E, Ce, Ci, plasma_energy, EM_energy = anti_transform(Ck, Fk, Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np)
-    
-    # Cn002 = jnp.mean(Ce[:, :Nn, ...], axis=[2, 3, 4])
-    
-    # B_exact, E_exact, fe_exact_0, fe_exact_2, fe_exact_5, C0_exact= density_perturbation_solution(Lx, Omega_cs[0], mi_me)    
-    # C0_x_t_exact = C0_exact(T, X)
-    # C1_x_t_exact = C1_exact(T, X)
-    
-    # Ce_exact_0 = (jax.vmap(
-    #     compute_C_nmp, in_axes=(
-    #         None, None, None, None, None, None, None, None, None, None, None, None, 0))
-    #     (fe_exact_0, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
-    
-    # Ce_exact_2 = (jax.vmap(
-    #     compute_C_nmp, in_axes=(
-    #         None, None, None, None, None, None, None, None, None, None, None, None, 0))
-    #     (fe_exact_2, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
-    
-    # Ce_exact_5 = (jax.vmap(
-    #     compute_C_nmp, in_axes=(
-    #         None, None, None, None, None, None, None, None, None, None, None, None, 0))
-    #     (fe_exact_5, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
-    
-    # Plot magnetic field.
-    plt.plot(t, jnp.sqrt(jnp.mean(E[:, 0, :, 0, 0].real ** 2, axis=1)), label='$B_{x,rms}$', linestyle='-', color='red')
-    plt.plot(t, jnp.sqrt(jnp.mean(E[:, 1, :, 0, 0].real ** 2, axis=1)), label='$B_{y,rms}$', linestyle='--', color='blue')
-    plt.plot(t, jnp.sqrt(jnp.mean(E[:, 2, :, 0, 0].real ** 2, axis=1)), label='$B_{z,rms}$', linestyle='-.', color='green')
-
-    plt.xlabel('$t\omega_{pe}$')
-    plt.ylabel('$B_{rms}$')
-    plt.title('Magnetic field vs. Time')
-
-    plt.legend()
-
-    plt.show()
-    
-    # C0e vs C0i.
-    plt.figure(figsize=(8, 6))
-    plt.plot(x, Ce[0, :, 0, 0], label='$C_{e,0}$, $t\omega_{pe} = 0$', linestyle='-', color='red', linewidth=3.0)
-    plt.plot(x, Ci[0, :, 0, 0], label='$C_{i,0}$, $t\omega_{pe} = 0$', linestyle='--', color='blue', linewidth=3.0)
-    plt.xlabel(r'$x/d_e$', fontsize=16)
-    plt.ylabel(r'$C_0$', fontsize=16)
-    plt.xlim((0,3))
-    # plt.ylim((4,12))
-    plt.title(rf'$\nu ={nu}, N_x = {Nx}, N_n = {Nn}$', fontsize=16)
-    plt.legend().set_draggable(True)
-
-    plt.show()
-    
-    # C0 vs t.
-    plt.figure(figsize=(8, 6))
-    plt.plot(x, Ce[0, 0, :, 0, 0], label='Approx. solution, $t\omega_{pe} = 0$', linestyle='-', color='red', linewidth=3.0)
-    # plt.plot(x, C0_x_t_exact[0, :].real, label='Exact solution, $t\omega_{pe} = 0$', linestyle='--', color='black', linewidth=3.0)
-    plt.plot(x, Ce[20, 0, :, 0, 0], label='Approx. solution, $t\omega_{pe} = 2$', linestyle='-', color='blue', linewidth=3.0)
-    # plt.plot(x, C0_x_t_exact[20, :].real, label='Exact solution, $t\omega_{pe} = 2$', linestyle=':', color='black', linewidth=3.0)
-    plt.plot(x, Ce[50, 0, :, 0, 0], label='Approx. solution, $t\omega_{pe} = 5$', linestyle='-', color='green', linewidth=3.0)
-    # plt.plot(x, C0_x_t_exact[50, :].real, label='Exact solution, $t\omega_{pe} = 5$', linestyle='-.', color='black', linewidth=3.0)
-
-    plt.xlabel(r'$x/d_e$', fontsize=16)
-    plt.ylabel(r'$C_{e, 0}$', fontsize=16)
-    plt.xlim((0,3))
-    # plt.ylim((4,12))
-    plt.title(rf'$\nu ={nu}, N_x = {Nx}, N_n = {Nn}$', fontsize=16)
-    plt.legend().set_draggable(True)
-
-    plt.show()
-    
-    # Charge density vs t. Fix plot labels.
-    plt.figure(figsize=(8, 6))
-    plt.plot(x, (Ci[0, 0, :, 0, 0] * alpha_s[3] * alpha_s[4] * alpha_s[5] - 
-                 Ce[0, 0, :, 0, 0] * alpha_s[0] * alpha_s[1] * alpha_s[2]), 
-             label='Approx. solution, $t\omega_{pe} = 0$', linestyle='-', color='red', linewidth=3.0)
-    plt.plot(x, (Ci[200, 0, :, 0, 0] * alpha_s[3] * alpha_s[4] * alpha_s[5] - 
-                 Ce[200, 0, :, 0, 0] * alpha_s[0] * alpha_s[1] * alpha_s[2]), 
-             label='Approx. solution, $t\omega_{pe} = 20$', linestyle='-', color='blue', linewidth=3.0)
-    plt.plot(x, (Ci[500, 0, :, 0, 0] * alpha_s[3] * alpha_s[4] * alpha_s[5] - 
-                 Ce[500, 0, :, 0, 0] * alpha_s[0] * alpha_s[1] * alpha_s[2]), 
-             label='Approx. solution, $t\omega_{pe} = 50$', linestyle='-', color='green', linewidth=3.0)
-    plt.plot(x, (Ci[1000, 0, :, 0, 0] * alpha_s[3] * alpha_s[4] * alpha_s[5] - 
-                 Ce[1000, 0, :, 0, 0] * alpha_s[0] * alpha_s[1] * alpha_s[2]), 
-             label='Approx. solution, $t\omega_{pe} = 100$', linestyle='-', color='magenta', linewidth=3.0)
-
-    plt.xlabel(r'$x/d_e$', fontsize=16)
-    plt.ylabel(r'Charge density', fontsize=16)
-    plt.xlim((0,3))
-    # plt.ylim((4,12))
-    plt.title(rf'$\nu ={nu}, N_x = {Nx}, N_n = {Nn}$', fontsize=16)
-    plt.legend().set_draggable(True)
-
-    plt.show()
-    
-    # Electric field vs t. Fix plot labels.
-    plt.figure(figsize=(8, 6))
-    plt.plot(x, E[0, 0, :, 0, 0], label='Approx. solution, $t\omega_{pe} = 0$', linestyle='-', color='red', linewidth=3.0)
-    plt.plot(x, E[200, 0, :, 0, 0], label='Approx. solution, $t\omega_{pe} = 20$', linestyle='-', color='blue', linewidth=3.0)
-    plt.plot(x, E[500, 0, :, 0, 0], label='Approx. solution, $t\omega_{pe} = 50$', linestyle='-', color='green', linewidth=3.0)
-    plt.plot(x, E[1000, 0, :, 0, 0], label='Approx. solution, $t\omega_{pe} = 100$', linestyle='-', color='magenta', linewidth=3.0)
-
-    plt.xlabel(r'$x/d_e$', fontsize=16)
-    plt.ylabel(r'Electric field', fontsize=16)
-    plt.xlim((0,2.5))
-    # plt.ylim((4,12))
-    plt.title(rf'$\nu ={nu}, N_x = {Nx}, N_n = {Nn}$', fontsize=16)
-    plt.legend().set_draggable(True)
-
-    plt.show()
-    
-    # Derivative of Electric field vs t. Fix plot labels.
-    plt.figure(figsize=(8, 6))
-    plt.plot(x, jnp.gradient(E[0, 0, :, 0, 0], x[1]-x[0]), label='Approx. solution, $t\omega_{pe} = 0$', linestyle='-', color='red', linewidth=3.0)
-    plt.plot(x, jnp.gradient(E[200, 0, :, 0, 0], x[1]-x[0]), label='Approx. solution, $t\omega_{pe} = 20$', linestyle='-', color='blue', linewidth=3.0)
-    plt.plot(x, jnp.gradient(E[500, 0, :, 0, 0], x[1]-x[0]), label='Approx. solution, $t\omega_{pe} = 50$', linestyle='-', color='green', linewidth=3.0)
-    plt.plot(x, jnp.gradient(E[1000, 0, :, 0, 0], x[1]-x[0]), label='Approx. solution, $t\omega_{pe} = 100$', linestyle='-', color='magenta', linewidth=3.0)
-
-    plt.xlabel(r'$x/d_e$', fontsize=16)
-    plt.ylabel(r'$\partial_xE_x$', fontsize=16)
-    plt.xlim((0,2.5))
-    # plt.ylim((4,12))
-    plt.title(rf'$\nu ={nu}, N_x = {Nx}, N_n = {Nn}$', fontsize=16)
-    plt.legend().set_draggable(True)
-
-    plt.show()
-    
-    # C0 period.
-    plt.figure(figsize=(8, 6))
-    plt.plot(x, Ce[0 ,0, :, 0, 0], label='Approx. solution, $t\omega_{pe} = 0$', linestyle='-', color='red', linewidth=3.0)
-    plt.plot(x, Ce[243 ,0, :, 0, 0], label='Approx. solution, $t\omega_{pe} = 24.3$', linestyle='--', color='black', linewidth=3.0)
-    plt.plot(x, Ce[245 ,0, :, 0, 0], label='Approx. solution, $t\omega_{pe} = 24.5$', linestyle=':', color='blue', linewidth=3.0)
-    # plt.plot(x, Ce[113 ,0, :, 1, 1].real, label='Approx. solution, $t\omega_{pe} = 10$', linestyle='--', color='green', linewidth=3.0)
-    # plt.plot(x, Ce[64 ,0, :, 1, 1].real, label='Approx. solution, t\omega_{pe} = 6.4', linestyle='-', color='magenta', linewidth=3.0)
-    plt.xlabel(r'$x/d_e$', fontsize=16)
-    plt.ylabel(r'$C_{e, 0}$', fontsize=16)
-    plt.xlim((0,3))
-    # plt.ylim((4,12))
-    plt.title(rf'$\nu ={nu}, N_x = {Nx}, N_n = {Nn}$' + r'$, T_{theo}\omega_{pe} = 24.5$', fontsize=16)
-    plt.legend().set_draggable(True)
-
-    plt.show()
-    
-    # Hermite coefficients at fixed times.
-    plt.figure(figsize=(8, 6))
-    plt.plot(jnp.arange(Nn), jnp.mean(jnp.abs(Ci[0 , :, ...]) ** 2, axis=[-3, -2, -1]), label='Approx. solution, $t\omega_{pe} = 0$', linestyle='-', color='red', linewidth=3.0)
-    # plt.plot(jnp.arange(Nn), jnp.mean(jnp.abs(Ce_exact_0) ** 2, axis=[-3, -2, -1]), label='Exact solution, $t\omega_{pe} = 0$', linestyle='--', color='black', linewidth=3.0)
-    plt.plot(jnp.arange(Nn), jnp.mean(jnp.abs(Ci[20 , :, ...]) ** 2, axis=[-3, -2, -1]), label='Approx. solution, $t\omega_{pe} = 2$', linestyle='-', color='blue', linewidth=3.0)
-    # plt.plot(jnp.arange(Nn), jnp.mean(jnp.abs(Ce_exact_2) ** 2, axis=[-3, -2, -1]), label='Exact solution, $t\omega_{pe} = 2$', linestyle=':', color='black', linewidth=3.0)
-    plt.plot(jnp.arange(Nn), jnp.mean(jnp.abs(Ci[50 , :, ...]) ** 2, axis=[-3, -2, -1]), label='Approx. solution, $t\omega_{pe} = 5$', linestyle='-', color='green', linewidth=3.0)
-    # plt.plot(jnp.arange(Nn), jnp.mean(jnp.abs(Ce_exact_5) ** 2, axis=[-3, -2, -1]), label='Exact solution, $t\omega_{pe} = 5$', linestyle='-.', color='black', linewidth=3.0)
-    plt.plot(jnp.arange(Nn), jnp.mean(jnp.abs(Ci[100 , :, ...]) ** 2, axis=[-3, -2, -1]), label='Approx. solution, $t\omega_{pe} = 10$', linestyle='-', color='magenta', linewidth=3.0)
-    plt.xlabel(r'$n$', fontsize=16)
-    plt.ylabel(r'$\langle|C_{i, n}|^2\rangle$', fontsize=16)
-    plt.title(rf'$\nu ={nu}, N_x = {Nx}, N_n = {Nn}$', fontsize=16)
-    plt.legend().set_draggable(True)
-    plt.yscale('log')
-    plt.show()
-    
-    # Energy vs t.
-    
-    plasma_energy_0 = jnp.mean(0.5 * ((0.5 * (alpha_s[0] ** 2 + alpha_s[1] ** 2 + alpha_s[2] ** 2)) * 
-                                         alpha_s[0] * alpha_s[1] * alpha_s[2] * Ce[:, 0, ...]) + 
-                               0.5 * mi_me * ((0.5 * (alpha_s[3] ** 2 + alpha_s[4] ** 2 + alpha_s[5] ** 2)) * 
-                                                  alpha_s[3] * alpha_s[4] * alpha_s[5] * Ci[:, 0, ...]), axis=(-3, -2, -1))
-    
-    plasma_energy_2 = jnp.mean(0.5 * (1 / jnp.sqrt(2)) * (alpha_s[0] ** 2) * Ce[:, 2, ...] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) * 
-                                                      alpha_s[0] * alpha_s[1] * alpha_s[2] + 
-                               0.5 * mi_me * (1 / jnp.sqrt(2)) * (alpha_s[3] ** 2) * Ci[:, 2, ...] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) * 
-                                                              alpha_s[3] * alpha_s[4] * alpha_s[5], axis=(-3, -2, -1))
-    
-    
-    plasma_energy_0_Ck = (0.5 * ((0.5 * (alpha_s[0] ** 2 + alpha_s[1] ** 2 + alpha_s[2] ** 2)) * 
-                                         alpha_s[0] * alpha_s[1] * alpha_s[2] * Ck[:, 0, 1, 0, 0].real) + 
-                                  0.5 * mi_me * ((0.5 * (alpha_s[3] ** 2 + alpha_s[4] ** 2 + alpha_s[5] ** 2)) * 
-                                                  alpha_s[3] * alpha_s[4] * alpha_s[5] * Ck[:, Nn, 1, 0, 0].real))
-    
-    plasma_energy_2_Ck = (0.5 * (1 / jnp.sqrt(2)) * (alpha_s[0] ** 2) * Ck[:, 2, 1, 0, 0].real * alpha_s[0] * alpha_s[1] * alpha_s[2] + 
-                                  0.5 * mi_me * (1 / jnp.sqrt(2)) * (alpha_s[3] ** 2) * Ck[:, Nn + 2, 1, 0, 0].real * alpha_s[3] * alpha_s[4] * alpha_s[5])
-    
-    electric_energy_Fk = 0.5 * jnp.mean(Fk[:, 0, :, 0, 0] ** 2, axis=-1) * Omega_cs[0] ** 2
-    
-    plasma_energy_mov_avg = moving_average(plasma_energy_2_Ck / 3, 101)
-    electric_energy_mov_avg = moving_average(electric_energy_Fk, 101)
-    
-    plt.figure(figsize=(8, 6))
-    # plt.yscale("log")
-    # plt.plot(t, plasma_energy, label='Plasma energy', linestyle='-', color='red', linewidth=3.0)
-    # plt.plot(t, (plasma_energy_2_Ck) / 3, label='Plasma energy ($C_{200}$)', linestyle='-', color='red', linewidth=3.0)
-    # plt.plot(t, (plasma_energy_0_Ck) / 3, label='Plasma energy ($C_{000}$)', linestyle='-', color='red', linewidth=3.0)
-
-    # plt.plot(t[9:992], plasma_energy_mov_avg, label='mov_avg(Plasma energy)', linestyle='-', color='black', linewidth=3.0)
-    plt.plot(t, electric_energy_Fk, label='Electric energy', linestyle='-', color='blue', linewidth=3.0)
-    # plt.plot(t, electric_energy_Fk + plasma_energy_2_Ck / 3, label='Total energy ($C_{200}$)', linestyle='-', color='red', linewidth=3.0)
-    # plt.plot(t[:100], plasma_energy_2[:100] / Nx + 
-    #          jnp.mean(E[:100, 0, ...] ** 2 + E[:100, 1, ...] ** 2 + E[:100, 2, ...] ** 2, 
-    #                   axis=(-3, -2, -1)) * Omega_cs[0] ** 2 / 2, label='(Plasma energy ($C_{200}$))/Nx + Electric energy', 
-    #          linestyle='-', color='red', linewidth=3.0)
-    # plt.plot(t, jnp.mean(E[:, 0, ...] ** 2 + E[:, 1, ...] ** 2 + E[:, 2, ...] ** 2, axis=(-3, -2, -1)) * Omega_cs[0] ** 2 / 2, label='Electric energy', linestyle='-', color='blue', linewidth=3.0)
-    # plt.plot(t[5:996], electric_energy_mov_avg, label='mov_avg(Electric energy)', linestyle='-', color='black', linewidth=3.0)
-    # plt.plot(t[:100], EM_energy[:100], label='EM energy', linestyle='-', color='blue', linewidth=3.0)
-    # plt.plot(t, plasma_energy + EM_energy, label='Total energy', linestyle='-', color='green', linewidth=3.0)
-
-    plt.xlabel(r'$t\omega_{pe}$', fontsize=16)
-    plt.ylabel(r'Energy', fontsize=16)
-    # plt.xlim((0,t_max))
-    # plt.ylim((4,12))
-    # plt.title(rf'$\nu = {nu}, N_x = {Nx}, N_n = {Nn}$', fontsize=16)
-    plt.title(rf'$\nu = {nu}, L_x = {Lx}, N_n = {Nn}$', fontsize=16)
-    plt.legend().set_draggable(True)
-
-    plt.show()
-    
-    # Ck, Fk vs time.
-    plt.figure(figsize=(8, 6))
-    plt.plot(t, Ck[:, 0, 1, 0, 0].imag, label='Ck', linestyle='-', color='blue', linewidth=3.0)
-
-    plt.xlabel(r'$t\omega_{pe}$', fontsize=16)
-    plt.ylabel(r'Energy', fontsize=16)
-    # plt.xlim((0,t_max))
-    # plt.ylim((4,12))
-    plt.title(rf'$\nu = {nu}, N_x = {Nx}, N_n = {Nn}$', fontsize=16)
-    plt.legend().set_draggable(True)
-
-    plt.show()
-    
-    # Entropy vs t.
-    plt.figure(figsize=(8, 6))
-    # plt.yscale("log")
-    plt.plot(t, entropy_e, label='Plasma energy', linestyle='-', color='red', linewidth=3.0)
-
-    plt.xlabel(r'$t\omega_{pe}$', fontsize=16)
-    plt.ylabel(r'Energy', fontsize=16)
-    plt.xlim((0,t_max))
-    # plt.ylim((4,12))
-    plt.title(rf'$\nu ={nu}, N_x = {Nx}, N_n = {Nn}$', fontsize=16)
-    plt.legend()
-
-    plt.show()
-    
-    # C vs n vs t.
-
-    Ce2 = jnp.mean(jnp.abs(Ce.at[:, 0, ...].add(-1 / (alpha_s[0] * alpha_s[1] * alpha_s[2]))) ** 2, axis=[-3, -2, -1])
-
-    plt.imshow(jnp.log10(Ce2), aspect='auto', cmap='viridis', interpolation='none', origin='lower', extent=(0, Nn, 0, t_max))
-    plt.colorbar(label=r'$log_{10}(\langle |C_{e,n}|^2\rangle (t))$').ax.yaxis.label.set_size(16)
-    # plt.colorbar(label=r'$\langle |C_{e,n}|^2\rangle (t)$').ax.yaxis.label.set_size(16)
-    # plt.plot(jnp.arange(Nn) + 0.5, 3.6*jnp.sqrt(jnp.arange(Nn)), label='$3.60\sqrt{n}$', linestyle='-', color='black', linewidth=3.0)
-    plt.xlabel('n', fontsize=16)
-    plt.ylabel('t', fontsize=16)
-    plt.title(rf'$\nu ={nu}, N_x = {Nx}, N_n = {Nn}$', fontsize=16)
-    # plt.legend()
-    plt.show()
-    
-    
-    Ci2 = jnp.mean(jnp.abs(Ci.at[:, 0, ...].add(-1 / (alpha_s[3] * alpha_s[4] * alpha_s[5]))) ** 2, axis=[-3, -2, -1])
-
-    plt.imshow(jnp.log10(Ci2), aspect='auto', cmap='viridis', interpolation='none', origin='lower', extent=(0, Nn, 0, t_max))
-    plt.colorbar(label=r'$log_{10}(\langle |C_{i,n}|^2\rangle (t))$').ax.yaxis.label.set_size(16)
-    # plt.colorbar(label=r'$\langle |C_{i,n}|^2\rangle (t)$').ax.yaxis.label.set_size(16)
-    # plt.plot(jnp.arange(Nn) + 0.5, 3.6*jnp.sqrt(jnp.arange(Nn)), label='$3.60\sqrt{n}$', linestyle='-', color='black', linewidth=3.0)
-    plt.xlabel('n', fontsize=16)
-    plt.ylabel('t', fontsize=16)
-    plt.title(rf'$\nu ={nu}, N_x = {Nx}, N_n = {Nn}$', fontsize=16)
-    # plt.legend()
-    plt.show()
-    
-
-    # C vs n vs k.
-    plt.imshow(jnp.transpose(jnp.log10(Ck[100, :Nn * Nm * Np, :, 1, 1].real)), aspect='auto', cmap='viridis', 
-            interpolation='none', origin='lower', extent=(0, Nn, jnp.min(kx), jnp.max(kx)))
-    plt.colorbar(label=r'$log_{10}(Real(C_{n, k}))$').ax.yaxis.label.set_size(16)  # Add a color bar to show the mapping of values to colors
-    plt.xlabel('n', fontsize=16)
-    plt.ylabel('k', fontsize=16)
-    plt.title(rf'$\nu ={nu}, N_x = {Nx}, N_n = {Nn}$' + r'$, t\omega_{pe}=10$', fontsize=16)
-    plt.show()
-
-
-if __name__ == "__main__":
-    main()

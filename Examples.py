@@ -87,6 +87,35 @@ def density_perturbation(Lx, Omega_ce, mi_me):
     
     return B, E, fe, fi
 
+def density_perturbation_1D(Lx, Ly, Lz, Omega_ce, alpha_e, alpha_i, Nn):
+    """
+    I have to add docstrings!
+    """
+    
+    vte = alpha_e / jnp.sqrt(2) # Electron thermal velocity.
+    vti = alpha_i / jnp.sqrt(2) # Ion thermal velocity.
+    
+    kx = 2 * jnp.pi / Lx # Wavenumber.
+    
+    dn = 0.01 # Density fluctuation.
+    
+    # Fourier components of magnetic and electric fields.
+    Fk_0 = jnp.zeros((6, 3, 1, 1), dtype=jnp.complex128)
+    Fk_0 = Fk_0.at[3, 1, 0, 0].set(Omega_ce)
+    
+    # Hermite-Fourier components of electron and ion distribution functions.
+    C0_mk, C0_0, C0_k = 0 + 1j * (1 / 2 ** (5/2)) * (1 / vte ** 3) * dn, 1 / ((2 ** (3/2)) * (vte ** 3)) + 0 * 1j, 0 - 1j * (1 / 2 ** (5/2)) * (1 / vte ** 3) * dn
+    Ci0_0 = 1 / ((2 ** (3/2)) * (vti ** 3)) + 0 * 1j
+    Ck_0 = jnp.zeros((2 * Nn, 3, 1, 1), dtype=jnp.complex128)
+    Ck_0 = Ck_0.at[0, 0, 0, 0].set(C0_mk)
+    Ck_0 = Ck_0.at[0, 1, 0, 0].set(C0_0)
+    Ck_0 = Ck_0.at[0, 2, 0, 0].set(C0_k)
+    Ck_0 = Ck_0.at[Nn, 0, 0, 0].set(C0_mk)
+    Ck_0 = Ck_0.at[Nn, 1, 0, 0].set(C0_0)
+    Ck_0 = Ck_0.at[Nn, 2, 0, 0].set(C0_k)
+
+    return Ck_0, Fk_0
+
 
 def density_perturbation_solution(Lx, Omega_ce, mi_me):
     """
@@ -153,7 +182,7 @@ def Landau_damping_1D(Lx, Omega_ce, mi_me):
     return B, E, fe, fi
 
 
-def Landau_damping_HF_1D(Lx, Omega_ce, alpha_e, alpha_i, Nn):
+def Landau_damping_HF_1D(Lx, Ly, Lz, Omega_ce, alpha_e, alpha_i, Nn):
     """
     I have to add docstrings!
     """
@@ -166,12 +195,15 @@ def Landau_damping_HF_1D(Lx, Omega_ce, alpha_e, alpha_i, Nn):
     dn = 0.01 # Density fluctuation.
     
     # Fourier components of magnetic and electric fields.
-    Fk_0 = jnp.array([[[[dn / (2 * kx) + 0 * 1j]], [[0 + 0 * 1j]], [[dn / (2 * kx) + 0 * 1j]]], [[[0 + 0 * 1j]], [[0 + 0 * 1j]], [[0 + 0 * 1j]]], [[[0 + 0 * 1j]], [[0 + 0 * 1j]], [[0 + 0 * 1j]]], 
-                      [[[0 + 0 * 1j]], [[Omega_ce + 0 * 1j]], [[0 + 0 * 1j]]], [[[0 + 0 * 1j]], [[0 + 0 * 1j]], [[0 + 0 * 1j]]], [[[0 + 0 * 1j]], [[0 + 0 * 1j]], [[0 + 0 * 1j]]]])
+    Fk_0 = jnp.zeros((6, 3, 1, 1), dtype=jnp.complex128)
+    Fk_0 = Fk_0.at[0, 0, 0, 0].set(dn / (2 * kx))
+    Fk_0 = Fk_0.at[0, 2, 0, 0].set(dn / (2 * kx))
+    Fk_0 = Fk_0.at[3, 1, 0, 0].set(Omega_ce)
+    
     
     # Hermite-Fourier components of electron and ion distribution functions.
-    Ce0_mk, Ce0_0, Ce0_k = 0 + 1j * (1 / 2) * (1 / vte ** 3) * dn, (1 / vte ** 3) + 0 * 1j, 0 - 1j * (1 / 2) * (1 / vte ** 3) * dn
-    Ci0_0 = (1 / vti ** 3) + 0 * 1j
+    Ce0_mk, Ce0_0, Ce0_k = 0 + 1j * (1 / 2 ** (5/2)) * (1 / vte ** 3) * dn, 1 / ((2 ** (3/2)) * (vte ** 3)) + 0 * 1j, 0 - 1j * (1 / 2 ** (5/2)) * (1 / vte ** 3) * dn
+    Ci0_0 = 1 / ((2 ** (3/2)) * (vti ** 3)) + 0 * 1j
     Ck_0 = jnp.zeros((2 * Nn, 3, 1, 1), dtype=jnp.complex128)
     Ck_0 = Ck_0.at[0, 0, 0, 0].set(Ce0_mk)
     Ck_0 = Ck_0.at[0, 1, 0, 0].set(Ce0_0)
