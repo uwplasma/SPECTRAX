@@ -6,6 +6,7 @@ Created on Sun Jun 23 10:55:45 2024
 """
 
 import jax
+jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.scipy.signal import convolve
 from jax.numpy.fft import fftn, ifftn, fftshift, ifftshift, fftfreq
@@ -13,11 +14,10 @@ from jax.scipy.special import factorial
 from jax.scipy.integrate import trapezoid
 from jax.experimental.ode import odeint
 # from quadax import quadgk
+from diffrax import diffeqsolve, Dopri5, ODETerm, SaveAt, PIDController
 from functools import partial
-from Examples import density_perturbation, density_perturbation_solution, Landau_damping_1D, Landau_damping_HF_1D
-
-jax.config.update("jax_enable_x64", True)
-
+from Examples_1D import density_perturbation_1D, density_perturbation_solution, Landau_damping_1D, Landau_damping_HF_1D
+from Examples_2D import Kelvin_Helmholtz_2D
 
 
 def Hermite(n, x):
@@ -67,7 +67,7 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
     """
     I have to add docstrings!
     """
-
+    
     # Indices below represent order of Hermite polynomials.
     p = jnp.floor(indices / (Nn * Nm)).astype(int)
     m = jnp.floor((indices - p * Nn * Nm) / Nn).astype(int)
@@ -77,34 +77,44 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
     x = jnp.linspace(0, Lx, Nx)
     y = jnp.linspace(0, Ly, Ny)
     z = jnp.linspace(0, Lz, Nz)
-    vx = jnp.linspace(-5 * alpha[0], 5 * alpha[0], 40) # Possibly define limits in terms of thermal velocity or alpha.
-    vy = jnp.linspace(-5 * alpha[1], 5 * alpha[1], 40)
-    vz = jnp.linspace(-5 * alpha[2], 5 * alpha[2], 40)
-    X, Y, Z, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx, vy, vz, indexing='ij')
+    vx = jnp.linspace(-5 * alpha[0] + u[0], 5 * alpha[0] + u[0], 40)
+    vy = jnp.linspace(-5 * alpha[1] + u[1], 5 * alpha[1] + u[1], 40)
+    vz = jnp.linspace(-5 * alpha[2] + u[2], 5 * alpha[2] + u[2], 40)
+      
+    def add_C_nmp(i, C_nmp):
+        ivx = jnp.floor(i / (5 ** 2)).astype(int)
+        ivy = jnp.floor((i - ivx * 5 ** 2) / 5).astype(int)
+        ivz = (i - ivx * 5 ** 2 - ivy * 5).astype(int)
+        
+        vx_slice = jax.lax.dynamic_slice(vx, (ivx * 8,), (8,))
+        vy_slice = jax.lax.dynamic_slice(vy, (ivy * 8,), (8,))
+        vz_slice = jax.lax.dynamic_slice(vz, (ivz * 8,), (8,))
+        
+        X, Y, Z, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx_slice, vy_slice, vz_slice, indexing='ij')
 
-    # Define variables for Hermite polynomials.
-    xi_x = (Vx - u[0]) / alpha[0]
-    xi_y = (Vy - u[1]) / alpha[1]
-    xi_z = (Vz - u[2]) / alpha[2]
+        # Define variables for Hermite polynomials.
+        xi_x = (Vx - u[0]) / alpha[0]
+        xi_y = (Vy - u[1]) / alpha[1]
+        xi_z = (Vz - u[2]) / alpha[2]
 
-    # Compute coefficients of Hermite decomposition of 3D velocity space.
-    C_nmp = (trapezoid(trapezoid(trapezoid(
-            (f(X, Y, Z, Vx, Vy, Vz) * Hermite(n, xi_x) * Hermite(m, xi_y) * Hermite(p, xi_z)) /
-            jnp.sqrt(factorial(n) * factorial(m) * factorial(p) * 2 ** (n + m + p)),
-            (vx - u[0]) / alpha[0], axis=-3), (vy - u[1]) / alpha[1], axis=-2), (vz - u[2]) / alpha[2], axis=-1))
+        # Compute coefficients of Hermite decomposition of 3D velocity space.
+        return C_nmp + (trapezoid(trapezoid(trapezoid(
+                (f(X, Y, Z, Vx, Vy, Vz) * Hermite(n, xi_x) * Hermite(m, xi_y) * Hermite(p, xi_z)) /
+                jnp.sqrt(factorial(n) * factorial(m) * factorial(p) * 2 ** (n + m + p)),
+                (vx_slice - u[0]) / alpha[0], axis=-3), (vy_slice - u[1]) / alpha[1], axis=-2), (vz_slice - u[2]) / alpha[2], axis=-1))
+                
+    Nv = 125
+        
+    return jax.lax.fori_loop(0, Nv, add_C_nmp, jnp.zeros((Nx, Ny, Nz)))
 
-  
 
-    return C_nmp
-
-
-def initialize_system_real_space(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np):
+def initialize_system_xp(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):
     """
     I have to add docstrings!
     """
     
-    # Initialize fields and distributions.
-    B, E, fe, fi = Landau_damping_1D(Lx, Omega_ce, mi_me)
+    # # Initialize fields and distributions.
+    B, E, fe, fi = Kelvin_Helmholtz_2D(Lx, Ly, Omega_ce, alpha_s[0], alpha_s[1])
         
     # Hermite decomposition of dsitribution funcitons.
     Ce_0 = (jax.vmap(
@@ -117,7 +127,24 @@ def initialize_system_real_space(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, 
         (fi, alpha_s[3:], u_s[3:], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
 
     # Combine Ce_0 and Ci_0 into single array and compute the fast Fourier transform.
+    
     C_0 = jnp.concatenate([Ce_0, Ci_0])
+    
+    ############################################################################################################   
+    # Attempt to generalize to more than two species (work in progress).
+    
+    # B, E, f = density_perturbation_1D(Lx, Omega_ce, mi_me)
+    
+    # C_0 = jnp.zeros((Ns * Nn * Nm * Np))
+    # for s in jnp.arange(Ns):
+    #     C_s = (jax.vmap(compute_C_nmp, in_axes=(
+    #         None, None, None, None, None, None, None, None, None, None, None, None, 0))
+    #     (f[s], alpha_s[(s * 3):((s + 1) * 3)], u_s[(s * 3):((s + 1) * 3)], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
+        
+    #     C_0.at[(s * Ns * Nn * Nm * Np):((s + 1) * Ns * Nn * Nm * Np)].set(C_s)
+    
+    ############################################################################################################
+    
     Ck_0 = fftshift(fftn(C_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
     
     # Define 3D grid for functions E(x, y, z) and B(x, y, z).
@@ -192,10 +219,11 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
     #              (m * (m - 1) * (m - 2)) / ((Nm - 1) * (Nm - 2) * (Nm - 3)) +
     #              (p * (p - 1) * (p - 2)) / ((Np - 1) * (Np - 2) * (Np - 3))) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
     
-    Col = -nu * (n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
+    # Col = -nu * (n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
     
-    # Col = 0
-    
+    Col = -nu * ((n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) + 
+                 (m * (m - 1) * (m - 2)) / ((Nm - 1) * (Nm - 2) * (Nm - 3))) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
+        
     # Define ODEs for Hermite-Fourier coefficients.
     # Clossure is achieved by setting to zero coefficients with index out of range.
     dCk_s_dt = (- (kx_grid * 1j / Lx) * alpha[0] * (
@@ -223,6 +251,25 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
     return dCk_s_dt
 
 
+def ampere_maxwell_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
+    """
+    I have to add docstrings!
+    """
+      
+    # Add next term in the current. Body function of fori_loop below.
+    def add_current_term(s, partial_sum):
+        return partial_sum + qs[s] * alpha_s[s * 3] * alpha_s[s * 3 + 1] * alpha_s[s * 3 + 2] * (
+            (1 / jnp.sqrt(2)) * jnp.array([alpha_s[s * 3] * Ck[s * Nn * Nm * Np + 1, ...] * jnp.sign(Nn - 1),
+                                           alpha_s[s * 3 + 1] * Ck[s * Nn * Nm * Np + Nn + 1, ...] * jnp.sign(Nm - 1),
+                                           alpha_s[s * 3 + 2] * Ck[s * Nn * Nm * Np + Nn * Nm + 1, ...] * jnp.sign(Np - 1)]) + 
+                                jnp.array([u_s[s * 3] * Ck[s * Nn * Nm * Np, ...],
+                                           u_s[s * 3 + 1] * Ck[s * Nn * Nm * Np, ...],
+                                           u_s[s * 3 + 2] * Ck[s * Nn * Nm * Np, ...]]))
+    
+    # Return full current for Ns particle species.
+    return jax.lax.fori_loop(0, Ns, add_current_term, jnp.zeros_like(Ck[:3, ...]))
+
+
 def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):     
     
     # Define wave vectors.
@@ -244,24 +291,28 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
         compute_dCk_s_dt, 
         in_axes=(None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, 0))
         (Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, jnp.arange(Nn * Nm * Np * Ns)))
+    
+    
+    current = ampere_maxwell_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns)
         
     # Generate ODEs for Bk and Ek.
     dBk_dt = - 1j * cross_product(jnp.array([kx_grid/Lx, ky_grid/Ly, kz_grid/Lz]), Fk[:3, ...])
-    dEk_dt = 1j * cross_product(jnp.array([kx_grid/Lx, ky_grid/Ly, kz_grid/Lz]), Fk[3:, ...]) - \
-            (1 / Omega_cs[0]) * (qs[0] * alpha_s[0] * alpha_s[1] * alpha_s[2] * (
-            (1 / jnp.sqrt(2)) * jnp.array([alpha_s[0] * Ck[1, ...] * jnp.sign(Nn - 1),
-                                           alpha_s[1] * Ck[Nn + 1, ...] * jnp.sign(Nm - 1),
-                                           alpha_s[2] * Ck[Nn * Nm + 1, ...] * jnp.sign(Np - 1)]) + 
-                                jnp.array([u_s[0] * Ck[0, ...],
-                                           u_s[1] * Ck[0, ...],
-                                           u_s[2] * Ck[0, ...]])) + \
-                                qs[1] * alpha_s[3] * alpha_s[4] * alpha_s[5] * (
-            (1 / jnp.sqrt(2)) * jnp.array([alpha_s[3] * Ck[Nn * Nm * Np + 1, ...] * jnp.sign(Nn - 1),
-                                           alpha_s[4] * Ck[Nn + Nn * Nm * Np + 1, ...] * jnp.sign(Nm - 1),
-                                           alpha_s[5] * Ck[Nn * Nm + Nn * Nm * Np + 1, ...] * jnp.sign(Np - 1)]) + 
-                                jnp.array([u_s[3] * Ck[Nn * Nm * Np, ...],
-                                           u_s[4] * Ck[Nn * Nm * Np, ...],
-                                           u_s[5] * Ck[Nn * Nm * Np, ...]])))
+    dEk_dt = 1j * cross_product(jnp.array([kx_grid/Lx, ky_grid/Ly, kz_grid/Lz]), Fk[3:, ...]) - (1 / Omega_cs[0]) * current
+            
+            # (qs[0] * alpha_s[0] * alpha_s[1] * alpha_s[2] * (
+            # (1 / jnp.sqrt(2)) * jnp.array([alpha_s[0] * Ck[1, ...] * jnp.sign(Nn - 1),
+            #                                alpha_s[1] * Ck[Nn + 1, ...] * jnp.sign(Nm - 1),
+            #                                alpha_s[2] * Ck[Nn * Nm + 1, ...] * jnp.sign(Np - 1)]) + 
+            #                     jnp.array([u_s[0] * Ck[0, ...],
+            #                                u_s[1] * Ck[0, ...],
+            #                                u_s[2] * Ck[0, ...]])) + \
+            #                     qs[1] * alpha_s[3] * alpha_s[4] * alpha_s[5] * (
+            # (1 / jnp.sqrt(2)) * jnp.array([alpha_s[3] * Ck[Nn * Nm * Np + 1, ...] * jnp.sign(Nn - 1),
+            #                                alpha_s[4] * Ck[Nn + Nn * Nm * Np + 1, ...] * jnp.sign(Nm - 1),
+            #                                alpha_s[5] * Ck[Nn * Nm + Nn * Nm * Np + 1, ...] * jnp.sign(Np - 1)]) + 
+            #                     jnp.array([u_s[3] * Ck[Nn * Nm * Np, ...],
+            #                                u_s[4] * Ck[Nn * Nm * Np, ...],
+            #                                u_s[5] * Ck[Nn * Nm * Np, ...]])))
 
     # Combine dC/dt and dF/dt into a single array and flatten it into a 1D array for an ODE solver.
     dFk_dt = jnp.concatenate([dEk_dt, dBk_dt])
@@ -270,27 +321,24 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     return dy_dt
 
 
-@partial(jax.jit, static_argnums=[8, 9, 10, 11, 12, 13, 14, 16])
+@partial(jax.jit, static_argnums=[9, 10, 11, 12, 13, 14, 15, 17])
 def VM_simulation(qs, nu, Omega_cs, alpha_s, mi_me, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns, t_max, t_steps):
     
    
-    # Load initial conditions.
-    # Ck_0, Fk_0 = initialize_system_real_space(Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np)
+    # # Load initial conditions.
+    Ck_0, Fk_0 = initialize_system_xp(Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns)
 
     # Load initial conditions in Hermite-Fourier space.
-    Ck_0, Fk_0 = Landau_damping_HF_1D(Lx, Ly, Lz, Omega_cs[0], alpha_s[0], alpha_s[3], Nn)
+    # Ck_0, Fk_0 = Landau_damping_HF_1D(Lx, Ly, Lz, Omega_cs[0], alpha_s[0], alpha_s[3], Nn)
     
     # Combine initial conditions.
     initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
 
     # Define the time array.
     t = jnp.linspace(0, t_max, t_steps)
-    x = jnp.linspace(0, Lx, Nx)
-    T, X = jnp.meshgrid(t, x, indexing='ij')
 
+    # Solve the ODE system.
     dy_dt = partial(ode_system, qs=qs, nu=nu, Omega_cs=Omega_cs, alpha_s=alpha_s, u_s=u_s, Lx=Lx, Ly=Ly, Lz=Lz, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns)
-
-    # Solve the ODE system (I have to rewrite this part of the code).
     result = odeint(dy_dt, initial_conditions, t)
     
     Ck = result[:,:(-6 * Nx * Ny * Nz)].reshape(len(t), Ns * Nn * Nm * Np, Nx, Ny, Nz)
@@ -301,97 +349,3 @@ def VM_simulation(qs, nu, Omega_cs, alpha_s, mi_me, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     # jnp.save('t.npy', np.array(t))
 
     return Ck, Fk, t
-
-
-def anti_transform(Ck, Fk, Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nvx, Nvy, Nvz, Nn, Nm, Np):
-    
-    F = ifftn(ifftshift(Fk, axes=(-3, -2, -1)), axes=(-3, -2, -1))
-    E, B = F[:, :3, ...].real, F[:, 3:, ...].real
-        
-    C = ifftn(ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1))
-    
-    Ce = C[:, :(Nn * Nm * Np), ...].real
-    Ci = C[:, (Nn * Nm * Np):, ...].real
-    
-    # x = jnp.linspace(0, Lx, Nx)
-    # y = jnp.linspace(0, Ly, Ny)
-    # z = jnp.linspace(0, Lz, Nz)
-    # vx = jnp.linspace(-10*alpha_s[0], 10*alpha_s[0], Nvx)
-    # vy = jnp.linspace(-10*alpha_s[1], 10*alpha_s[1], Nvy)
-    # vz = jnp.linspace(-10*alpha_s[2], 10*alpha_s[2], Nvz)
-    # X, Y, Z, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx, vy, vz, indexing='ij')
-    
-    # xi_x = (Vx - u_s[0]) / alpha_s[0]
-    # xi_y = (Vy - u_s[1]) / alpha_s[1]
-    # xi_z = (Vz - u_s[2]) / alpha_s[2]
-    
-    # full_Hermite_basis_e = jax.vmap(generate_Hermite_basis, in_axes=(None, None, None, None, None, None, 0))(xi_x, xi_y, xi_z, Nn, Nm, Np, jnp.arange(Nn * Nm * Np))
-    
-# 	vx = jnp.linspace(-10*alpha_s[3], 10*alpha_s[3], Nvx)
-# 	vy = jnp.linspace(-10*alpha_s[4], 10*alpha_s[4], Nvy)
-# 	vz = jnp.linspace(-10*alpha_s[5], 10*alpha_s[5], Nvz)
-# 	X, Y, Z, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx, vy, vz, indexing='ij')
-    
-# 	xi_x = (Vx - u_s[3]) / alpha_s[3]
-# 	xi_y = (Vy - u_s[4]) / alpha_s[4]
-# 	xi_z = (Vz - u_s[5]) / alpha_s[5]
-# 	
-# 	full_Hermite_basis_i = jax.vmap(generate_Hermite_basis, in_axes=(None, None, None, None, None, None, 0))(xi_x, xi_y, xi_z, Nn, Nm, Np, jnp.arange(Nn * Nm * Np))
-    
-    # shape_C_expanded = Ce.shape + (Nvx, Nvy, Nvz)
-    
-    # Ce_expanded = jnp.expand_dims(Ce, (4, 5, 6))
-# 	Ci_expanded = jnp.expand_dims(Ci, (4, 5, 6))
-    
-    # Ce_expanded = jnp.broadcast_to(Ce_expanded, shape_C_expanded)
-# 	Ci_expanded = jnp.broadcast_to(Ci_expanded, shape_C_expanded)
-    
-    # fe = jnp.array([jnp.sum(Ce_expanded[i, ...] * full_Hermite_basis_e, axis=0) for i in jnp.arange(Ce.shape[0])])
-# 	fi = jnp.array([jnp.sum(Ci_expanded[i, ...] * full_Hermite_basis_i, axis=0) for i in jnp.arange(Ce.shape[0])])
-
-
-        
-    # entropy_e = (trapezoid(trapezoid(trapezoid(trapezoid(
-    #         (fe[:, :, 1, 1, ...] * jnp.log(fe[:, :, 1, 1, ...])),
-    #         x, axis=-4), (vx - u_s[0]) / alpha_s[0], axis=-3),
-    #         (vy - u_s[1]) / alpha_s[1], axis=-2), (vz - u_s[2]) / alpha_s[2], axis=-1))
-    
-    # entropy_e = 0
-
-    # The electron and ion energy formulas below assume that us = 0. Generalize them.
-    
-    
-    
-    electron_energy_dens = 0.5 * ((0.5 * (alpha_s[0] ** 2 + alpha_s[1] ** 2 + alpha_s[2] ** 2) + 
-                                         (u_s[0] ** 2 + u_s[1] ** 2 + u_s[2] ** 2)) * 
-                                         alpha_s[0] * alpha_s[1] * alpha_s[2] * Ce[:, 0, ...] + 
-                                  jnp.sqrt(2) * (alpha_s[0] * u_s[0] * Ce[:, 1, ...] * jnp.sign(Nn - 1) + 
-                                                 alpha_s[1] * u_s[1] * Ce[:, Nn, ...] * jnp.sign(Nm - 1) + 
-                                                 alpha_s[2] * u_s[2] * Ce[:, Nn * Nm, ...] * jnp.sign(Np - 1)) *
-                                                alpha_s[0] * alpha_s[1] * alpha_s[2] + 
-                                  (1 / jnp.sqrt(2)) * ((alpha_s[0] ** 2) * Ce[:, 2, ...] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) + 
-                                                       (alpha_s[1] ** 2) * Ce[:, 2 * Nn, ...] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) + 
-                                                       (alpha_s[2] ** 2) * Ce[:, 2 * Nn * Nm, ...] * jnp.sign(Np - 1) * jnp.sign(Np - 2)) * 
-                                                      alpha_s[0] * alpha_s[1] * alpha_s[2])
-    
-    ion_energy_dens = 0.5 * mi_me * ((0.5 * (alpha_s[3] ** 2 + alpha_s[4] ** 2 + alpha_s[5] ** 2) + 
-                                         (u_s[3] ** 2 + u_s[4] ** 2 + u_s[5] ** 2)) * 
-                                         alpha_s[3] * alpha_s[4] * alpha_s[5] * Ci[:, 0, ...] + 
-                                  jnp.sqrt(2) * (alpha_s[3] * u_s[3] * Ci[:, 1, ...] * jnp.sign(Nn - 1) + 
-                                                 alpha_s[4] * u_s[4] * Ci[:, Nn, ...] * jnp.sign(Nm - 1) + 
-                                                 alpha_s[5] * u_s[5] * Ci[:, Nn * Nm, ...] * jnp.sign(Np - 1)) *
-                                                alpha_s[3] * alpha_s[4] * alpha_s[5] + 
-                                  (1 / jnp.sqrt(2)) * ((alpha_s[3] ** 2) * Ci[:, 2, ...] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) + 
-                                                       (alpha_s[4] ** 2) * Ci[:, 2 * Nn, ...] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) + 
-                                                       (alpha_s[5] ** 2) * Ci[:, 2 * Nn * Nm, ...] * jnp.sign(Np - 1) * jnp.sign(Np - 2)) * 
-                                                      alpha_s[3] * alpha_s[4] * alpha_s[5])
-                                
-                                
-    
-    plasma_energy = jnp.mean(electron_energy_dens[:, ...], axis=(-3, -2, -1)) + jnp.mean(ion_energy_dens[:, ...], axis=(-3, -2, -1))
-    
-    EM_energy = (jnp.mean((E[:, 0, ...] ** 2 + E[:, 1, ...] ** 2 + E[:, 2, ...] ** 2 + 
-                           B[:, 0, ...] ** 2 + B[:, 1, ...] ** 2 + B[:, 2, ...] ** 2), axis=(-3, -2, -1)) * Omega_ce ** 2 / 2)
-    
-    
-    return B, E, Ce, Ci, plasma_energy, EM_energy
