@@ -235,10 +235,10 @@ Uey = (alpha_s[1] / jnp.sqrt(2)) * Ce[:, Nn, ...] / Ce[:, 0, ...]
 Uix = (alpha_s[3] / jnp.sqrt(2)) * Ci[:, 1, ...] / Ci[:, 0, ...]
 Uiy = (alpha_s[4] / jnp.sqrt(2)) * Ci[:, Nn, ...] / Ci[:, 0, ...]
 
-We = jnp.gradient(Uey, Lx / Nx, axis=-3) - jnp.gradient(Uex, Ly / Ny, axis=-2)
-Wi = jnp.gradient(Uiy, Lx / Nx, axis=-3) - jnp.gradient(Uix, Ly / Ny, axis=-2)
+We = jnp.gradient(Uey, Lx / Nx, axis=-2) - jnp.gradient(Uex, Ly / Ny, axis=-3)
+Wi = jnp.gradient(Uiy, Lx / Nx, axis=-2) - jnp.gradient(Uix, Ly / Ny, axis=-3)
 
-electron_energy_dens = 0.5 * alpha_s[0] * alpha_s[1] * alpha_s[2] * ((0.5 * (alpha_s[0] ** 2 + alpha_s[1] ** 2 + alpha_s[2] ** 2) + 
+electron_energy_dens = (0.5 * alpha_s[0] * alpha_s[1] * alpha_s[2]) * ((0.5 * (alpha_s[0] ** 2 + alpha_s[1] ** 2 + alpha_s[2] ** 2) + 
                                          (u_s[0] ** 2 + u_s[1] ** 2 + u_s[2] ** 2)) * Ce[:, 0, ...] + 
                                   jnp.sqrt(2) * (alpha_s[0] * u_s[0] * Ce[:, 1, ...] * jnp.sign(Nn - 1) + 
                                                  alpha_s[1] * u_s[1] * Ce[:, Nn, ...] * jnp.sign(Nm - 1) + 
@@ -247,7 +247,7 @@ electron_energy_dens = 0.5 * alpha_s[0] * alpha_s[1] * alpha_s[2] * ((0.5 * (alp
                                                        (alpha_s[1] ** 2) * Ce[:, 2 * Nn, ...] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) + 
                                                        (alpha_s[2] ** 2) * Ce[:, 2 * Nn * Nm, ...] * jnp.sign(Np - 1) * jnp.sign(Np - 2)))
     
-ion_energy_dens = 0.5 * mi_me * alpha_s[3] * alpha_s[4] * alpha_s[5] * ((0.5 * (alpha_s[3] ** 2 + alpha_s[4] ** 2 + alpha_s[5] ** 2) + 
+ion_energy_dens = (0.5 * mi_me * alpha_s[3] * alpha_s[4] * alpha_s[5]) * ((0.5 * (alpha_s[3] ** 2 + alpha_s[4] ** 2 + alpha_s[5] ** 2) + 
                                         (u_s[3] ** 2 + u_s[4] ** 2 + u_s[5] ** 2)) * Ci[:, 0, ...] + 
                                 jnp.sqrt(2) * (alpha_s[3] * u_s[3] * Ci[:, 1, ...] * jnp.sign(Nn - 1) + 
                                                alpha_s[4] * u_s[4] * Ci[:, Nn, ...] * jnp.sign(Nm - 1) + 
@@ -258,7 +258,7 @@ ion_energy_dens = 0.5 * mi_me * alpha_s[3] * alpha_s[4] * alpha_s[5] * ((0.5 * (
                                 
 
     
-plasma_energy = jnp.mean(electron_energy_dens[:, ...], axis=(-3, -2, -1)) + jnp.mean(ion_energy_dens[:, ...], axis=(-3, -2, -1))
+plasma_energy = jnp.mean(electron_energy_dens, axis=(-3, -2, -1)) + jnp.mean(ion_energy_dens, axis=(-3, -2, -1))
 
 EM_energy = (jnp.mean((E[:, 0, ...] ** 2 + E[:, 1, ...] ** 2 + E[:, 2, ...] ** 2 + 
                        B[:, 0, ...] ** 2 + B[:, 1, ...] ** 2 + B[:, 2, ...] ** 2), axis=(-3, -2, -1)) * Omega_cs[0] ** 2 / 2)

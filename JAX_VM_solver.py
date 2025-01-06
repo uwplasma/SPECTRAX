@@ -9,12 +9,12 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.scipy.signal import convolve
-from jax.numpy.fft import fftn, ifftn, fftshift, ifftshift, fftfreq
+from jax.numpy.fft import fftn, fftshift
 from jax.scipy.special import factorial
 from jax.scipy.integrate import trapezoid
 from jax.experimental.ode import odeint
 # from quadax import quadgk
-from diffrax import diffeqsolve, Dopri5, ODETerm, SaveAt, PIDController
+from diffrax import diffeqsolve, Dopri5, Tsit5, Dopri8, ODETerm, SaveAt, ConstantStepSize, PIDController
 from functools import partial
 from Examples_1D import density_perturbation_1D, density_perturbation_solution, Landau_damping_1D, Landau_damping_HF_1D
 from Examples_2D import Kelvin_Helmholtz_2D
@@ -90,7 +90,7 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
         vy_slice = jax.lax.dynamic_slice(vy, (ivy * 8,), (8,))
         vz_slice = jax.lax.dynamic_slice(vz, (ivz * 8,), (8,))
         
-        X, Y, Z, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx_slice, vy_slice, vz_slice, indexing='ij')
+        X, Y, Z, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx_slice, vy_slice, vz_slice, indexing='xy')
 
         # Define variables for Hermite polynomials.
         xi_x = (Vx - u[0]) / alpha[0]
@@ -105,7 +105,7 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
                 
     Nv = 125
         
-    return jax.lax.fori_loop(0, Nv, add_C_nmp, jnp.zeros((Nx, Ny, Nz)))
+    return jax.lax.fori_loop(0, Nv, add_C_nmp, jnp.zeros((Ny, Nx, Nz)))
 
 
 def initialize_system_xp(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):
@@ -128,7 +128,12 @@ def initialize_system_xp(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, 
 
     # Combine Ce_0 and Ci_0 into single array and compute the fast Fourier transform.
     
-    C_0 = jnp.concatenate([Ce_0, Ci_0])
+    Cek_0 = fftshift(fftn(Ce_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
+    Cik_0 = fftshift(fftn(Ci_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
+
+    
+    Ck_0 = jnp.concatenate([Cek_0, Cik_0])
+    # Ck_0 = fftshift(fftn(C_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
     
     ############################################################################################################   
     # Attempt to generalize to more than two species (work in progress).
@@ -145,17 +150,19 @@ def initialize_system_xp(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, 
     
     ############################################################################################################
     
-    Ck_0 = fftshift(fftn(C_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
-    
     # Define 3D grid for functions E(x, y, z) and B(x, y, z).
     x = jnp.linspace(0, Lx, Nx)
     y = jnp.linspace(0, Ly, Ny)
     z = jnp.linspace(0, Lz, Nz)
-    X, Y, Z = jnp.meshgrid(x, y, z, indexing='ij')
+    X, Y, Z = jnp.meshgrid(x, y, z, indexing='xy')
     
     # Combine E and B into single array and compute the fast Fourier transform.
-    F_0 = jnp.concatenate([E(X, Y, Z), B(X, Y, Z)])
-    Fk_0 = fftshift(fftn(F_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
+    
+    Ek_0 = fftshift(fftn(E(X, Y, Z), axes=(-3, -2, -1)), axes=(-3, -2, -1))
+    Bk_0 = fftshift(fftn(B(X, Y, Z), axes=(-3, -2, -1)), axes=(-3, -2, -1))
+
+    Fk_0 = jnp.concatenate([Ek_0, Bk_0])
+    # Fk_0 = fftshift(fftn(F_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
     
     return Ck_0, Fk_0
 
@@ -215,14 +222,21 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
         jnp.sqrt(2 * m) * (u[0] / alpha[1]) * Ck[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m))
     
     # Define "unphysical" collision operator to eliminate recurrence.
+    
+    # Collision operator for Nn, Nm, Np > 3.
     # Col = -nu * ((n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) + 
     #              (m * (m - 1) * (m - 2)) / ((Nm - 1) * (Nm - 2) * (Nm - 3)) +
     #              (p * (p - 1) * (p - 2)) / ((Np - 1) * (Np - 2) * (Np - 3))) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
     
+    # Collision operator for Np < 4.
+    # Col = -nu * ((n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) + 
+    #              (m * (m - 1) * (m - 2)) / ((Nm - 1) * (Nm - 2) * (Nm - 3))) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
+    
+    # Collision operator for Nm, Np < 4.
     # Col = -nu * (n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
     
-    Col = -nu * ((n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) + 
-                 (m * (m - 1) * (m - 2)) / ((Nm - 1) * (Nm - 2) * (Nm - 3))) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
+    
+    Col = 0
         
     # Define ODEs for Hermite-Fourier coefficients.
     # Clossure is achieved by setting to zero coefficients with index out of range.
@@ -260,8 +274,8 @@ def ampere_maxwell_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     def add_current_term(s, partial_sum):
         return partial_sum + qs[s] * alpha_s[s * 3] * alpha_s[s * 3 + 1] * alpha_s[s * 3 + 2] * (
             (1 / jnp.sqrt(2)) * jnp.array([alpha_s[s * 3] * Ck[s * Nn * Nm * Np + 1, ...] * jnp.sign(Nn - 1),
-                                           alpha_s[s * 3 + 1] * Ck[s * Nn * Nm * Np + Nn + 1, ...] * jnp.sign(Nm - 1),
-                                           alpha_s[s * 3 + 2] * Ck[s * Nn * Nm * Np + Nn * Nm + 1, ...] * jnp.sign(Np - 1)]) + 
+                                           alpha_s[s * 3 + 1] * Ck[s * Nn * Nm * Np + Nn, ...] * jnp.sign(Nm - 1),
+                                           alpha_s[s * 3 + 2] * Ck[s * Nn * Nm * Np + Nn * Nm, ...] * jnp.sign(Np - 1)]) + 
                                 jnp.array([u_s[s * 3] * Ck[s * Nn * Nm * Np, ...],
                                            u_s[s * 3 + 1] * Ck[s * Nn * Nm * Np, ...],
                                            u_s[s * 3 + 2] * Ck[s * Nn * Nm * Np, ...]]))
@@ -270,7 +284,10 @@ def ampere_maxwell_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     return jax.lax.fori_loop(0, Ns, add_current_term, jnp.zeros_like(Ck[:3, ...]))
 
 
-def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):     
+# def ode_system(t, Ck_Fk, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):
+def ode_system(t, Ck_Fk, args):
+
+    qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns = args
     
     # Define wave vectors.
     kx = (jnp.arange(-Nx//2, Nx//2) + 1) * 2 * jnp.pi
@@ -279,12 +296,12 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     
 
     # Create 3D grids of kx, ky, kz.
-    kx_grid, ky_grid, kz_grid = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    kx_grid, ky_grid, kz_grid = jnp.meshgrid(kx, ky, kz, indexing='xy')
     
     # Separate between initial conditions for distribution functions (coefficients Ck)
     # and electric and magnetic fields (coefficients Fk).
-    Ck = Ck_Fk[:(-6 * Nx * Ny * Nz)].reshape(Ns * Nn * Nm * Np, Nx, Ny, Nz)
-    Fk = Ck_Fk[(-6 * Nx * Ny * Nz):].reshape(6, Nx, Ny, Nz)
+    Ck = Ck_Fk[:(-6 * Nx * Ny * Nz)].reshape(Ns * Nn * Nm * Np, Ny, Nx, Nz)
+    Fk = Ck_Fk[(-6 * Nx * Ny * Nz):].reshape(6, Ny, Nx, Nz)
     
     # Vectorize over n, m, p, and s to generate ODEs for all coefficients Ck.
     dCk_s_dt = (jax.vmap(
@@ -325,7 +342,7 @@ def ode_system(Ck_Fk, t, qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
 def VM_simulation(qs, nu, Omega_cs, alpha_s, mi_me, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns, t_max, t_steps):
     
    
-    # # Load initial conditions.
+    # Load initial conditions.
     Ck_0, Fk_0 = initialize_system_xp(Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns)
 
     # Load initial conditions in Hermite-Fourier space.
@@ -334,18 +351,32 @@ def VM_simulation(qs, nu, Omega_cs, alpha_s, mi_me, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     # Combine initial conditions.
     initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
 
-    # Define the time array.
+    # Define the time array for data output.
     t = jnp.linspace(0, t_max, t_steps)
 
-    # Solve the ODE system.
-    dy_dt = partial(ode_system, qs=qs, nu=nu, Omega_cs=Omega_cs, alpha_s=alpha_s, u_s=u_s, Lx=Lx, Ly=Ly, Lz=Lz, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns)
-    result = odeint(dy_dt, initial_conditions, t)
+    args = (qs, nu, Omega_cs, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns)
     
-    Ck = result[:,:(-6 * Nx * Ny * Nz)].reshape(len(t), Ns * Nn * Nm * Np, Nx, Ny, Nz)
-    Fk = result[:,(-6 * Nx * Ny * Nz):].reshape(len(t), 6, Nx, Ny, Nz)
+    # Solve ODE system using diffrax.
+    saveat = SaveAt(ts=t)
+    term = ODETerm(ode_system)
+    solver = Dopri5()
+    # stepsize_controller = ConstantStepSize()
+    # stepsize_controller = PIDController(rtol=1e-12, atol=1e-12)
+    result = diffeqsolve(term, solver, t0=0, t1=t_max, dt0=0.05, y0=initial_conditions, args=args, saveat=saveat)
+    
+###################################################################################################
+    # # Solve the ODE system using odeint.
+    
+    # dy_dt = partial(ode_system, args=args)
+    # result = odeint(dy_dt, initial_conditions, t)
+    
+###################################################################################################
+    
+    Ck = result.ys[:,:(-6 * Nx * Ny * Nz)].reshape(len(result.ts), Ns * Nn * Nm * Np, Ny, Nx, Nz)
+    Fk = result.ys[:,(-6 * Nx * Ny * Nz):].reshape(len(result.ts), 6, Ny, Nx, Nz)
     
     # jnp.save('Ck.npy', np.array(Ck))
     # jnp.save('Fk.npy', np.array(Fk))
     # jnp.save('t.npy', np.array(t))
 
-    return Ck, Fk, t
+    return Ck, Fk, result.ts
