@@ -155,8 +155,7 @@ def Landau_damping_HF_1D(Lx, Ly, Lz, Omega_ce, alpha_e, alpha_i, Nn):
     
     return Ck_0, Fk_0
 
-
-def Two_stream_HF_1D(Lx, Ly, Lz, Omega_ce, alpha_e, alpha_i, Nn):
+def ion_acoustic_wave_HF_1D(Lx, Ly, Lz, Omega_ce, alpha_e, alpha_i, Nn):
     """
     I have to add docstrings!
     """
@@ -166,26 +165,48 @@ def Two_stream_HF_1D(Lx, Ly, Lz, Omega_ce, alpha_e, alpha_i, Nn):
     
     kx = 2 * jnp.pi / Lx # Wavenumber.
     
-    dn = 0.0 # Density fluctuation.
+    dn = 0.2 # Density fluctuation.
     
     # Fourier components of magnetic and electric fields.
-    Fk_0 = jnp.zeros((6, 3, 1, 1), dtype=jnp.complex128)
-    Fk_0 = Fk_0.at[0, 0, 0, 0].set(dn / (2 * kx))
-    Fk_0 = Fk_0.at[0, 2, 0, 0].set(dn / (2 * kx))
-    Fk_0 = Fk_0.at[3, 1, 0, 0].set(Omega_ce)
-    
+    Fk_0 = jnp.zeros((6, 1, 9, 1), dtype=jnp.complex128)
+    Fk_0 = Fk_0.at[0, 0, 3, 0].set(- dn / (2 * kx * Omega_ce))
+    Fk_0 = Fk_0.at[0, 0, 5, 0].set(- dn / (2 * kx * Omega_ce))    
     
     # Hermite-Fourier components of electron and ion distribution functions.
-    Ce0_mk, Ce0_0, Ce0_k = 0 + 1j * (1 / 2 ** (5/2)) * (1 / vte ** 3) * dn, 1 / ((2 ** (3/2)) * (vte ** 3)) + 0 * 1j, 0 - 1j * (1 / 2 ** (5/2)) * (1 / vte ** 3) * dn
-    Ci0_0 = 1 / ((2 ** (3/2)) * (vti ** 3)) + 0 * 1j
-    Ck_0 = jnp.zeros((2 * Nn, 3, 1, 1), dtype=jnp.complex128)
-    Ck_0 = Ck_0.at[0, 0, 0, 0].set(Ce0_mk)
-    Ck_0 = Ck_0.at[0, 1, 0, 0].set(Ce0_0)
-    Ck_0 = Ck_0.at[0, 2, 0, 0].set(Ce0_k)
-    Ck_0 = Ck_0.at[Nn, 1, 0, 0].set(Ci0_0)
+    Ci0_mk, Ci0_0, Ci0_k = 0 + 1j * (1 / 2 ** (5/2)) * (1 / vti ** 3) * dn, 1 / ((2 ** (3/2)) * (vti ** 3)) + 0 * 1j, 0 - 1j * (1 / 2 ** (5/2)) * (1 / vti ** 3) * dn
+    Ce0_0 = 1 / ((2 ** (3/2)) * (vte ** 3)) + 0 * 1j
+    Ck_0 = jnp.zeros((2 * Nn, 1, 9, 1), dtype=jnp.complex128)
+    Ck_0 = Ck_0.at[Nn, 0, 3, 0].set(Ci0_mk)
+    Ck_0 = Ck_0.at[Nn, 0, 4, 0].set(Ci0_0)
+    Ck_0 = Ck_0.at[Nn, 0, 5, 0].set(Ci0_k)
+    Ck_0 = Ck_0.at[0, 0, 4, 0].set(Ce0_0)
     
     return Ck_0, Fk_0
 
+def two_stream_instability_HF_1D(Lx, Omega_ce, alpha_e, Nx, Nn):
+    """
+    I have to add docstrings!
+    """
+        
+    kx = 2 * jnp.pi / Lx # Wavenumber.
+    
+    dn = 0.001 # Density fluctuation.
+    
+    # Fourier components of magnetic and electric fields.
+    Fk_0 = jnp.zeros((6, 1, Nx, 1), dtype=jnp.complex128)
+    Fk_0 = Fk_0.at[0, 0, int((Nx-1)/2-1), 0].set(dn / (2 * kx * Omega_ce))
+    Fk_0 = Fk_0.at[0, 0, int((Nx-1)/2+1), 0].set(dn / (2 * kx * Omega_ce))    
+    
+    # Hermite-Fourier components of electron and ion distribution functions.
+    C10_mk, C10_0, C10_k = 0 + 1j * (1 / 4 ) * (1 / alpha_e ** 3) * dn, 1 / (2 * (alpha_e ** 3)) + 0 * 1j, 0 - 1j * (1 / 4) * (1 / alpha_e ** 3) * dn
+    C20_0 = 1 / (2 * (alpha_e ** 3)) + 0 * 1j
+    Ck_0 = jnp.zeros((2 * Nn, 1, Nx, 1), dtype=jnp.complex128)
+    Ck_0 = Ck_0.at[Nn, 0, int((Nx-1)/2-1), 0].set(C10_mk)
+    Ck_0 = Ck_0.at[Nn, 0, int((Nx-1)/2), 0].set(C10_0)
+    Ck_0 = Ck_0.at[Nn, 0, int((Nx-1)/2+1), 0].set(C10_k)
+    Ck_0 = Ck_0.at[0, 0, int((Nx-1)/2), 0].set(C20_0)
+    
+    return Ck_0, Fk_0
 
 def pressure_anisotropy_HF_1D(Lx, Ly, Lz, Omega_ce, alpha_s, Nn):
     """

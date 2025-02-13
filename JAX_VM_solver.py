@@ -14,9 +14,9 @@ from jax.scipy.special import factorial
 from jax.scipy.integrate import trapezoid
 from jax.experimental.ode import odeint
 # from quadax import quadgk
-from diffrax import diffeqsolve, Dopri5, Tsit5, Dopri8, ODETerm, SaveAt, ConstantStepSize, PIDController
+from diffrax import diffeqsolve, Dopri5, Tsit5, Kvaerno3, ImplicitEuler, ODETerm, SaveAt, ConstantStepSize, PIDController
 from functools import partial
-from Examples_1D import density_perturbation_1D, density_perturbation_solution, Landau_damping_1D, Landau_damping_HF_1D
+from Examples_1D import density_perturbation_1D, density_perturbation_solution, Landau_damping_1D, Landau_damping_HF_1D, ion_acoustic_wave_HF_1D, two_stream_instability_HF_1D
 from Examples_2D import Kelvin_Helmholtz_2D
 
 
@@ -113,8 +113,8 @@ def initialize_system_xp(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, 
     I have to add docstrings!
     """
     
-    # # Initialize fields and distributions.
-    B, E, fe, fi = Kelvin_Helmholtz_2D(Lx, Ly, Omega_ce, alpha_s[0], alpha_s[1])
+    # Initialize fields and distributions.
+    B, E, fe, fi = Kelvin_Helmholtz_2D(Lx, Ly, Omega_ce, alpha_s[0], alpha_s[3])
         
     # Hermite decomposition of dsitribution funcitons.
     Ce_0 = (jax.vmap(
@@ -233,10 +233,10 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
     #              (m * (m - 1) * (m - 2)) / ((Nm - 1) * (Nm - 2) * (Nm - 3))) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
     
     # Collision operator for Nm, Np < 4.
-    # Col = -nu * (n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
+    Col = -nu * (n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
     
     
-    Col = 0
+    # Col = 0
         
     # Define ODEs for Hermite-Fourier coefficients.
     # Clossure is achieved by setting to zero coefficients with index out of range.
@@ -339,14 +339,14 @@ def ode_system(t, Ck_Fk, args):
 
 
 @partial(jax.jit, static_argnums=[9, 10, 11, 12, 13, 14, 15, 17])
-def VM_simulation(qs, nu, Omega_cs, alpha_s, mi_me, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns, t_max, t_steps):
+def VM_simulation(qs, nu, Omega_cs, alpha_s, mi_me, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns, t_max, t_steps, dt):
     
    
     # Load initial conditions.
-    Ck_0, Fk_0 = initialize_system_xp(Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns)
+    # Ck_0, Fk_0 = initialize_system_xp(Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns)
 
     # Load initial conditions in Hermite-Fourier space.
-    # Ck_0, Fk_0 = Landau_damping_HF_1D(Lx, Ly, Lz, Omega_cs[0], alpha_s[0], alpha_s[3], Nn)
+    Ck_0, Fk_0 = two_stream_instability_HF_1D(Lx, Omega_cs[0], alpha_s[0], Nx, Nn)
     
     # Combine initial conditions.
     initial_conditions = jnp.concatenate([Ck_0.flatten(), Fk_0.flatten()])
@@ -361,8 +361,8 @@ def VM_simulation(qs, nu, Omega_cs, alpha_s, mi_me, u_s, Lx, Ly, Lz, Nx, Ny, Nz,
     term = ODETerm(ode_system)
     solver = Dopri5()
     # stepsize_controller = ConstantStepSize()
-    # stepsize_controller = PIDController(rtol=1e-12, atol=1e-12)
-    result = diffeqsolve(term, solver, t0=0, t1=t_max, dt0=0.05, y0=initial_conditions, args=args, saveat=saveat)
+    stepsize_controller = PIDController(rtol=1e-6, atol=1e-6)
+    result = diffeqsolve(term, solver, t0=0, t1=t_max, dt0=dt, y0=initial_conditions, args=args, saveat=saveat, max_steps=50000)
     
 ###################################################################################################
     # # Solve the ODE system using odeint.

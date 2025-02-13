@@ -12,7 +12,7 @@ import time
 
 
 
-with open('plasma_parameters_Kelvin_Helmholtz_2D.json', 'r') as file:
+with open('plasma_parameters_two_stream_instability_1D.json', 'r') as file:
         parameters = json.load(file)
     
 # Unpack parameters.
@@ -21,29 +21,31 @@ Nvx, Nvy, Nvz = parameters['Nvx'], parameters['Nvy'], parameters['Nvz']
 Lx, Ly, Lz = parameters['Lx'], parameters['Ly'], parameters['Lz']
 Nn, Nm, Np, Ns = parameters['Nn'], parameters['Nm'], parameters['Np'], parameters['Ns']
 mi_me = parameters['mi_me']
+Ti_Te = parameters['Ti_Te']
 Omega_cs = parameters['Omega_ce'] * jnp.array([1.0, 1.0 / mi_me])
 qs = jnp.array(parameters['qs'])
-alpha_s = jnp.concatenate([jnp.array(parameters['alpha_e']), (jnp.array(parameters['alpha_e']) / jnp.sqrt(mi_me))])
+alpha_s = jnp.concatenate([jnp.array(parameters['alpha_e']), (jnp.array(parameters['alpha_e']) * jnp.sqrt(Ti_Te / mi_me))])
 u_s = jnp.array(parameters['u_s'])
 nu = parameters['nu']
-t_steps, t_max = parameters['t_steps'], parameters['t_max']
+t_steps, t_max, dt = parameters['t_steps'], parameters['t_max'], parameters['dt']
 
-# # Save parameters into txt.
-# with open('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF_ini\S3\Two_stream_instability_1D_S3.txt', 'w') as file:
-#     file.write(f"Nx, Ny, Nz: {Nx}, {Ny}, {Nz}\n")
-#     file.write(f"Nvx, Nvy, Nvz: {Nvx}, {Nvy}, {Nvz}\n")
-#     file.write(f"Lx, Ly, Lz: {Lx}, {Ly}, {Lz}\n")
-#     file.write(f"Nn, Nm, Np, Ns: {Nn}, {Nm}, {Np}, {Ns}\n")
-#     file.write(f"mi_me: {mi_me}\n")
-#     file.write(f"Omega_cs: {Omega_cs.tolist()}\n")
-#     file.write(f"qs: {qs.tolist()}\n")
-#     file.write(f"alpha_s: {alpha_s.tolist()}\n")
-#     file.write(f"u_s: {u_s.tolist()}\n")
-#     file.write(f"nu: {nu}\n")
-#     file.write(f"t_steps, t_max: {t_steps}, {t_max}\n")
+# Save parameters into txt.
+with open('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF\S5\S5_Two_stream_instability_1D_HF.txt', 'w') as file:
+    file.write(f"Nx, Ny, Nz: {Nx}, {Ny}, {Nz}\n")
+    file.write(f"Nvx, Nvy, Nvz: {Nvx}, {Nvy}, {Nvz}\n")
+    file.write(f"Lx, Ly, Lz: {Lx}, {Ly}, {Lz}\n")
+    file.write(f"Nn, Nm, Np, Ns: {Nn}, {Nm}, {Np}, {Ns}\n")
+    file.write(f"mi_me: {mi_me}\n")
+    file.write(f"Omega_cs: {Omega_cs.tolist()}\n")
+    file.write(f"qs: {qs.tolist()}\n")
+    file.write(f"alpha_s: {alpha_s.tolist()}\n")
+    file.write(f"u_s: {u_s.tolist()}\n")
+    file.write(f"nu: {nu}\n")
+    file.write(f"t_steps, t_max: {t_steps}, {t_max}\n")
+    file.write(f"dt: {dt}\n")
 
 start_time = time.time()
-Ck, Fk, t = VM_simulation(qs, nu, Omega_cs, alpha_s, mi_me, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns, t_max, t_steps)
+Ck, Fk, t = VM_simulation(qs, nu, Omega_cs, alpha_s, mi_me, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns, t_max, t_steps, dt)
 end_time = time.time()
 
 print(f"Runtime: {end_time - start_time} seconds")
@@ -109,15 +111,16 @@ p = jnp.polyfit(t[peaks], jnp.log(jnp.abs(dCk[:, 0, 0, 0, 0].imag[peaks])), 1)
 # Plot |C000| vs t.
 
 plt.figure(figsize=(8, 6))
-plt.plot(t[:2000], jnp.log10(jnp.abs(dCk[:2000, 1, 0, 0, 0].imag)), label='$log_{10}(|\delta C_{e000,k}|)$', linestyle='-', color='red', linewidth=3.0)
+plt.plot(t[:500], jnp.log10(jnp.abs(Fk[:500, 0, 0, int((Nx-1)/2+1), 0].imag)), label='$log_{10}(|E_1|)$', linestyle='-', color='red', linewidth=3.0)
 # plt.plot(t, p[0] * t + p[1], label='$log_{10}(|\delta C_{e00}|^2)$', linestyle='-', color='black', linewidth=3.0)
 # plt.plot(t[peaks], jnp.log(jnp.abs(dCek[:, 0, 0, 0, 0].imag[peaks])), label='$log_{10}(|\delta C_{e00}|^2)$', linestyle='None', marker='x', color='blue', linewidth=3.0)
 # plt.plot(t, A * jnp.cos(omega * t) * jnp.exp(-gamma * t) + B, label='$A\cos(\omega t)e^{-\gamma t}+B$', linestyle='-', color='blue', linewidth=3.0)
-plt.ylabel(r'$log_{10}(|\delta C_{e000,k}|)$', fontsize=16)
+plt.ylabel(r'$log_{10}(|E_1|)$', fontsize=16)
 # plt.plot(t[:100], jnp.log10(Ci0002[:100]), label='$log_{10}(|\delta C_{i00}|^2)$', linestyle='-', color='red', linewidth=3.0)
 plt.xlabel(r'$t\omega_{pe}$', fontsize=16)
 # plt.xlim(0.0, t_max)
-plt.title(rf'$kv_{{th,e}}/\omega_{{pe}} = {k_norm:.2}, u_e/c = {u_s[0]}, \lambda_D/d_e = {lambda_D:.1e}, m_i/m_e = {mi_me}, N_n = {Nn}$', fontsize=14)
+# plt.title(rf'$kv_{{th,e}}/\omega_{{pe}} = {k_norm:.2}, u_e/c = {u_s[0]}, \lambda_D/d_e = {lambda_D:.1e}, m_i/m_e = {mi_me}, N_n = {Nn}$', fontsize=14)
+plt.title(rf'$kv_{{th,e}}/\omega_{{pe}} = {k_norm:.2}, \nu = {nu}, u_e = {u_s[0]}, \alpha_e = {alpha_s[0]:.3}, N_x = {Nx}, N_n = {Nn}, \delta n = 0.001$', fontsize=14)
 # plt.legend().set_draggable(True)
 plt.show()
 
@@ -218,6 +221,26 @@ plt.legend().set_draggable(True)
 
 plt.show()
 
+####################################################################################################################################################
+# Ion acoustic waves.
+
+jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Ion_acoustic_wave\Ck', Ck)
+jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Ion_acoustic_wave\Ci', Fk)
+jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Ion_acoustic_wave\\time', t)
+
+plt.figure(figsize=(8, 6))
+plt.plot(t[:5000], jnp.log10(jnp.abs(Fk[:5000, 0, 0, 8, 0])), label='$log_{10}(|E_4|)$', linestyle='-', color='red', linewidth=3.0)
+# plt.plot(t, p[0] * t + p[1], label='$log_{10}(|\delta C_{e00}|^2)$', linestyle='-', color='black', linewidth=3.0)
+# plt.plot(t[peaks], jnp.log(jnp.abs(dCek[:, 0, 0, 0, 0].imag[peaks])), label='$log_{10}(|\delta C_{e00}|^2)$', linestyle='None', marker='x', color='blue', linewidth=3.0)
+# plt.plot(t, A * jnp.cos(omega * t) * jnp.exp(-gamma * t) + B, label='$A\cos(\omega t)e^{-\gamma t}+B$', linestyle='-', color='blue', linewidth=3.0)
+plt.ylabel(r'$log_{10}(|E_4|)$', fontsize=16)
+# plt.plot(t[:100], jnp.log10(Ci0002[:100]), label='$log_{10}(|\delta C_{i00}|^2)$', linestyle='-', color='red', linewidth=3.0)
+plt.xlabel(r'$t\omega_{pe}$', fontsize=16)
+# plt.xlim(0.0, t_max)
+plt.title(rf'$\nu ={nu}, L_x/d_e = {Lx}, T_i/T_e = {Ti_Te}, m_i/m_e = {mi_me}, N_n = {Nn}$', fontsize=14)
+# plt.legend().set_draggable(True)
+plt.show()
+
 
 ####################################################################################################################################################
 # Kelvin-Helmholtz instability.
@@ -230,6 +253,21 @@ C = ifftn(ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1))
 Ce = C[:, :(Nn * Nm * Np), ...].real
 Ci = C[:, (Nn * Nm * Np):, ...].real
 
+# jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Kelvin-Helmholtz_instability\S15\Ce', Ce)
+# jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Kelvin-Helmholtz_instability\S15\Ci', Ci)
+# jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Kelvin-Helmholtz_instability\S15\B', B)
+# jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Kelvin-Helmholtz_instability\S15\E', E)
+# jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Kelvin-Helmholtz_instability\S15\\time', t)
+
+# Ce = jnp.load('C:\Cristian\Postdoc\Madison\Code\Simulations\Kelvin-Helmholtz_instability\S11\Ce.npy')
+# Ci = jnp.load('C:\Cristian\Postdoc\Madison\Code\Simulations\Kelvin-Helmholtz_instability\S11\Ci.npy')
+# B = jnp.load('C:\Cristian\Postdoc\Madison\Code\Simulations\Kelvin-Helmholtz_instability\S11\B.npy')
+# E = jnp.load('C:\Cristian\Postdoc\Madison\Code\Simulations\Kelvin-Helmholtz_instability\S11\E.npy')
+# t = jnp.load('C:\Cristian\Postdoc\Madison\Code\Simulations\Kelvin-Helmholtz_instability\S11\\time.npy')
+
+
+
+
 Uex = (alpha_s[0] / jnp.sqrt(2)) * Ce[:, 1, ...] / Ce[:, 0, ...]
 Uey = (alpha_s[1] / jnp.sqrt(2)) * Ce[:, Nn, ...] / Ce[:, 0, ...]
 Uix = (alpha_s[3] / jnp.sqrt(2)) * Ci[:, 1, ...] / Ci[:, 0, ...]
@@ -239,34 +277,48 @@ We = jnp.gradient(Uey, Lx / Nx, axis=-2) - jnp.gradient(Uex, Ly / Ny, axis=-3)
 Wi = jnp.gradient(Uiy, Lx / Nx, axis=-2) - jnp.gradient(Uix, Ly / Ny, axis=-3)
 
 electron_energy_dens = (0.5 * alpha_s[0] * alpha_s[1] * alpha_s[2]) * ((0.5 * (alpha_s[0] ** 2 + alpha_s[1] ** 2 + alpha_s[2] ** 2) + 
-                                         (u_s[0] ** 2 + u_s[1] ** 2 + u_s[2] ** 2)) * Ce[:, 0, ...] + 
-                                  jnp.sqrt(2) * (alpha_s[0] * u_s[0] * Ce[:, 1, ...] * jnp.sign(Nn - 1) + 
-                                                 alpha_s[1] * u_s[1] * Ce[:, Nn, ...] * jnp.sign(Nm - 1) + 
-                                                 alpha_s[2] * u_s[2] * Ce[:, Nn * Nm, ...] * jnp.sign(Np - 1)) + 
-                                  (1 / jnp.sqrt(2)) * ((alpha_s[0] ** 2) * Ce[:, 2, ...] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) + 
-                                                       (alpha_s[1] ** 2) * Ce[:, 2 * Nn, ...] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) + 
-                                                       (alpha_s[2] ** 2) * Ce[:, 2 * Nn * Nm, ...] * jnp.sign(Np - 1) * jnp.sign(Np - 2)))
+                                        (u_s[0] ** 2 + u_s[1] ** 2 + u_s[2] ** 2)) * Ce[:, 0, ...] + 
+                                jnp.sqrt(2) * (alpha_s[0] * u_s[0] * Ce[:, 1, ...] * jnp.sign(Nn - 1) + 
+                                                alpha_s[1] * u_s[1] * Ce[:, Nn, ...] * jnp.sign(Nm - 1) + 
+                                                alpha_s[2] * u_s[2] * Ce[:, Nn * Nm, ...] * jnp.sign(Np - 1)) + 
+                                (1 / jnp.sqrt(2)) * ((alpha_s[0] ** 2) * Ce[:, 2, ...] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) + 
+                                                    (alpha_s[1] ** 2) * Ce[:, 2 * Nn, ...] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) + 
+                                                    (alpha_s[2] ** 2) * Ce[:, 2 * Nn * Nm, ...] * jnp.sign(Np - 1) * jnp.sign(Np - 2)))
     
 ion_energy_dens = (0.5 * mi_me * alpha_s[3] * alpha_s[4] * alpha_s[5]) * ((0.5 * (alpha_s[3] ** 2 + alpha_s[4] ** 2 + alpha_s[5] ** 2) + 
                                         (u_s[3] ** 2 + u_s[4] ** 2 + u_s[5] ** 2)) * Ci[:, 0, ...] + 
                                 jnp.sqrt(2) * (alpha_s[3] * u_s[3] * Ci[:, 1, ...] * jnp.sign(Nn - 1) + 
-                                               alpha_s[4] * u_s[4] * Ci[:, Nn, ...] * jnp.sign(Nm - 1) + 
-                                               alpha_s[5] * u_s[5] * Ci[:, Nn * Nm, ...] * jnp.sign(Np - 1)) + 
+                                            alpha_s[4] * u_s[4] * Ci[:, Nn, ...] * jnp.sign(Nm - 1) + 
+                                            alpha_s[5] * u_s[5] * Ci[:, Nn * Nm, ...] * jnp.sign(Np - 1)) + 
                                 (1 / jnp.sqrt(2)) * ((alpha_s[3] ** 2) * Ci[:, 2, ...] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) + 
-                                                     (alpha_s[4] ** 2) * Ci[:, 2 * Nn, ...] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) + 
-                                                     (alpha_s[5] ** 2) * Ci[:, 2 * Nn * Nm, ...] * jnp.sign(Np - 1) * jnp.sign(Np - 2)))
-                                
+                                                    (alpha_s[4] ** 2) * Ci[:, 2 * Nn, ...] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) + 
+                                                    (alpha_s[5] ** 2) * Ci[:, 2 * Nn * Nm, ...] * jnp.sign(Np - 1) * jnp.sign(Np - 2)))
 
-    
+
 plasma_energy = jnp.mean(electron_energy_dens, axis=(-3, -2, -1)) + jnp.mean(ion_energy_dens, axis=(-3, -2, -1))
 
 EM_energy = (jnp.mean((E[:, 0, ...] ** 2 + E[:, 1, ...] ** 2 + E[:, 2, ...] ** 2 + 
                        B[:, 0, ...] ** 2 + B[:, 1, ...] ** 2 + B[:, 2, ...] ** 2), axis=(-3, -2, -1)) * Omega_cs[0] ** 2 / 2)
 
 
+electron_energy_dens_C0 = ((0.5 * alpha_s[0] * alpha_s[1] * alpha_s[2]) * 
+                          (0.5 * (alpha_s[0] ** 2 + alpha_s[1] ** 2 + alpha_s[2] ** 2) + 
+                            (u_s[0] ** 2 + u_s[1] ** 2 + u_s[2] ** 2)) * Ce[:, 0, ...])
+                           
+electron_energy_dens_C1 = ((0.5 * alpha_s[0] * alpha_s[1] * alpha_s[2]) * jnp.sqrt(2) * 
+                           (alpha_s[0] * u_s[0] * Ce[:, 1, ...] * jnp.sign(Nn - 1) + 
+                            alpha_s[1] * u_s[1] * Ce[:, Nn, ...] * jnp.sign(Nm - 1) + 
+                            alpha_s[2] * u_s[2] * Ce[:, Nn * Nm, ...] * jnp.sign(Np - 1)))
+
+electron_energy_dens_C2 = ((0.5 * alpha_s[0] * alpha_s[1] * alpha_s[2]) * (1 / jnp.sqrt(2)) * 
+                           ((alpha_s[3] ** 2) * Ci[:, 2, ...] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) + 
+                            (alpha_s[4] ** 2) * Ci[:, 2 * Nn, ...] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) + 
+                            (alpha_s[5] ** 2) * Ci[:, 2 * Nn * Nm, ...] * jnp.sign(Np - 1) * jnp.sign(Np - 2)))
+
+    
 
 plt.figure(figsize=(8, 6))
-plt.imshow(We[0, ...], aspect='auto', cmap='viridis', 
+plt.imshow(Uex[0, ...], aspect='auto', cmap='viridis', 
            interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
 plt.colorbar(label=r'$U_{ex}$').ax.yaxis.label.set_size(16)
 
@@ -282,9 +334,8 @@ plt.ylabel('y/d_e', fontsize=16)
 plt.show()
 
 
-
 fig, ax = plt.subplots()
-im = ax.imshow(We[0], cmap='viridis', interpolation='nearest')
+im = ax.imshow(Uey[0], cmap='viridis', interpolation='nearest')
 
 # Add a color bar
 cbar = plt.colorbar(im, ax=ax)
@@ -292,11 +343,73 @@ cbar.set_label("$U_{ex}/c$")
 
 # Set up the plot aesthetics
 title = ax.set_title("Frame 0")
-ax.axis('off')  # Optional: turn off axes for a cleaner look
+ax.axis('off')  
+ax.set_aspect(10)
+
+# Update function for the animation
+def update(frame):
+    im.set_array(Uey[frame])
+    
+    # im.set_clim(vmin=Uex[frame].min(), vmax=Uex[frame].max())
+    # cbar.update_normal(im)
+    
+    title.set_text(f"Frame {frame}")
+    return [im, title]
+
+# Create the animation
+anim = FuncAnimation(
+    fig, update, frames=Uey.shape[0], interval=50, blit=True  # Adjust interval as needed
+)
+
+# Display the animation
+plt.show()
+
+
+x = jnp.linspace(0,1,Uey.shape[2])
+
+fig, ax = plt.subplots()
+line1, = ax.plot(x, Uey[0, 10, :, 0])  # Store the line object
+# line2, = ax.plot(x, We[0, 10, :, 0])
+
+# Set up the plot aesthetics
+title = ax.set_title("Frame 0")
+ax.axis('off')
+# ax.set_aspect(1)
+
+# Update function for the animation
+def update(frame):
+    line1.set_ydata(Uey[frame, 0, :, 0])
+    # line2.set_ydata(We[frame, 0, :, 0]) 
+    title.set_text(f"Frame {frame}")
+    return [line1, title]
+
+# Create the animation
+anim = FuncAnimation(
+    fig, update, frames=Uey.shape[0], interval=50, blit=True
+)
+
+plt.show()
+
+
+fig, ax = plt.subplots()
+im = ax.imshow(We[0], cmap='viridis', interpolation='nearest')
+
+# Add a color bar
+cbar = plt.colorbar(im, ax=ax)
+cbar.set_label("$\omega_{ez}/c$") 
+
+# Set up the plot aesthetics
+title = ax.set_title("Frame 0")
+ax.axis('off')
+ax.set_aspect(10)
 
 # Update function for the animation
 def update(frame):
     im.set_array(We[frame])
+    
+    # im.set_clim(vmin=We[frame].min(), vmax=We[frame].max())
+    # cbar.update_normal(im)
+    
     title.set_text(f"Frame {frame}")
     return [im, title]
 
@@ -309,9 +422,84 @@ anim = FuncAnimation(
 plt.show()
 
 
+fig, ax = plt.subplots()
+im = ax.imshow(Ce[0 , 0, ...], cmap='viridis', interpolation='nearest')
+
+# Add a color bar
+cbar = plt.colorbar(im, ax=ax)
+cbar.set_label("$C_{e}/c$") 
+
+# Set up the plot aesthetics
+title = ax.set_title("Frame 0")
+ax.axis('off')
+ax.set_aspect(10)
+
+# Update function for the animation
+def update(frame):
+    im.set_array(Ce[frame, 0, ...])
+    title.set_text(f"Frame {frame}")
+    return [im, title]
+
+# Create the animation
+anim = FuncAnimation(
+    fig, update, frames=Ce.shape[0], interval=50, blit=True  # Adjust interval as needed
+)
+
+# Display the animation
+plt.show()
+
+
+Cenmp2 = jnp.mean(jnp.abs(Ce) ** 2, axis=(-3, -2, -1))
+
+plt.figure(figsize=(8, 6))
+plt.imshow(Cenmp2[:, :Nn * Nm * Np], aspect='auto', cmap='viridis', 
+           interpolation='none', origin='lower', extent=(0, Nn * Nm * Np, 0, 10))#, vmin=-10, vmax=10)
+plt.colorbar(label=r'$log_{10}(\langle |C_{e,nm}|^2\rangle (t))$').ax.yaxis.label.set_size(16)
+
+# plt.imshow(C2[:10000, :Nn * Nm * Np], aspect='auto', cmap='viridis', 
+# interpolation='none', origin='lower', extent=(0, Nn, 0, 1000))
+# plt.colorbar(label=r'$\langle |C_{e,n}|^2\rangle (t)$').ax.yaxis.label.set_size(16)
+
+# plt.plot(jnp.arange(Nn) + 0.5, 3.6*jnp.sqrt(jnp.arange(Nn)), label='$3.60\sqrt{n}$', linestyle='-', color='black', linewidth=3.0)
+plt.xlabel('n + m x Nn', fontsize=16)
+plt.ylabel('t', fontsize=16)
+# plt.title(rf'$\nu ={nu}, L_x/d_e = {Lx}, \lambda_D/d_e = {lambda_D:.1e}, m_i/m_e = {mi_me}, N_n = {Nn}$', fontsize=14)
+# plt.legend()
+plt.show()
+
 
 plt.figure(figsize=(8, 6))
 plt.plot(t, plasma_energy, label='plasma energy', linestyle='-', color='red', linewidth=3.0)
+# plt.plot(t, p[0] * t + p[1], label='$log_{10}(|\delta C_{e00}|^2)$', linestyle='-', color='black', linewidth=3.0)
+# plt.plot(t[peaks], jnp.log(jnp.abs(dCek[:, 0, 0, 0, 0].imag[peaks])), label='$log_{10}(|\delta C_{e00}|^2)$', linestyle='None', marker='x', color='blue', linewidth=3.0)
+# plt.plot(t, A * jnp.cos(omega * t) * jnp.exp(-gamma * t) + B, label='$A\cos(\omega t)e^{-\gamma t}+B$', linestyle='-', color='blue', linewidth=3.0)
+# plt.ylabel(r'$log_{10}(|\delta C_{e000,k}|)$', fontsize=16)
+# plt.plot(t[:100], jnp.log10(Ci0002[:100]), label='$log_{10}(|\delta C_{i00}|^2)$', linestyle='-', color='red', linewidth=3.0)
+# plt.xlabel(r'$t\omega_{pe}$', fontsize=16)
+# plt.xlim(0.0, t_max)
+# plt.title(rf'$kv_{{th,e}}/\omega_{{pe}} = {k_norm:.2}, u_e/c = {u_s[0]}, \lambda_D/d_e = {lambda_D:.1e}, m_i/m_e = {mi_me}, N_n = {Nn}$', fontsize=14)
+# plt.legend().set_draggable(True)
+plt.show()
+
+
+plt.figure(figsize=(8, 6))
+plt.plot(t, Ck[:, 0, 0, 1, 0].imag, label='plasma energy', linestyle='-', color='red', linewidth=3.0)
+# plt.plot(t, p[0] * t + p[1], label='$log_{10}(|\delta C_{e00}|^2)$', linestyle='-', color='black', linewidth=3.0)
+# plt.plot(t[peaks], jnp.log(jnp.abs(dCek[:, 0, 0, 0, 0].imag[peaks])), label='$log_{10}(|\delta C_{e00}|^2)$', linestyle='None', marker='x', color='blue', linewidth=3.0)
+# plt.plot(t, A * jnp.cos(omega * t) * jnp.exp(-gamma * t) + B, label='$A\cos(\omega t)e^{-\gamma t}+B$', linestyle='-', color='blue', linewidth=3.0)
+# plt.ylabel(r'$log_{10}(|\delta C_{e000,k}|)$', fontsize=16)
+# plt.plot(t[:100], jnp.log10(Ci0002[:100]), label='$log_{10}(|\delta C_{i00}|^2)$', linestyle='-', color='red', linewidth=3.0)
+# plt.xlabel(r'$t\omega_{pe}$', fontsize=16)
+# plt.xlim(0.0, t_max)
+# plt.title(rf'$kv_{{th,e}}/\omega_{{pe}} = {k_norm:.2}, u_e/c = {u_s[0]}, \lambda_D/d_e = {lambda_D:.1e}, m_i/m_e = {mi_me}, N_n = {Nn}$', fontsize=14)
+# plt.legend().set_draggable(True)
+plt.show()
+
+
+x = jnp.linspace(0,1,Uey.shape[2])
+
+plt.figure(figsize=(8, 6))
+plt.plot(x, Uey[0, 8, :, 0], label='plasma energy', linestyle='-', color='red', linewidth=3.0)
 # plt.plot(t, p[0] * t + p[1], label='$log_{10}(|\delta C_{e00}|^2)$', linestyle='-', color='black', linewidth=3.0)
 # plt.plot(t[peaks], jnp.log(jnp.abs(dCek[:, 0, 0, 0, 0].imag[peaks])), label='$log_{10}(|\delta C_{e00}|^2)$', linestyle='None', marker='x', color='blue', linewidth=3.0)
 # plt.plot(t, A * jnp.cos(omega * t) * jnp.exp(-gamma * t) + B, label='$A\cos(\omega t)e^{-\gamma t}+B$', linestyle='-', color='blue', linewidth=3.0)
