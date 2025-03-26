@@ -2,7 +2,7 @@ import sys
 import os
 
 current_dir = os.path.dirname(__file__)
-parent_dir = os.path.abspath(os.path.join(current_dir, '..\..'))
+parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 solver_path = os.path.join(parent_dir, 'Vlasov-MaxwellSpectralSolver')
 
 sys.path.append(solver_path)
