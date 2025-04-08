@@ -90,7 +90,7 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
     # Col = -nu * ((n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) + 
     #              (m * (m - 1) * (m - 2)) / ((Nm - 1) * (Nm - 2) * (Nm - 3))) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
     
-    # Collision operator for Nm, Np < 4.
+    # # Collision operator for Nm, Np < 4.
     Col = -nu * (n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
     
     

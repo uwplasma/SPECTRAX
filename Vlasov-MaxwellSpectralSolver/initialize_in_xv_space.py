@@ -1,3 +1,8 @@
+import sys
+
+sys.path.append(r'/Users/csvega/Desktop/Madison/Code/Simulations')
+sys.path.append(r'/Users/csvega/Desktop/Madison/Code/Vlasov-Maxwell_Spectral_Solver/Vlasov-MaxwellSpectralSolver')
+
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
@@ -5,6 +10,8 @@ from jax.numpy.fft import fftn, fftshift
 from jax.scipy.special import factorial
 from jax.scipy.integrate import trapezoid
 from orthax.hermite import hermval3d
+from Examples_2D import Orszag_Tang
+
 
 def Hermite(n, x):
     """
@@ -76,7 +83,7 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
         return C_nmp + (trapezoid(trapezoid(trapezoid(
                 (f(X, Y, Z, Vx, Vy, Vz) * Hermite(n, xi_x) * Hermite(m, xi_y) * Hermite(p, xi_z)) /
                 jnp.sqrt(factorial(n) * factorial(m) * factorial(p) * 2 ** (n + m + p)),
-                (vx_slice - u[0]) / alpha[0], axis=-3), (vy_slice - u[1]) / alpha[1], axis=-2), (vz_slice - u[2]) / alpha[2], axis=-1))
+                (vy_slice - u[0]) / alpha[0], axis=-3), (vx_slice - u[1]) / alpha[1], axis=-2), (vz_slice - u[2]) / alpha[2], axis=-1))
                 
     Nv = 125
         
@@ -89,7 +96,7 @@ def initialize_system_xv(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, 
     """
     
     # Initialize fields and distributions.
-    B, E, fe, fi = Kelvin_Helmholtz_2D(Lx, Ly, Omega_ce, alpha_s[0], alpha_s[3])
+    B, E, fe, fi = Orszag_Tang(Lx, Ly, Omega_ce, alpha_s[0], mi_me)
         
     # Hermite decomposition of dsitribution funcitons.
     Ce_0 = (jax.vmap(
