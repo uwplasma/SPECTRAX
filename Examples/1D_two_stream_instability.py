@@ -32,7 +32,7 @@ kx = 2 * jnp.pi / Lx # Wavenumber.
     
 # Density fluctuation.
 dn1 = 0.001
-dn2 = 0.001
+dn2 = 0.001     
 
 # Fourier components of magnetic and electric fields.
 Fk_0 = jnp.zeros((6, 1, Nx, 1), dtype=jnp.complex128)
