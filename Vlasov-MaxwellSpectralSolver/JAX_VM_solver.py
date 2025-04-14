@@ -32,6 +32,35 @@ def cross_product(k_vec, F_vec):
 
     return jnp.array([result_x, result_y, result_z])
 
+
+def collision(Nn, Nm, Np, n, m, p):
+    # Pack inputs into arrays
+    Nnmp = jnp.array([Nn, Nm, Np])
+    nmp = jnp.array([n, m, p])
+    
+    # Sort by descending N values
+    indices = jnp.argsort(-Nnmp)
+    sorted_Nnmp = Nnmp[indices]
+    sorted_nmp = nmp[indices]
+    
+    # Helper function to calculate collision term for a single component
+    def collision_term(Nj, nj):
+        return nj * (nj - 1) * (nj - 2) / ((Nj - 1) * (Nj - 2) * (Nj - 3))
+    
+    # Calculate all possible terms in a vectorized way
+    valid_indices = sorted_Nnmp > 3
+    
+    # Calculate the sum for valid indices
+    result = jnp.sum(jnp.where(valid_indices, collision_term(sorted_Nnmp, sorted_nmp), 0.0))
+    
+    # Return 0 if no valid indices
+    return jax.lax.cond(
+        jnp.any(valid_indices),
+        lambda _: result,
+        lambda _: jnp.array(0.0),
+        operand=None
+    )
+
 def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, index):
     """
     I have to add docstrings!
@@ -70,21 +99,8 @@ def compute_dCk_s_dt(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s,
         jnp.sqrt(2 * m) * (u[0] / alpha[1]) * Ck[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m))
     
     # Define "unphysical" collision operator to eliminate recurrence.
-    
-    # Collision operator for Nn, Nm, Np > 3.
-    Col = -nu * ((n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) + 
-                 (m * (m - 1) * (m - 2)) / ((Nm - 1) * (Nm - 2) * (Nm - 3)) +
-                 (p * (p - 1) * (p - 2)) / ((Np - 1) * (Np - 2) * (Np - 3))) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
-    
-    # # Collision operator for Np < 4.
-    # Col = -nu * ((n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) + 
-    #              (m * (m - 1) * (m - 2)) / ((Nm - 1) * (Nm - 2) * (Nm - 3))) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
-    
-    # # Collision operator for Nm, Np < 4.
-    # Col = -nu * (n * (n - 1) * (n - 2)) / ((Nn - 1) * (Nn - 2) * (Nn - 3)) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
-    
-    
-    # Col = 0
+
+    Col = -nu * collision(Nn,Nm,Np,n,m,p) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
         
     # Define ODEs for Hermite-Fourier coefficients.
     # Clossure is achieved by setting to zero coefficients with index out of range.
