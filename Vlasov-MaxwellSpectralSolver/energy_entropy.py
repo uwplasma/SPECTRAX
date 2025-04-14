@@ -28,7 +28,7 @@ def compute_energy(Ck, Fk, Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz
         
     plasma_energy = plasma_energy_1 + plasma_energy_2
 
-    EM_energy = 0.5 * jnp.sum(jnp.abs(Fk) ** 2, axis=(-3, -2, -1)) * Omega_ce[0] ** 2
+    EM_energy = 0.5 * jnp.sum(jnp.abs(Fk) ** 2, axis=(-4, -3, -2, -1)) * Omega_ce[0] ** 2
     
     
     return plasma_energy, EM_energy
