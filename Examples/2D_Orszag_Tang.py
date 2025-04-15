@@ -31,7 +31,7 @@ t_steps, t_max, dt = 5, 0.4, 0.05
 
 # Initial conditions
 
-vte = alpha_e / jnp.sqrt(2) # Electron thermal velocity.
+vte = alpha_s[0] / jnp.sqrt(2) # Electron thermal velocity.
 vti = vte * jnp.sqrt(1 / mi_me) # Ion thermal velocity.
 deltaB = 0.2 # In-plane magnetic field amplitude. 
 U0 = deltaB * Omega_cs[0] / jnp.sqrt(mi_me) # Fluid velocity amplitude.
@@ -78,10 +78,10 @@ end_time = time.time()
 t.block_until_ready()
 print(f"Runtime: {end_time - start_time} seconds")
 
-# Save results.
-jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF\S13\Ck', Ck)
-jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF\S13\Fk', Fk)
-jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF\S13\\time', t)
+# # Save results.
+# jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF\S13\Ck', Ck)
+# jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF\S13\Fk', Fk)
+# jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF\S13\\time', t)
 
 ####################################################################################################################################################
 # Data analysis.
