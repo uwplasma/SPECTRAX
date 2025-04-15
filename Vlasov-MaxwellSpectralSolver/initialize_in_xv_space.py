@@ -10,8 +10,6 @@ from jax.numpy.fft import fftn, fftshift
 from jax.scipy.special import factorial
 from jax.scipy.integrate import trapezoid
 from orthax.hermite import hermval3d
-from Examples_2D import Orszag_Tang
-
 
 def Hermite(n, x):
     """
@@ -90,31 +88,28 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
     return jax.lax.fori_loop(0, Nv, add_C_nmp, jnp.zeros((Ny, Nx, Nz)))
 
 
-def initialize_system_xv(Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):
+def initialize_system_xv(B, E, f1, f2, Omega_ce, mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns):
     """
     I have to add docstrings!
     """
-    
-    # Initialize fields and distributions.
-    B, E, fe, fi = Orszag_Tang(Lx, Ly, Omega_ce, alpha_s[0], mi_me)
         
     # Hermite decomposition of dsitribution funcitons.
-    Ce_0 = (jax.vmap(
+    C1_0 = (jax.vmap(
         compute_C_nmp, in_axes=(
             None, None, None, None, None, None, None, None, None, None, None, None, 0))
-        (fe, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
-    Ci_0 = (jax.vmap(
+        (f1, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
+    C2_0 = (jax.vmap(
         compute_C_nmp, in_axes=(
             None, None, None, None, None, None, None, None, None, None, None, None, 0))
-        (fi, alpha_s[3:], u_s[3:], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
+        (f2, alpha_s[3:], u_s[3:], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
 
     # Combine Ce_0 and Ci_0 into single array and compute the fast Fourier transform.
     
-    Cek_0 = fftshift(fftn(Ce_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
-    Cik_0 = fftshift(fftn(Ci_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
+    C1k_0 = fftshift(fftn(C1_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
+    C2k_0 = fftshift(fftn(C2_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
 
     
-    Ck_0 = jnp.concatenate([Cek_0, Cik_0])
+    Ck_0 = jnp.concatenate([C1k_0, C2k_0])
     # Ck_0 = fftshift(fftn(C_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
     
     ############################################################################################################   

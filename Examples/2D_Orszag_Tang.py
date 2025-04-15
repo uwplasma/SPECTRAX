@@ -25,7 +25,7 @@ alpha_e = jnp.array([0.25, 0.25, 0.25])
 alpha_s = jnp.concatenate([alpha_e, alpha_e * jnp.sqrt(Ti_Te / mi_me)])
 u_s = jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 nu = 1.0
-t_steps, t_max, dt = 5, 0.4, 0.005
+t_steps, t_max, dt = 5, 0.4, 0.05
 
 
 
@@ -69,7 +69,7 @@ fi = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * vti ** 3) *
 #     file.write(f"t_steps, t_max: {t_steps}, {t_max}\n")
 #     file.write(f"dt: {dt}\n")
 
-Ck_0, Fk_0 = initialize_system_xv(Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns)
+Ck_0, Fk_0 = initialize_system_xv(B, E, fe, fi, Omega_cs[0], mi_me, alpha_s, u_s, Lx, Ly, Lz, Nx, Ny, Nz, Nn, Nm, Np, Ns)
 
 # Run simulation.
 start_time = time.time()
@@ -78,10 +78,10 @@ end_time = time.time()
 t.block_until_ready()
 print(f"Runtime: {end_time - start_time} seconds")
 
-# # Save results.
-# jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF\S13\Ck', Ck)
-# jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF\S13\Fk', Fk)
-# jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF\S13\\time', t)
+# Save results.
+jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF\S13\Ck', Ck)
+jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF\S13\Fk', Fk)
+jnp.save('C:\Cristian\Postdoc\Madison\Code\Simulations\Two_stream_instability_1D_HF\S13\\time', t)
 
 ####################################################################################################################################################
 # Data analysis.
