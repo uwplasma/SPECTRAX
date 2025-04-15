@@ -96,7 +96,7 @@ electron2_energy_Ck = (0.5 * alpha_s[3] * alpha_s[4] * alpha_s[5]) * ((0.5 * (al
                                                 
 electric_energy_Fk = 0.5 * jnp.sum(jnp.abs(Fk[:, 0, 0, :, 0]) ** 2, axis=-1) * Omega_cs[0] ** 2
 
-p = jnp.polyfit(t[100:], jnp.log(electric_energy_Fk[100:]), 1)
+p = jnp.polyfit(t, jnp.log(electric_energy_Fk), 1)
 
 fig1, axes1 = plt.subplots(2, 3, figsize=(18, 10))
 
@@ -126,7 +126,7 @@ axes1[0,2].legend().set_draggable(True)
 # Energy plots in log-linear scale.
 
 # Electron energy.
-axes1[1,0].plt.plot(t, jnp.log10(electron1_energy_Ck + electron2_energy_Ck), label='electron energy', linestyle='-', color='red', linewidth=3.0)
+axes1[1,0].plot(t, jnp.log10(electron1_energy_Ck + electron2_energy_Ck), label='electron energy', linestyle='-', color='red', linewidth=3.0)
 axes1[1,0].set_ylabel(r'$\log_{10}(\text{plasma energy})$', fontsize=16)
 axes1[1,0].set_xlabel(r'$t\omega_{pe}$', fontsize=16)
 axes1[1,0].legend().set_draggable(True)
@@ -147,5 +147,5 @@ axes1[1,2].legend().set_draggable(True)
 
 fig1.suptitle(rf'$kv_{{th,e}}/\omega_{{pe}} = {k_norm:.2}, \nu = {nu}, u_e = {u_s[0]}, \alpha_e = {alpha_s[0]:.3}, N_x = {Nx}, N_n = {Nn}, \delta n = {dn1}$', fontsize=14)
 
-
+plt.show()
 
