@@ -4,27 +4,6 @@ except ModuleNotFoundError: import pip._vendor.tomli as tomllib
 
 __all__ = ["load_parameters", "initialize_simulation_parameters"]
 
-
-def load_parameters(input_file):
-    """
-    Load parameters from a TOML file.
-
-    Parameters:
-    ----------
-    input_file : str
-        Path to the TOML file containing simulation parameters.
-
-    Returns:
-    -------
-    parameters : dict
-        Dictionary containing simulation parameters.
-    """
-    parameters = tomllib.load(open(input_file, "rb"))
-    input_parameters = parameters['input_parameters']
-    solver_parameters = parameters['solver_parameters']
-    return input_parameters, solver_parameters
-
-
 def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, timesteps=500):
     """
     Initialize the simulation parameters for a Vlasov solver with Hermite polynomials, 
@@ -70,6 +49,8 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "dn1": 0.001,
         "dn2": 0.001,
         "ode_tolerance": 1e-6,
+        "vte": lambda p: p["alpha_s"][0] / jnp.sqrt(2),
+        "vti": lambda p: p["vte"] * jnp.sqrt(1 / p["mi_me"]),
     }
     
     # Initialize distribution function as a two-stream instability
@@ -119,3 +100,25 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     })
 
     return parameters
+
+
+def load_parameters(input_file):
+    """
+    Load parameters from a TOML file.
+
+    Parameters:
+    ----------
+    input_file : str
+        Path to the TOML file containing simulation parameters.
+
+    Returns:
+    -------
+    parameters : dict
+        Dictionary containing simulation parameters.
+    """
+    parameters = tomllib.load(open(input_file, "rb"))
+    input_parameters = parameters['input_parameters']
+    solver_parameters = parameters['solver_parameters']
+    # default_parameters = initialize_simulation_parameters(input_parameters, **solver_parameters)
+    # input_parameters = {**default_parameters, **input_parameters}
+    return input_parameters, solver_parameters

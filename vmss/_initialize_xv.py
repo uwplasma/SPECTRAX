@@ -1,0 +1,106 @@
+import jax
+jax.config.update("jax_enable_x64", True)
+import jax.numpy as jnp
+from jax import vmap, jit
+from jax.numpy.fft import fftn, fftshift
+from jax.scipy.special import factorial
+from jax.scipy.integrate import trapezoid
+from functools import partial
+
+@jit
+def Hermite(n, x):
+    n = n.astype(int) # Ensure that n is an integer.
+    # Add next term in Hermite polynomial. Body function of fori_loop below.
+    def add_Hermite_term(m, partial_sum):
+        return partial_sum + ((-1)**m / (factorial(m) * factorial(n - 2*m))) * (2*x)**(n - 2*m)
+    # Return Hermite polynomial of order n.
+    return factorial(n) * jax.lax.fori_loop(0, (n // 2) + 1, add_Hermite_term, jnp.zeros_like(x))
+
+@jit
+def generate_Hermite_function(xi_x, xi_y, xi_z, Nn, Nm, indices):
+    # Indices below represent order of Hermite polynomials.
+    p = jnp.floor(indices / (Nn * Nm)).astype(int)
+    m = jnp.floor((indices - p * Nn * Nm) / Nn).astype(int)
+    n = (indices - p * Nn * Nm - m * Nn).astype(int)
+    
+    # Generate element of AW Hermite basis in 3D space.
+    Hermite_basis = (Hermite(n, xi_x) * Hermite(m, xi_y) * Hermite(p, xi_z) * 
+                jnp.exp(-(xi_x**2 + xi_y**2 + xi_z**2)) / 
+                jnp.sqrt((jnp.pi)**3 * 2**(n + m + p) * factorial(n) * factorial(m) * factorial(p)))
+    return Hermite_basis
+
+@partial(jit, static_argnames=['f', 'Nn', 'Nm', 'Np', 'Nx', 'Ny', 'Nz'])
+def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
+    # Indices below represent order of Hermite polynomials.
+    p = jnp.floor(indices / (Nn * Nm)).astype(int)
+    m = jnp.floor((indices - p * Nn * Nm) / Nn).astype(int)
+    n = (indices - p * Nn * Nm - m * Nn).astype(int)
+    # Generate 6D space for particle distribution function f.
+    x = jnp.linspace(0, Lx, Nx)
+    y = jnp.linspace(0, Ly, Ny)
+    z = jnp.linspace(0, Lz, Nz)
+    vx = jnp.linspace(-5 * alpha[0] + u[0], 5 * alpha[0] + u[0], 40)
+    vy = jnp.linspace(-5 * alpha[1] + u[1], 5 * alpha[1] + u[1], 40)
+    vz = jnp.linspace(-5 * alpha[2] + u[2], 5 * alpha[2] + u[2], 40)
+    
+    @jit
+    def add_C_nmp(i, C_nmp):
+        ivx = jnp.floor(i / (5 ** 2)).astype(int)
+        ivy = jnp.floor((i - ivx * 5 ** 2) / 5).astype(int)
+        ivz = (i - ivx * 5 ** 2 - ivy * 5).astype(int)
+        
+        vx_slice = jax.lax.dynamic_slice(vx, (ivx * 8,), (8,))
+        vy_slice = jax.lax.dynamic_slice(vy, (ivy * 8,), (8,))
+        vz_slice = jax.lax.dynamic_slice(vz, (ivz * 8,), (8,))
+        
+        X, Y, Z, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx_slice, vy_slice, vz_slice, indexing='xy')
+
+        # Define variables for Hermite polynomials.
+        xi_x = (Vx - u[0]) / alpha[0]
+        xi_y = (Vy - u[1]) / alpha[1]
+        xi_z = (Vz - u[2]) / alpha[2]
+
+        # Compute coefficients of Hermite decomposition of 3D velocity space.
+        return C_nmp + (trapezoid(trapezoid(trapezoid(
+                (f(X, Y, Z, Vx, Vy, Vz) * Hermite(n, xi_x) * Hermite(m, xi_y) * Hermite(p, xi_z)) /
+                jnp.sqrt(factorial(n) * factorial(m) * factorial(p) * 2 ** (n + m + p)),
+                (vy_slice - u[0]) / alpha[0], axis=-3), (vx_slice - u[1]) / alpha[1], axis=-2), (vz_slice - u[2]) / alpha[2], axis=-1))
+                
+    Nv = 55
+    return jax.lax.fori_loop(0, Nv, add_C_nmp, jnp.zeros((Ny, Nx, Nz)))
+
+@partial(jit, static_argnames=['B', 'E', 'f1', 'f2', 'Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns'])
+def initialize_xv(B, E, f1, f2, input_parameters={}, Nx=33, Ny=33, Nz=1, Nn=4, Nm=4, Np=4, Ns=2, timesteps=200):
+    alpha_s = input_parameters["alpha_s"]
+    u_s = input_parameters["u_s"]
+    Lx = input_parameters["Lx"]
+    Ly = input_parameters["Ly"]
+    Lz = input_parameters["Lz"]
+        
+    # Hermite decomposition of dsitribution funcitons.
+    C1_0 = (vmap(
+        compute_C_nmp, in_axes=(
+            None, None, None, None, None, None, None, None, None, None, None, None, 0))
+        (f1, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
+    C2_0 = (vmap(
+        compute_C_nmp, in_axes=(
+            None, None, None, None, None, None, None, None, None, None, None, None, 0))
+        (f2, alpha_s[3:], u_s[3:], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, jnp.arange(Nn * Nm * Np)))
+
+    # Combine Ce_0 and Ci_0 into single array and compute the fast Fourier transform.
+    C1k_0 = fftshift(fftn(C1_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
+    C2k_0 = fftshift(fftn(C2_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
+    Ck_0 = jnp.concatenate([C1k_0, C2k_0])
+    
+    # Define 3D grid for functions E(x, y, z) and B(x, y, z).
+    x = jnp.linspace(0, Lx, Nx)
+    y = jnp.linspace(0, Ly, Ny)
+    z = jnp.linspace(0, Lz, Nz)
+    X, Y, Z = jnp.meshgrid(x, y, z, indexing='xy')
+    
+    # Combine E and B into single array and compute the fast Fourier transform.
+    Ek_0 = fftshift(fftn(E(X, Y, Z), axes=(-3, -2, -1)), axes=(-3, -2, -1))
+    Bk_0 = fftshift(fftn(B(X, Y, Z), axes=(-3, -2, -1)), axes=(-3, -2, -1))
+    Fk_0 = jnp.concatenate([Ek_0, Bk_0])
+    
+    return Ck_0, Fk_0

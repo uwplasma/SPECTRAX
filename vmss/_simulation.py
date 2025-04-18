@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 from jax import jit, config, vmap
+config.update("jax_enable_x64", True)
 from jax.debug import print as jprint
 from functools import partial
 from diffrax import (diffeqsolve, Tsit5, ODETerm,
@@ -7,7 +8,14 @@ from diffrax import (diffeqsolve, Tsit5, ODETerm,
 from _initialization import initialize_simulation_parameters
 from _model import plasma_current, Hermite_Fourier_system
 from _diagnostics import diagnostics
-config.update("jax_enable_x64", True)
+
+# Parallelize the simulation using JAX
+from jax.sharding import PartitionSpec as P
+from jax.experimental.shard_map import shard_map
+from jax import devices, make_mesh, NamedSharding, device_put
+mesh = make_mesh((len(devices()),), ("batch"))
+spec = P("batch")
+sharding = NamedSharding(mesh, spec)
 
 __all__ = ["cross_product", "ode_system", "simulation"]
 
@@ -26,21 +34,27 @@ def cross_product(k_vec, F_vec):
     return jnp.array([ky * Fz - kz * Fy, kz * Fx - kx * Fz, kx * Fy - ky * Fx])
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns'])
-def ode_system(t, Ck_Fk, args, Nx, Ny, Nz, Nn, Nm, Np, Ns):
+def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     (qs, nu, Omega_cs, alpha_s, u_s,
      Lx, Ly, Lz, kx_grid, ky_grid, kz_grid
     ) = args
 
-    Nk = Nx * Ny * Nz
-    total_Ck_size = Ns * Nn * Nm * Np * Nk
-    Ck = Ck_Fk[:total_Ck_size].reshape(Ns * Nn * Nm * Np, Ny, Nx, Nz)
+    total_Ck_size = Nn * Nm * Np * Ns * Nx * Ny * Nz
+    Ck = Ck_Fk[:total_Ck_size].reshape(Nn * Nm * Np * Ns, Ny, Nx, Nz)
     Fk = Ck_Fk[total_Ck_size:].reshape(6, Ny, Nx, Nz)
 
-    dCk_s_dt = vmap(
-        Hermite_Fourier_system,
-        in_axes=(None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, 0)
-    )(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, jnp.arange(Nn * Nm * Np * Ns))
+    # dCk_s_dt = vmap(
+    #     Hermite_Fourier_system,
+    #     in_axes=(None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, 0)
+    # )(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, jnp.arange(Nn * Nm * Np * Ns))
     
+    partial_Hermite_Fourier_system = partial(
+        Hermite_Fourier_system,
+        Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np)
+    sharded_fun = jit(shard_map(vmap(partial_Hermite_Fourier_system), mesh, in_specs=spec, out_specs=spec, check_rep=False))
+    indices_sharded = device_put(jnp.arange(Nn * Nm * Np * Ns), sharding)
+    dCk_s_dt = sharded_fun(indices_sharded)
+
     nabla = jnp.array([kx_grid / Lx, ky_grid / Ly, kz_grid / Lz])
     dBk_dt = -1j * cross_product(nabla, Fk[:3])
     
@@ -96,12 +110,13 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
             parameters["kx_grid"], parameters["ky_grid"], parameters["kz_grid"])
     
     # Solve the ODE system
-    ode_system_partial = partial(ode_system, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns)
+    ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns)
     sol = diffeqsolve(
-        ODETerm(lambda t, y, args: ode_system_partial(t, y, args)), solver=Tsit5(),
+        ODETerm(ode_system_partial), solver=Tsit5(),
         stepsize_controller=PIDController(rtol=parameters["ode_tolerance"], atol=parameters["ode_tolerance"]),
         t0=0, t1=parameters["t_max"], dt0=parameters["t_max"]/timesteps,
-        y0=initial_conditions, args=args, saveat=SaveAt(ts=time), max_steps=100000,
+        y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
+        max_steps=100000,
         progress_meter=TqdmProgressMeter())
     
     # Reshape the solution to extract Ck and Fk
