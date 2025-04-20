@@ -3,3 +3,6 @@ vmss/.DS_Store
 spectrax/.DS_Store
 .vscode/settings.json
 *.npz
+__pycache__
+*.npy
+*.gif
