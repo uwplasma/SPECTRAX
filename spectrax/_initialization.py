@@ -102,7 +102,6 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
 
     return parameters
 
-
 def load_parameters(input_file):
     """
     Load parameters from a TOML file.

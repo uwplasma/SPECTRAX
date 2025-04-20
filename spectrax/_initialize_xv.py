@@ -6,7 +6,9 @@ from jax.numpy.fft import fftn, fftshift
 from jax.scipy.special import factorial
 from jax.scipy.integrate import trapezoid
 from functools import partial
-from jax_tqdm import scan_tqdm
+# from jax_tqdm import scan_tqdm
+
+__all__ = ['Hermite', 'generate_Hermite_function', 'compute_C_nmp', 'initialize_xv']
 
 # Parallelize the simulation using JAX
 from jax.sharding import PartitionSpec as P

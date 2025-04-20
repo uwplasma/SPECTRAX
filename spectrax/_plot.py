@@ -1,15 +1,15 @@
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
-from _inverse_transform import inverse_HF_transform
+from ._inverse_transform import inverse_HF_transform
 from matplotlib.animation import FuncAnimation
 
 __all__ = ['plot']
 
 def plot(output):
-    time = output["time"]; k_norm = output["k_norm"]; Nm = output["Nm"]
+    time = output["time"]; k_norm = output["k_norm"]; Nm = int(output["Nm"])
     u_s = output["u_s"]; alpha_s = output["alpha_s"]; nu = output["nu"]
-    Lx = output["Lx"]; Nx = output["Nx"]; Nn = output["Nn"]; 
-    Np = output["Np"]; dn1 = output["dn1"]; Ck = output["Ck"]
+    Lx = output["Lx"]; Nx = output["Nx"]; Nn = int(output["Nn"]); 
+    Np = int(output["Np"]); dn1 = output["dn1"]; Ck = output["Ck"]
     
     # Setup plots
     fig, axes = plt.subplots(2, 3, figsize=(15, 9))

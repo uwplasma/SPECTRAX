@@ -4,7 +4,7 @@ from functools import partial
 from jax.lax import dynamic_slice
 from jax.scipy.signal import convolve
 
-__all__ = ['plasma_current', 'collision', 'Hermite_Fourier_system']
+__all__ = ['plasma_current', 'collision', 'Hermite_Fourier_system', 'diffusion']
 
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
 def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):

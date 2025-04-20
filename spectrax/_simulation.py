@@ -5,9 +5,9 @@ from jax.debug import print as jprint
 from functools import partial
 from diffrax import (diffeqsolve, Tsit5, ODETerm,
                      SaveAt, PIDController, TqdmProgressMeter)
-from _initialization import initialize_simulation_parameters
-from _model import plasma_current, Hermite_Fourier_system
-from _diagnostics import diagnostics
+from ._initialization import initialize_simulation_parameters
+from ._model import plasma_current, Hermite_Fourier_system
+from ._diagnostics import diagnostics
 
 # Parallelize the simulation using JAX
 from jax.sharding import PartitionSpec as P

@@ -1,0 +1,6 @@
+jax
+matplotlib
+sphinx
+sphinx-autoapi
+piccolo_theme
+orthax
