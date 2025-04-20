@@ -10,15 +10,15 @@ alpha_s = [0.25, 0.25, 0.25, 0.05, 0.05, 0.05]
 u_s = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 Omega_cs = [0.5, 0.02]
 nu = 1.0
-D = 1.0
-t_max = 1.0
+D = 0.0
+t_max = 0.1
 vte = 0.177
 vti = 0.0354
-ode_tolerance = 1e-6
+ode_tolerance = 1e-12
 
 [solver_parameters]
-Nx=10
-Ny=10
+Nx=15
+Ny=15
 Nz=1
 Nn=5
 Nm=5
