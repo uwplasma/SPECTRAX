@@ -1,6 +1,8 @@
 import jax.numpy as jnp
 try: import tomllib
 except ModuleNotFoundError: import pip._vendor.tomli as tomllib
+import diffrax
+import inspect
 
 __all__ = ["load_parameters", "initialize_simulation_parameters"]
 
@@ -119,6 +121,11 @@ def load_parameters(input_file):
     parameters = tomllib.load(open(input_file, "rb"))
     input_parameters = parameters['input_parameters']
     solver_parameters = parameters['solver_parameters']
-    # default_parameters = initialize_simulation_parameters(input_parameters, **solver_parameters)
-    # input_parameters = {**default_parameters, **input_parameters}
+
+    def get_solver_class(name: str):
+        for cls_name, cls in inspect.getmembers(diffrax, inspect.isclass):
+            if issubclass(cls, diffrax.AbstractSolver) and cls is not diffrax.AbstractSolver and cls_name == name: return cls
+        raise ValueError(f"Solver '{name}' is not supported. Choose from Diffrax solvers.")
+    solver_parameters["solver"] = get_solver_class(solver_parameters.get("solver", "Tsit5"))
+    
     return input_parameters, solver_parameters

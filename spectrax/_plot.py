@@ -28,16 +28,16 @@ def plot(output):
     axes[0, 0].legend()
     
     # Relative Energy Error
-    axes[1, 0].plot(time[5:], jnp.abs(output["total_energy"][5:]-output["total_energy"][0])/(output["total_energy"][0]+1e-9), label="Relative energy error")
+    axes[1, 0].plot(time[2:], jnp.abs(output["total_energy"][2:]-output["total_energy"][0])/(output["total_energy"][0]+1e-9), label="Relative energy error")
     axes[1, 0].set(xlabel=r"Time ($\omega_{pe}^{-1}$)", ylabel="Relative Energy Error", yscale="log")#, ylim=[1e-5, None])
     
     # Plot electron density fluctuation vs t.
     axes[1, 1].plot(time, (jnp.abs(output["dCk"][:, 0, 0, 0, 0].imag)), label='$|\delta C^e_{000,k}|$', linestyle='-', linewidth=2.0)
-    axes[1, 1].set(title='Species 1 density fluctuation', ylabel=r'$log(|\delta C^e_{000,k}|)$', xlabel=r'$t\omega_{pe}$', yscale="log", ylim=[1e-20, None])
+    axes[1, 1].set(title='Species 1 density fluctuation', ylabel=r'$log(|\delta C^e_{000,k}|)$', xlabel=r'$t\omega_{pe}$', yscale="log")#, ylim=[1e-20, None])
     
     # Plot ion density fluctuation vs t.
     axes[1, 2].plot(time, (jnp.abs(output["dCk"][:, Nn, 0, 0, 0].imag)), label='$|\delta C^i_{000,k}|$', linestyle='-', linewidth=2.0)
-    axes[1, 2].set(title='Species 2 density fluctuation', ylabel=r'$log(|\delta C^i_{000,k}|)$', xlabel=r'$t\omega_{pe}$', yscale="log", ylim=[1e-20, None])
+    axes[1, 2].set(title='Species 2 density fluctuation', ylabel=r'$log(|\delta C^i_{000,k}|)$', xlabel=r'$t\omega_{pe}$', yscale="log")#, ylim=[1e-20, None])
     
     # Electron Phase space plot
     i=0

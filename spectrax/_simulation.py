@@ -3,7 +3,7 @@ from jax import jit, config, vmap
 config.update("jax_enable_x64", True)
 from jax.debug import print as jprint
 from functools import partial
-from diffrax import (diffeqsolve, Tsit5, ODETerm,
+from diffrax import (diffeqsolve, Tsit5, Dopri5, ODETerm,
                      SaveAt, PIDController, TqdmProgressMeter)
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
@@ -65,8 +65,8 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     dy_dt  = jnp.concatenate([dCk_s_dt.reshape(-1), dFk_dt.reshape(-1)])
     return dy_dt
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps'])
-def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, timesteps=200):
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver'])
+def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, timesteps=200, solver=Dopri5):
     """
     Simulates the Vlasov-Maxwell system using spectral methods.
     This function initializes simulation parameters, sets up initial conditions,
@@ -108,11 +108,11 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
     args = (parameters["qs"], parameters["nu"], parameters["D"], parameters["Omega_cs"], parameters["alpha_s"],
             parameters["u_s"], parameters["Lx"], parameters["Ly"], parameters["Lz"],
             parameters["kx_grid"], parameters["ky_grid"], parameters["kz_grid"])
-    
+
     # Solve the ODE system
     ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns)
     sol = diffeqsolve(
-        ODETerm(ode_system_partial), solver=Tsit5(),
+        ODETerm(ode_system_partial), solver=solver(),
         stepsize_controller=PIDController(rtol=parameters["ode_tolerance"], atol=parameters["ode_tolerance"]),
         t0=0, t1=parameters["t_max"], dt0=parameters["t_max"]/timesteps,
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),

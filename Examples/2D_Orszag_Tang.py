@@ -1,5 +1,5 @@
 import os
-number_of_processors_to_use = 3 # Parallelization, this should divide total resolution
+number_of_processors_to_use = 5 # Parallelization, this should divide total resolution
 os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
 from jax import block_until_ready
@@ -13,8 +13,8 @@ print('Setting up simulation parameters...')
 start_time = time()
 deltaB = 0.2 # In-plane magnetic field amplitude. 
 U0 = deltaB * input_parameters["Omega_cs"][0] / jnp.sqrt(input_parameters["mi_me"])
-kx = input_parameters["kx"]
-ky = input_parameters["ky"]
+kx = 2*jnp.pi/input_parameters["Lx"]
+ky = 2*jnp.pi/input_parameters["Ly"]
 
 # Electron and ion fluid velocities.
 Ue = lambda x, y, z: U0 * jnp.array([-jnp.sin(ky * y), jnp.sin(kx * x), -deltaB * input_parameters["Omega_cs"][0] * (2 * kx * jnp.cos(2 * kx * x) + ky * jnp.cos(ky * y))])
