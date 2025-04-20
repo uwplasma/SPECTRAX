@@ -35,7 +35,7 @@ def cross_product(k_vec, F_vec):
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns'])
 def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
-    (qs, nu, Omega_cs, alpha_s, u_s,
+    (qs, nu, D, Omega_cs, alpha_s, u_s,
      Lx, Ly, Lz, kx_grid, ky_grid, kz_grid
     ) = args
 
@@ -46,11 +46,11 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     # dCk_s_dt = vmap(
     #     Hermite_Fourier_system,
     #     in_axes=(None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, 0)
-    # )(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, jnp.arange(Nn * Nm * Np * Ns))
+    # )(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, jnp.arange(Nn * Nm * Np * Ns))
     
     partial_Hermite_Fourier_system = partial(
         Hermite_Fourier_system,
-        Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np)
+        Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np)
     sharded_fun = jit(shard_map(vmap(partial_Hermite_Fourier_system), mesh, in_specs=spec, out_specs=spec, check_rep=False))
     indices_sharded = device_put(jnp.arange(Nn * Nm * Np * Ns), sharding)
     dCk_s_dt = sharded_fun(indices_sharded)
@@ -105,8 +105,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
     time = jnp.linspace(0, parameters["t_max"], timesteps)
     
     # Arguments for the ODE system.
-    args = (parameters["qs"], parameters["nu"], parameters["Omega_cs"], parameters["alpha_s"], parameters["u_s"],
-            parameters["Lx"], parameters["Ly"], parameters["Lz"],
+    args = (parameters["qs"], parameters["nu"], parameters["D"], parameters["Omega_cs"], parameters["alpha_s"],
+            parameters["u_s"], parameters["Lx"], parameters["Ly"], parameters["Lz"],
             parameters["kx_grid"], parameters["ky_grid"], parameters["kz_grid"])
     
     # Solve the ODE system
@@ -116,8 +116,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
         stepsize_controller=PIDController(rtol=parameters["ode_tolerance"], atol=parameters["ode_tolerance"]),
         t0=0, t1=parameters["t_max"], dt0=parameters["t_max"]/timesteps,
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
-        max_steps=100000,
-        progress_meter=TqdmProgressMeter())
+        max_steps=100000, progress_meter=TqdmProgressMeter())
     
     # Reshape the solution to extract Ck and Fk
     Ck = sol.ys[:,:(-6 * Nx * Ny * Nz)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx, Nz)

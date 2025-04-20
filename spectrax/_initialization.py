@@ -44,6 +44,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "u_s": jnp.array([1.0, 0.0, 0.0, -1.0, 0.0, 0.0]),
         "Omega_cs": lambda p: jnp.array([1.0, 1.0 / p["mi_me"]]),
         "nu": 2.0,
+        "D": 0.0,
         "t_max": 0.3,
         "kx": lambda p: 2 * jnp.pi / p["Lx"],
         "dn1": 0.001,

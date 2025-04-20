@@ -93,8 +93,28 @@ def collision(Nn, Nm, Np, n, m, p):
     terms = vmap(safe_term)(N, idx)
     return jnp.sum(terms)
 
+@jit
+def diffusion(kx, ky, kz, D, exponent=2):
+    """
+    Computes the diffusion term for the Vlasov-Maxwell system.
+
+    Parameters
+    ----------
+    kx, ky, kz : jnp.ndarray
+        Wavevector components in the x, y, and z directions.
+    D : float
+        Diffusion coefficient.
+
+    Returns
+    -------
+    jnp.ndarray
+        Diffusion term proportional to kx**2 + ky**2 + kz**2.
+    """
+    k_squared = kx**exponent + ky**exponent + kz**exponent
+    return -D * k_squared
+
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np'])
-def Hermite_Fourier_system(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, index):
+def Hermite_Fourier_system(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, index):
     """
     Computes the time derivative of a single Hermite-Fourier coefficient Ck[n, m, p] for species s
     in a Vlasov-Maxwell spectral solver using a Hermite-Fourier basis.
@@ -137,7 +157,9 @@ def Hermite_Fourier_system(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, al
         jnp.sqrt(2 * n) * (u[1] / alpha[0]) * Ck[n-1 + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n) - 
         jnp.sqrt(2 * m) * (u[0] / alpha[1]) * Ck[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m))
 
-    Col = -nu * collision(Nn,Nm,Np,n,m,p) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
+    Col  = -nu * collision(Nn, Nm, Np, n, m, p)    * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
+    
+    Diff = diffusion(kx_grid, ky_grid, kz_grid, D) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
         
     # ODEs for Hermite-Fourier coefficients.
     # Closure is achieved by setting to zero coefficients with index out of range.
@@ -161,6 +183,6 @@ def Hermite_Fourier_system(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, al
         convolve(Fk[3, ...], Ck_aux_x, mode='same') + 
         convolve(Fk[4, ...], Ck_aux_y, mode='same') + 
         convolve(Fk[5, ...], Ck_aux_z, mode='same')
-    ) + Col)
+    ) + Col + Diff)
     
     return dCk_s_dt

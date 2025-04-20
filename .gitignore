@@ -2,3 +2,4 @@ vmss/.DS_Store
 .DS_Store
 spectrax/.DS_Store
 .vscode/settings.json
+*.npz
