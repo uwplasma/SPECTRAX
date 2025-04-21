@@ -118,6 +118,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
         max_steps=100000, progress_meter=TqdmProgressMeter())
     
+    ## Idea: take the eigenvalues of ODE_system to determine the stability of the system.
+    
     # Reshape the solution to extract Ck and Fk
     Ck = sol.ys[:,:(-6 * Nx * Ny * Nz)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx, Nz)
     Fk = sol.ys[:,(-6 * Nx * Ny * Nz):].reshape(len(sol.ts), 6, Ny, Nx, Nz)
