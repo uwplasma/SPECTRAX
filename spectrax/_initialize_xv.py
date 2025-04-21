@@ -1,12 +1,11 @@
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
-from jax import vmap, jit, lax
+from jax import vmap, jit
 from jax.numpy.fft import fftn, fftshift
 from jax.scipy.special import factorial
 from jax.scipy.integrate import trapezoid
 from functools import partial
-# from jax_tqdm import scan_tqdm
 
 __all__ = ['Hermite', 'generate_Hermite_function', 'compute_C_nmp', 'initialize_xv']
 
@@ -20,28 +19,25 @@ sharding = NamedSharding(mesh, spec)
 
 @jit
 def Hermite(n, x):
-    n = n.astype(int) # Ensure that n is an integer.
-    # Add next term in Hermite polynomial. Body function of fori_loop below.
-    def add_Hermite_term(m, partial_sum):
-        return partial_sum + ((-1)**m / (factorial(m) * factorial(n - 2*m))) * (2*x)**(n - 2*m)
-    # Return Hermite polynomial of order n.
-    return factorial(n) * jax.lax.fori_loop(0, (n // 2) + 1, add_Hermite_term, jnp.zeros_like(x))
+    def body(m, acc):
+        coeff = (-1.0)**m / (factorial(m) * factorial(n - 2 * m))
+        term = coeff * (2 * x)**(n - 2 * m)
+        return acc + term
+    return factorial(n) * jax.lax.fori_loop(0, (n // 2) + 1, body, jnp.zeros_like(x))
 
 @jit
 def generate_Hermite_function(xi_x, xi_y, xi_z, Nn, Nm, indices):
-    # Indices below represent order of Hermite polynomials.
-    p = jnp.floor(indices / (Nn * Nm)).astype(int)
-    m = jnp.floor((indices - p * Nn * Nm) / Nn).astype(int)
-    n = (indices - p * Nn * Nm - m * Nn).astype(int)
-    
-    # Generate element of AW Hermite basis in 3D space.
-    Hermite_basis = (Hermite(n, xi_x) * Hermite(m, xi_y) * Hermite(p, xi_z) * 
-                jnp.exp(-(xi_x**2 + xi_y**2 + xi_z**2)) / 
-                jnp.sqrt((jnp.pi)**3 * 2**(n + m + p) * factorial(n) * factorial(m) * factorial(p)))
-    return Hermite_basis
+    p = indices // (Nn * Nm)
+    m = (indices % (Nn * Nm)) // Nn
+    n = indices % Nn
+    norm = jnp.sqrt(jnp.pi**3 * 2**(n + m + p) * factorial(n) * factorial(m) * factorial(p))
+    return (
+        Hermite(n, xi_x) * Hermite(m, xi_y) * Hermite(p, xi_z) *
+        jnp.exp(-(xi_x**2 + xi_y**2 + xi_z**2)) / norm
+    )
 
-@partial(jit, static_argnames=['f', 'Nn', 'Nm', 'Np', 'Nx', 'Ny', 'Nz'])
-def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
+@partial(jit, static_argnames=['f', 'Nn', 'Nm', 'Np', 'Nx', 'Ny', 'Nz', 'Nv', 'nvxyz', 'max_min_v_factor'])
+def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, Nv, nvxyz, max_min_v_factor, indices):
     # Indices below represent order of Hermite polynomials.
     p = jnp.floor(indices / (Nn * Nm)).astype(int)
     m = jnp.floor((indices - p * Nn * Nm) / Nn).astype(int)
@@ -50,67 +46,76 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, indices):
     x = jnp.linspace(0, Lx, Nx)
     y = jnp.linspace(0, Ly, Ny)
     z = jnp.linspace(0, Lz, Nz)
-    vx = jnp.linspace(-5 * alpha[0] + u[0], 5 * alpha[0] + u[0], 40)
-    vy = jnp.linspace(-5 * alpha[1] + u[1], 5 * alpha[1] + u[1], 40)
-    vz = jnp.linspace(-5 * alpha[2] + u[2], 5 * alpha[2] + u[2], 40)
+    vx = jnp.linspace(-max_min_v_factor * alpha[0] + u[0], max_min_v_factor * alpha[0] + u[0], nvxyz)
+    vy = jnp.linspace(-max_min_v_factor * alpha[1] + u[1], max_min_v_factor * alpha[1] + u[1], nvxyz)
+    vz = jnp.linspace(-max_min_v_factor * alpha[2] + u[2], max_min_v_factor * alpha[2] + u[2], nvxyz)
+    # Precompute all 8x8x8 velocity subgrids
+    def slice_1d(v):
+        return jnp.stack([v[i * 8:(i + 1) * 8] for i in range(5)])
+    vx_chunks = slice_1d(vx)  # shape (5, 8)
+    vy_chunks = slice_1d(vy)
+    vz_chunks = slice_1d(vz)
     
-    Nv = 125
-
+    xv, yv, zv = jnp.meshgrid(x, y, z, indexing='xy')  # shape (Ny, Nx, Nz)
+    X = xv[..., None, None, None]
+    Y = yv[..., None, None, None]
+    Z = zv[..., None, None, None]
+  
     @jit
-    def add_C_nmp(C_nmp, i):
+    def single_C_nmp(i):
         ivx = jnp.floor(i / (5 ** 2)).astype(int)
         ivy = jnp.floor((i - ivx * 5 ** 2) / 5).astype(int)
         ivz = (i - ivx * 5 ** 2 - ivy * 5).astype(int)
         
-        vx_slice = jax.lax.dynamic_slice(vx, (ivx * 8,), (8,))
-        vy_slice = jax.lax.dynamic_slice(vy, (ivy * 8,), (8,))
-        vz_slice = jax.lax.dynamic_slice(vz, (ivz * 8,), (8,))
+        vx_slice = vx_chunks[ivx]
+        vy_slice = vy_chunks[ivy]
+        vz_slice = vz_chunks[ivz]
         
-        X, Y, Z, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx_slice, vy_slice, vz_slice, indexing='xy')
+        # X, Y, Z, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx_slice, vy_slice, vz_slice, indexing='xy')
+        vxv, vyv, vzv = jnp.meshgrid(vx_slice, vy_slice, vz_slice, indexing='ij')  # shape (8, 8, 8)
+        Vx = vxv[None, None, None, ...]
+        Vy = vyv[None, None, None, ...]
+        Vz = vzv[None, None, None, ...]
 
-        # Define variables for Hermite polynomials.
+        # Compute coefficients of Hermite decomposition of 3D velocity space.
         xi_x = (Vx - u[0]) / alpha[0]
         xi_y = (Vy - u[1]) / alpha[1]
         xi_z = (Vz - u[2]) / alpha[2]
-
-        # Compute coefficients of Hermite decomposition of 3D velocity space.
-        contribution = trapezoid(
-            trapezoid(
-                trapezoid(
-                    (f(X, Y, Z, Vx, Vy, Vz) * Hermite(n, xi_x) * Hermite(m, xi_y) * Hermite(p, xi_z)) /
-                    jnp.sqrt(factorial(n) * factorial(m) * factorial(p) * 2 ** (n + m + p)),
+        Hx = Hermite(n, xi_x)
+        Hy = Hermite(m, xi_y)
+        Hz = Hermite(p, xi_z)
+        hermite_norm = jnp.sqrt(factorial(n) * factorial(m) * factorial(p) * 2 ** (n + m + p))
+        
+        # Compute the integrand for the distribution function.
+        integrand = f(X, Y, Z, Vx, Vy, Vz) * Hx * Hy * Hz / hermite_norm
+        
+        # Compute the contribution to C_nmp from the velocity space.
+        contribution = trapezoid(trapezoid(trapezoid(integrand,
                     (vy_slice - u[0]) / alpha[0], axis=-3),
-                (vx_slice - u[1]) / alpha[1], axis=-2),
-            (vz_slice - u[2]) / alpha[2], axis=-1
-        )
+                    (vx_slice - u[1]) / alpha[1], axis=-2),
+                    (vz_slice - u[2]) / alpha[2], axis=-1)
+        return contribution
+    C_nmp_all = vmap(single_C_nmp)(jnp.arange(Nv))  # shape (Nv, Ny, Nx, Nz)
+    return jnp.sum(C_nmp_all, axis=0)
 
-        return C_nmp + contribution, None
-
-    # Initial carry value
-    C_nmp_init = jnp.zeros((Ny, Nx, Nz))
-
-    # Run the scan with tqdm progress bar
-    C_nmp_final, _ = lax.scan(add_C_nmp, C_nmp_init, jnp.arange(Nv))
-
-    return C_nmp_final
-
-@partial(jit, static_argnames=['B', 'E', 'f1', 'f2', 'Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver'])
-def initialize_xv(B, E, f1, f2, input_parameters={}, Nx=33, Ny=33, Nz=1, Nn=4, Nm=4, Np=4, Ns=None, timesteps=None, solver=None):
+@partial(jit, static_argnames=['B', 'E', 'f1', 'f2', 'Nv', 'nvxyz', 'max_min_v_factor', 'Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver'])
+def initialize_xv(B, E, f1, f2, Nv=55, nvxyz=40, max_min_v_factor=5, input_parameters={},
+                  Nx=33, Ny=33, Nz=1, Nn=4, Nm=4, Np=4, Ns=None, timesteps=None, solver=None):
     alpha_s = input_parameters["alpha_s"]
     u_s = input_parameters["u_s"]
     Lx = input_parameters["Lx"]
     Ly = input_parameters["Ly"]
     Lz = input_parameters["Lz"]
-        
-    # Hermite decomposition of dsitribution funcitons.
-    partial_C1_0 = partial(compute_C_nmp, f1, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np)
+    
+    indices_sharded = jnp.arange(Nn * Nm * Np)
+    indices_sharded = device_put(indices_sharded, sharding)
+    
+    partial_C1_0 = partial(compute_C_nmp, f1, alpha_s[:3], u_s[:3], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, Nv, nvxyz, max_min_v_factor)
     sharded_C10_fun = jit(shard_map(vmap(partial_C1_0), mesh, in_specs=spec, out_specs=spec, check_rep=False))
-    indices_sharded = device_put(jnp.arange(Nn * Nm * Np), sharding)
     C1_0 = sharded_C10_fun(indices_sharded)
     
-    partial_C2_0 = partial(compute_C_nmp, f2, alpha_s[3:], u_s[3:], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np)
+    partial_C2_0 = partial(compute_C_nmp, f2, alpha_s[3:], u_s[3:], Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, Nv, nvxyz, max_min_v_factor)
     sharded_C20_fun = jit(shard_map(vmap(partial_C2_0), mesh, in_specs=spec, out_specs=spec, check_rep=False))
-    indices_sharded = device_put(jnp.arange(Nn * Nm * Np), sharding)
     C2_0 = sharded_C20_fun(indices_sharded)
 
     # Combine Ce_0 and Ci_0 into single array and compute the fast Fourier transform.

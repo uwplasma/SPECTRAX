@@ -15,6 +15,9 @@ deltaB = 0.2 # In-plane magnetic field amplitude.
 U0 = deltaB * input_parameters["Omega_cs"][0] / jnp.sqrt(input_parameters["mi_me"])
 kx = 2*jnp.pi/input_parameters["Lx"]
 ky = 2*jnp.pi/input_parameters["Ly"]
+Nv = 201 # Number of velocity points in each dimension.
+nvxyz = 100 # Number of velocity points in each dimension for the velocity grid.
+max_min_v_factor = 5 # Factor for the maximum and minimum velocity in each dimension.
 
 # Electron and ion fluid velocities.
 Ue = lambda x, y, z: U0 * jnp.array([-jnp.sin(ky * y), jnp.sin(kx * x), -deltaB * input_parameters["Omega_cs"][0] * (2 * kx * jnp.cos(2 * kx * x) + ky * jnp.cos(ky * y))])
@@ -30,7 +33,8 @@ fe = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * input_parame
 fi = (lambda x, y, z, vx, vy, vz: (1 / (((2 * jnp.pi) ** (3 / 2)) * input_parameters["vti"] ** 3) * 
                                 jnp.exp(-((vx - Ui(x, y, z)[0])**2 + (vy - Ui(x, y, z)[1])**2 + (vz - Ui(x, y, z)[2])**2) / (2 * input_parameters["vti"] ** 2))))
 
-input_parameters["Ck_0"], input_parameters["Fk_0"] =  block_until_ready(initialize_xv(B, E, fe, fi, input_parameters, **solver_parameters))
+input_parameters["Ck_0"], input_parameters["Fk_0"] =  block_until_ready(
+    initialize_xv(B, E, fe, fi, Nv, nvxyz, max_min_v_factor, input_parameters, **solver_parameters))
 print(f"took {time() - start_time} seconds to initialize the simulation parameters.")
 
 print('Starting simulation...')
@@ -41,8 +45,8 @@ print(f"Runtime: {time() - start_time} seconds")
 print('Plotting results...')
 plot(output)
 
-print('Saving results...')
-jnp.savez('output_orszag.npz', **output)
+# print('Saving results...')
+# jnp.savez('output_orszag.npz', **output)
 
 # print("Loading results...")
 # output = jnp.load('output_orszag.npz')

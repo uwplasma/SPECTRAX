@@ -28,7 +28,7 @@ def plot(output):
     axes[0, 0].legend()
     
     # Relative Energy Error
-    axes[1, 0].plot(time[2:], jnp.abs(output["total_energy"][2:]-output["total_energy"][0])/(output["total_energy"][0]+1e-9), label="Relative energy error")
+    axes[1, 0].plot(time[1:], jnp.abs(output["total_energy"][1:]-output["total_energy"][0])/(output["total_energy"][0]+1e-9), label="Relative energy error")
     axes[1, 0].set(xlabel=r"Time ($\omega_{pe}^{-1}$)", ylabel="Relative Energy Error", yscale="log")#, ylim=[1e-5, None])
     
     # Plot electron density fluctuation vs t.
