@@ -20,17 +20,25 @@ def diagnostics(output):
     
     half_nx = jnp.array((Nx-1)/2, int)
 
-    kinetic_energy_species1 = jnp.abs((0.5 * alpha_s[0] * alpha_s[1] * alpha_s[2]) * ((0.5 * (alpha_s[0] ** 2 + alpha_s[1] ** 2 + alpha_s[2] ** 2) + 
-                                                (u_s[0] ** 2 + u_s[1] ** 2 + u_s[2] ** 2)) * Ck[:, 0, 0, half_nx, 0] + 
-                                        jnp.sqrt(2) * alpha_s[0] * u_s[0] * Ck[:, 1, 0, half_nx, 0] + 
-                                        (1 / jnp.sqrt(2)) * (alpha_s[0] ** 2) * Ck[:, 2, 0, half_nx, 0]))
+    kinetic_energy_species1 = (0.5 * alpha_s[0] * alpha_s[1] * alpha_s[2]) * ((0.5 * (alpha_s[0] ** 2 + alpha_s[1] ** 2 + alpha_s[2] ** 2) + 
+                                                (u_s[0] ** 2 + u_s[1] ** 2 + u_s[2] ** 2)) * Ck[:, 0, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] + 
+                                                jnp.sqrt(2) * (alpha_s[0] * u_s[0] * Ck[:, 1, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] * jnp.sign(Nn - 1) + 
+                                                               alpha_s[1] * u_s[1] * Ck[:, Nn, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] * jnp.sign(Nm - 1) +
+                                                               alpha_s[2] * u_s[2] * Ck[:, Nn * Nm, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] * jnp.sign(Np - 1)) +
+                                          (1 / jnp.sqrt(2)) * (alpha_s[0] ** 2 * Ck[:, 2, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) +
+                                                               alpha_s[1] ** 2 * Ck[:, 2 * Nn, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) + 
+                                                               alpha_s[2] ** 2 * Ck[:, 2 * Nn * Nm, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] * jnp.sign(Np - 1) * jnp.sign(Np - 2)))
 
-    kinetic_energy_species2 = jnp.abs((0.5 * alpha_s[3] * alpha_s[4] * alpha_s[5]) * ((0.5 * (alpha_s[3] ** 2 + alpha_s[4] ** 2 + alpha_s[5] ** 2) + 
-                                                (u_s[3] ** 2 + u_s[4] ** 2 + u_s[5] ** 2)) * Ck[:, Nn, 0, half_nx, 0] + 
-                                        jnp.sqrt(2) * alpha_s[3] * u_s[3] * Ck[:, Nn + 1, 0, half_nx, 0] + 
-                                        (1 / jnp.sqrt(2)) * (alpha_s[3] ** 2) * Ck[:, Nn + 2, 0, half_nx, 0]))
+    kinetic_energy_species2 = (0.5 * mi_me *  alpha_s[3] * alpha_s[4] * alpha_s[5]) * ((0.5 * (alpha_s[3] ** 2 + alpha_s[4] ** 2 + alpha_s[5] ** 2) + 
+                                                (u_s[3] ** 2 + u_s[4] ** 2 + u_s[5] ** 2)) * Ck[:, Nn * Nm * Np, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] + 
+                                                jnp.sqrt(2) * (alpha_s[3] * u_s[3] * Ck[:, 1, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] * jnp.sign(Nn - 1) + 
+                                                               alpha_s[4] * u_s[4] * Ck[:, Nn * Nm * Np + Nn, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] * jnp.sign(Nm - 1) +
+                                                               alpha_s[5] * u_s[5] * Ck[:, Nn * Nm * Np + Nn * Nm, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] * jnp.sign(Np - 1)) +
+                                          (1 / jnp.sqrt(2)) * ((alpha_s[3] ** 2) * Ck[:, Nn * Nm * Np + 2, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) +
+                                                               (alpha_s[4] ** 2) * Ck[:, Nn * Nm * Np + 2 * Nn, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) + 
+                                                               (alpha_s[5] ** 2) * Ck[:, Nn * Nm * Np + 2 * Nn * Nm, (Ny-1)//2, (Nx-1)//2, (Nz-1)//2] * jnp.sign(Np - 1) * jnp.sign(Np - 2)))
                                                     
-    electric_field_energy = 0.5 * jnp.sum(jnp.abs(Fk[:, 0, 0, :, 0]) ** 2, axis=-1) * Omega_cs[0] ** 2
+    electric_field_energy = 0.5 * jnp.sum(jnp.abs(Fk) ** 2, axis=(-4, -3, -2, -1)) * Omega_ce[0] ** 2
     
     total_energy = kinetic_energy_species1 + kinetic_energy_species2 + electric_field_energy
 
