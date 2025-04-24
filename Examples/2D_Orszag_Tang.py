@@ -1,5 +1,5 @@
 import os
-number_of_processors_to_use = 5 # Parallelization, this should divide total resolution
+number_of_processors_to_use = 4 # Parallelization, this should divide total resolution
 os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
 from jax import block_until_ready

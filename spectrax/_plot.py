@@ -39,6 +39,14 @@ def plot(output):
     axes[1, 2].plot(time, (jnp.abs(output["dCk"][:, Nn, 0, 0, 0].imag)), label='$|\delta C^i_{000,k}|$', linestyle='-', linewidth=2.0)
     axes[1, 2].set(title='Species 2 density fluctuation', ylabel=r'$log(|\delta C^i_{000,k}|)$', xlabel=r'$t\omega_{pe}$', yscale="log")#, ylim=[1e-20, None])
     
+    # # Plot entropy vs t of species 1
+    # axes[2, 0].plot(time, output["entropy_1"], label='Species 1 entropy', linestyle='-', linewidth=2.0)
+    # axes[2, 0].set(title='Species 1 entropy', ylabel=r'$S_1$', xlabel=r'$t\omega_{pe}$', yscale="log")#, ylim=[1e-20, None])
+    
+    # # Plot entropy vs t of species 2
+    # axes[2, 1].plot(time, output["entropy_2"], label='Species 2 entropy', linestyle='-', linewidth=2.0)
+    # axes[2, 1].set(title='Species 2 entropy', ylabel=r'$S_2$', xlabel=r'$t\omega_{pe}$', yscale="log")#, ylim=[1e-20, None])
+    
     # Electron Phase space plot
     i=0
     vx = jnp.linspace(-4 * alpha_s[0], 4 * alpha_s[0], 201)
