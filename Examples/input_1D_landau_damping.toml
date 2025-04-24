@@ -1,0 +1,26 @@
+[input_parameters]
+Lx = 1.0
+Ly = 1.0
+Lz = 1.0
+mi_me = 1836.0
+Ti_Te = 1.0
+qs = [-1.0, 1.0]
+alpha_e = [0.1, 0.1, 0.1]
+alpha_s = [0.1, 0.1, 0.1, 0.0023, 0.0023, 0.0023]
+u_s = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+Omega_cs = [1.0, 0.00054]
+nu = 1.0
+t_max = 100.0
+kx = 6.28
+dn1 = 0.001
+ode_tolerance = 1e-12
+
+[solver_parameters]
+Nx=3
+Ny=1
+Nz=1
+Nn=80
+Nm=1
+Np=1
+Ns=2
+timesteps=500
