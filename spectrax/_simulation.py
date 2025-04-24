@@ -59,7 +59,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     dBk_dt = -1j * cross_product(nabla, Fk[:3])
     
     current = plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns)
-    dEk_dt = -dBk_dt - current / Omega_cs[0]
+    dEk_dt = 1j * cross_product(nabla, Fk[3:]) - current / Omega_cs[0]
 
     dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
     dy_dt  = jnp.concatenate([dCk_s_dt.reshape(-1), dFk_dt.reshape(-1)])
