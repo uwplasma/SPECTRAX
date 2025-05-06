@@ -32,23 +32,23 @@ def plot(output):
     axes[1, 0].set(xlabel=r"Time ($\omega_{pe}^{-1}$)", ylabel="Relative Energy Error", yscale="log")#, ylim=[1e-5, None])
     
     # Plot electron density fluctuation vs t.
-    axes[1, 1].plot(time, (jnp.abs(output["dCk"][:, 0, 0, 0, 0].imag)), label='$|\delta C^e_{000,k}|$', linestyle='-', linewidth=2.0)
+    axes[1, 1].plot(time, (jnp.abs(output["dCk"][:, 0, 0, int((Nx-1) / 2) + 1, 0].imag)), label='$|\delta C^e_{000,k}|$', linestyle='-', linewidth=2.0)
     axes[1, 1].set(title='Species 1 density fluctuation', ylabel=r'$log(|\delta C^e_{000,k}|)$', xlabel=r'$t\omega_{pe}$', yscale="log")#, ylim=[1e-20, None])
     
     # Plot ion density fluctuation vs t.
-    axes[1, 2].plot(time, (jnp.abs(output["dCk"][:, Nn, 0, 0, 0].imag)), label='$|\delta C^i_{000,k}|$', linestyle='-', linewidth=2.0)
+    axes[1, 2].plot(time, (jnp.abs(output["dCk"][:, Nn, 0, int((Nx-1) / 2) + 1, 0].imag)), label='$|\delta C^i_{000,k}|$', linestyle='-', linewidth=2.0)
     axes[1, 2].set(title='Species 2 density fluctuation', ylabel=r'$log(|\delta C^i_{000,k}|)$', xlabel=r'$t\omega_{pe}$', yscale="log")#, ylim=[1e-20, None])
     
     # Electron Phase space plot
     i=0
     vx = jnp.linspace(-4 * alpha_s[0], 4 * alpha_s[0], 201)
     Vx, Vy, Vz = jnp.meshgrid(vx, jnp.array([0.]), jnp.array([0.]), indexing='xy')
-    f1 = inverse_HF_transform(Ck[:600, i*Nn:(i+1)*Nn, ...], Nn, Nm, Np, 
+    f1 = inverse_HF_transform(Ck[:, i*Nn:(i+1)*Nn, ...], Nn, Nm, Np, 
                                   (Vx - u_s[3*i]) / alpha_s[3*i], 
                                   (Vy - u_s[3*i+1]) / alpha_s[3*i+1], 
                                   (Vz - u_s[3*i+2]) / alpha_s[3*i+2])
     electron_phase_plot = axes[0, 1].imshow(jnp.transpose(f1[0, 0, :, 0, 0, :, 0]), extent=(0, Lx, vx[0], vx[-1]),
-                                            cmap='hsv', origin='lower', interpolation='sinc')
+                                            cmap='jet', origin='lower', interpolation='sinc')
     plt.colorbar(electron_phase_plot, ax=axes[0, 1], label="$f_1$")
     axes[0, 1].set(xlabel="x/d_e", ylabel="v/c", title="Species 1 Phase Space")
     axes[0, 1].set_aspect('auto', adjustable='box')
@@ -60,12 +60,12 @@ def plot(output):
     i=1
     vx = jnp.linspace(-4 * alpha_s[0], 4 * alpha_s[0], 201)
     Vx, Vy, Vz = jnp.meshgrid(vx, jnp.array([0.]), jnp.array([0.]), indexing='xy')
-    f2 = inverse_HF_transform(Ck[:600, i*Nn:(i+1)*Nn, ...], Nn, Nm, Np, 
+    f2 = inverse_HF_transform(Ck[:, i*Nn:(i+1)*Nn, ...], Nn, Nm, Np, 
                                   (Vx - u_s[3*i]) / alpha_s[3*i], 
                                   (Vy - u_s[3*i+1]) / alpha_s[3*i+1], 
                                   (Vz - u_s[3*i+2]) / alpha_s[3*i+2])
     ion_phase_plot = axes[0, 2].imshow(jnp.transpose(f2[0, 0, :, 0, 0, :, 0]), extent=(0, Lx, vx[0], vx[-1]),
-                                            cmap='hsv', origin='lower', interpolation='sinc')
+                                            cmap='jet', origin='lower', interpolation='sinc')
     plt.colorbar(ion_phase_plot, ax=axes[0, 2], label="$f_2$")
     axes[0, 2].set(xlabel="x/d_e", ylabel="v/c", title="Species 2 Phase Space")
     axes[0, 2].set_aspect('auto', adjustable='box')
