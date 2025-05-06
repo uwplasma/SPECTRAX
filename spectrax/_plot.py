@@ -19,11 +19,11 @@ def plot(output):
                  +rf'N_x = {Nx}, N_n = {Nn}, \delta n = {dn1}$', fontsize=14)
     
     # Energy plots
-    axes[0, 0].plot(time, output["electric_field_energy"], label="Electric field energy")
-    axes[0, 0].plot(time, output["kinetic_energy"], label="Kinetic energy")
-    axes[0, 0].plot(time, output["kinetic_energy_species1"], label="Kinetic energy species 1")
-    axes[0, 0].plot(time, output["kinetic_energy_species2"], label="Kinetic energy species 2")
-    axes[0, 0].plot(time, output["total_energy"], label="Total energy")
+    axes[0, 0].plot(time, output["electric_field_energy"], label="Electric Field Energy")
+    axes[0, 0].plot(time, output["kinetic_energy"], label="Kinetic Energy")
+    axes[0, 0].plot(time, output["kinetic_energy_species1"], label="Kinetic Energy Species 1")
+    axes[0, 0].plot(time, output["kinetic_energy_species2"], label="Kinetic Energy Species 2")
+    axes[0, 0].plot(time, output["total_energy"], label="Total Energy")
     axes[0, 0].set(title="Energy", xlabel=r"Time ($\omega_{pe}^{-1}$)", ylabel="Energy (J)", yscale="log")#, ylim=[1e-5, None])
     axes[0, 0].legend()
     
