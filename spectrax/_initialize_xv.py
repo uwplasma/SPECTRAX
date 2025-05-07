@@ -72,7 +72,7 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, Nv, nvxyz, ma
         vz_slice = vz_chunks[ivz]
         
         # X, Y, Z, Vx, Vy, Vz = jnp.meshgrid(x, y, z, vx_slice, vy_slice, vz_slice, indexing='xy')
-        vxv, vyv, vzv = jnp.meshgrid(vx_slice, vy_slice, vz_slice, indexing='ij')  # shape (8, 8, 8)
+        vxv, vyv, vzv = jnp.meshgrid(vx_slice, vy_slice, vz_slice, indexing='xy')  # shape (8, 8, 8)
         Vx = vxv[None, None, None, ...]
         Vy = vyv[None, None, None, ...]
         Vz = vzv[None, None, None, ...]
@@ -91,8 +91,8 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, Nv, nvxyz, ma
         
         # Compute the contribution to C_nmp from the velocity space.
         contribution = trapezoid(trapezoid(trapezoid(integrand,
-                    (vy_slice - u[0]) / alpha[0], axis=-3),
-                    (vx_slice - u[1]) / alpha[1], axis=-2),
+                    (vy_slice - u[1]) / alpha[1], axis=-3),
+                    (vx_slice - u[0]) / alpha[0], axis=-2),
                     (vz_slice - u[2]) / alpha[2], axis=-1)
         return contribution
     C_nmp_all = vmap(single_C_nmp)(jnp.arange(Nv))  # shape (Nv, Ny, Nx, Nz)
