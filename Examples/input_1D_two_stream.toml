@@ -14,10 +14,10 @@ t_max = 80.0
 kx = 0.5
 dn1 = 0.001
 dn2 = 0.001
-ode_tolerance = 1e-9
+ode_tolerance = 1e-3
 
 [solver_parameters]
-Nx=25
+Nx=50
 Ny=1
 Nz=1
 Nn=40

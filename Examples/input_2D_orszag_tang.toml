@@ -17,8 +17,8 @@ vti = 0.0354
 ode_tolerance = 1e-6
 
 [solver_parameters]
-Nx=15
-Ny=15
+Nx=13
+Ny=13
 Nz=1
 Nn=5
 Nm=5
