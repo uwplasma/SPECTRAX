@@ -168,3 +168,4 @@ spectrax/.DS_Store
 *.npz
 *.npy
 *.gif
+spectrax/version.py
