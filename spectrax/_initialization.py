@@ -77,14 +77,14 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     Ck_0    = jnp.zeros((2 * Nn, 1, Nx, 1), dtype=jnp.complex128)
     Ck_0    = Ck_0.at[0,  0, indices, 0].set(C10)
     Ck_0    = Ck_0.at[Nn, 0, indices, 0].set(C20)
-    
+
     default_parameters.update({
         "Ck_0": Ck_0, "Fk_0": Fk_0,
         "timesteps": timesteps, "Ns": Ns,
         "Nx": Nx, "Ny": Ny, "Nz": Nz,
         "Nn": Nn, "Nm": Nm, "Np": Np,
     })
-
+    
     # Merge user-provided parameters into the default dictionary
     parameters = {**default_parameters, **user_parameters}
     
@@ -121,6 +121,10 @@ def load_parameters(input_file):
     parameters = tomllib.load(open(input_file, "rb"))
     input_parameters = parameters['input_parameters']
     solver_parameters = parameters['solver_parameters']
+
+    for key, value in solver_parameters.items():
+        if isinstance(value, list):
+            solver_parameters[key] = tuple(value)
 
     def get_solver_class(name: str):
         for cls_name, cls in inspect.getmembers(diffrax, inspect.isclass):
