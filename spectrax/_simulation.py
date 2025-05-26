@@ -39,30 +39,28 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
      Lx, Ly, Lz, kx_grid, ky_grid, kz_grid
     ) = args
 
-    total_Ck_size = Nn * Nm * Np * Ns * Nx * Ny * Nz
-    Ck = Ck_Fk[:total_Ck_size].reshape(Nn * Nm * Np * Ns, Ny, Nx, Nz)
+    total_count = 0
+    for s_idx in range(Ns):
+        total_count += Nn[s_idx] * Nm[s_idx] * Np[s_idx]
+    total_Ck_size = total_count * Nx * Ny * Nz
+
+    Ck = Ck_Fk[:total_Ck_size].reshape(total_count, Ny, Nx, Nz)
     Fk = Ck_Fk[total_Ck_size:].reshape(6, Ny, Nx, Nz)
 
-    # dCk_s_dt = vmap(
-    #     Hermite_Fourier_system,
-    #     in_axes=(None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, 0)
-    # )(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, jnp.arange(Nn * Nm * Np * Ns))
-    
     partial_Hermite_Fourier_system = partial(
         Hermite_Fourier_system,
-        Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np)
+        Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs,
+        Nn, Nm, Np)
     sharded_fun = jit(shard_map(vmap(partial_Hermite_Fourier_system), mesh, in_specs=spec, out_specs=spec, check_rep=False))
-    indices_sharded = device_put(jnp.arange(Nn * Nm * Np * Ns), sharding)
+    indices_sharded = device_put(jnp.arange(total_count), sharding)
     dCk_s_dt = sharded_fun(indices_sharded)
-
     nabla = jnp.array([kx_grid / Lx, ky_grid / Ly, kz_grid / Lz])
-    dBk_dt = -1j * cross_product(nabla, Fk[:3])
-    
-    current = plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns)
-    dEk_dt = 1j * cross_product(nabla, Fk[3:]) - current / Omega_cs[0]
 
+    dBk_dt = -cross_product(nabla, Fk[:3])
+    current = plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns)
+    dEk_dt = cross_product(nabla, Fk[3:]) - current
     dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
-    dy_dt  = jnp.concatenate([dCk_s_dt.reshape(-1), dFk_dt.reshape(-1)])
+    dy_dt = jnp.concatenate([dCk_s_dt.reshape(-1), dFk_dt.reshape(-1)])
     return dy_dt
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver'])
@@ -79,9 +77,10 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
         Ny (int, optional): Number of grid points in the y-direction. Default is 1.
         Nz (int, optional): Number of grid points in the z-direction. Default is 1.
         Nn (int, optional): Number of velocity space harmonics. Default is 20.
-        Nm (int, optional): Number of azimuthal harmonics. Default is 1.
-        Np (int, optional): Number of poloidal harmonics. Default is 1.
-        Ns (int, optional): Number of particle species. Default is 2.
+        Nn (tuple, optional): Tuple of Hermite modes in v_x for each species.
+        Nm (tuple, optional): Tuple of Hermite modes in v_y for each species.
+        Np (tuple, optional): Tuple of Hermite modes in v_z for each species.
+        Ns (int, optional): Number of particle species. Must match len(Nn), len(Nm), len(Np).
         timesteps (int, optional): Number of time steps for the simulation. Default is 200.
     Returns:
         tuple: A tuple containing:
@@ -119,15 +118,27 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
         max_steps=1000000, progress_meter=TqdmProgressMeter())
     
     ## Idea: take the eigenvalues of ODE_system to determine the stability of the system.
-    
-    # Reshape the solution to extract Ck and Fk
-    Ck = sol.ys[:,:(-6 * Nx * Ny * Nz)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx, Nz)
-    Fk = sol.ys[:,(-6 * Nx * Ny * Nz):].reshape(len(sol.ts), 6, Ny, Nx, Nz)
-    
-    # Set n = 0, k = 0 mode to zero to get array with time evolution of perturbation.
-    dCk = Ck.at[:, 0, 0, 1, 0].set(0)
-    dCk = dCk.at[:, Nn * Nm * Np, 0, 1, 0].set(0)
-    
+
+    total_count = 0
+    for s in range(Ns):
+        total_count += Nn[s] * Nm[s] * Np[s]
+    total_Ck_size = total_count * Nx * Ny * Nz
+    Ck = sol.ys[:, :total_Ck_size].reshape(len(sol.ts), total_count, Ny, Nx, Nz)
+    Fk = sol.ys[:, total_Ck_size:].reshape(len(sol.ts), 6, Ny, Nx, Nz)
+
+    dCk = Ck
+
+    ncps_list = [Nn[s_idx] * Nm[s_idx] * Np[s_idx] for s_idx in range(Ns)]
+    ncps = jnp.asarray(ncps_list)
+    offsets = jnp.cumsum(jnp.concatenate([jnp.array([0]), ncps[:-1]]))
+
+    if Ns > 0 and ncps_list[0] > 0:
+        dCk = dCk.at[:, offsets[0], 0, 1, 0].set(0)
+
+    if Ns > 1 and ncps_list[1] > 0:
+        dCk = dCk.at[:, offsets[1], 0, 1, 0].set(0)
+
+
     # Output results
     temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk}
     output = {**temporary_output, **parameters}
