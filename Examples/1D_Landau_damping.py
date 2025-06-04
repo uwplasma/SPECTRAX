@@ -31,10 +31,14 @@ Nm = solver_parameters["Nm"]
 Np = solver_parameters["Np"]
 Nt = solver_parameters["timesteps"]
 
+n = nx + ny + nz
+L = Lx * jnp.sign(nx) + Ly * jnp.sign(ny) + Lz * jnp.sign(nz)
+E_field_component = int(jnp.sign(ny) + 2 * jnp.sign(nz))
+
 # Fourier components of magnetic and electric fields.
 Fk_0 = jnp.zeros((6, Ny, Nx, Nz), dtype=jnp.complex128)
-Fk_0 = Fk_0.at[0, int((Ny-1)/2-ny), int((Nx-1)/2-nx), int((Nz-1)/2-nz)].set(dn * Lx / (4 * jnp.pi * nx * Omega_cs[0]))
-Fk_0 = Fk_0.at[0, int((Ny-1)/2+ny), int((Nx-1)/2+nx), int((Nz-1)/2+nz)].set(dn * Lx / (4 * jnp.pi * nx * Omega_cs[0]))
+Fk_0 = Fk_0.at[E_field_component, int((Ny-1)/2-ny), int((Nx-1)/2-nx), int((Nz-1)/2-nz)].set(dn * L / (4 * jnp.pi * n * Omega_cs[0]))
+Fk_0 = Fk_0.at[E_field_component, int((Ny-1)/2+ny), int((Nx-1)/2+nx), int((Nz-1)/2+nz)].set(dn * L / (4 * jnp.pi * n * Omega_cs[0]))
 input_parameters["Fk_0"] = Fk_0
 
 # Hermite-Fourier components of electron and ion distribution functions.
