@@ -7,6 +7,7 @@ from time import time
 import jax.numpy as jnp
 from jax import block_until_ready
 from spectrax import simulation, load_parameters, plot
+import pandas as pd
 
 # Read from input.toml
 # input_parameters, solver_parameters = load_parameters('input_1D_landau_damping.toml')
@@ -15,26 +16,35 @@ input_parameters, solver_parameters = load_parameters(toml_file)
 
 alpha_s = input_parameters["alpha_s"]
 nx = input_parameters["nx"]
+ny = input_parameters["ny"]
+nz = input_parameters["nz"]
 Lx = input_parameters["Lx"]
+Ly = input_parameters["Ly"]
+Lz = input_parameters["Lz"]
 Omega_cs = input_parameters["Omega_cs"]
 dn = input_parameters["dn1"]
 Nx = solver_parameters["Nx"]
+Ny = solver_parameters["Ny"]
+Nz = solver_parameters["Nz"]
 Nn = solver_parameters["Nn"]
+Nm = solver_parameters["Nm"]
+Np = solver_parameters["Np"]
+Nt = solver_parameters["timesteps"]
 
 # Fourier components of magnetic and electric fields.
-Fk_0 = jnp.zeros((6, 1, Nx, 1), dtype=jnp.complex128)
-Fk_0 = Fk_0.at[0, 0, int((Nx-1)/2-nx), 0].set(dn * Lx / (4 * jnp.pi * nx * Omega_cs[0]))
-Fk_0 = Fk_0.at[0, 0, int((Nx-1)/2+nx), 0].set(dn * Lx / (4 * jnp.pi * nx * Omega_cs[0]))
+Fk_0 = jnp.zeros((6, Ny, Nx, Nz), dtype=jnp.complex128)
+Fk_0 = Fk_0.at[0, int((Ny-1)/2-ny), int((Nx-1)/2-nx), int((Nz-1)/2-nz)].set(dn * Lx / (4 * jnp.pi * nx * Omega_cs[0]))
+Fk_0 = Fk_0.at[0, int((Ny-1)/2+ny), int((Nx-1)/2+nx), int((Nz-1)/2+nz)].set(dn * Lx / (4 * jnp.pi * nx * Omega_cs[0]))
 input_parameters["Fk_0"] = Fk_0
 
 # Hermite-Fourier components of electron and ion distribution functions.
 Ce0_mk, Ce0_0, Ce0_k = 0 + 1j * (1 / (2 * alpha_s[0] ** 3)) * dn, 1 / (alpha_s[0] ** 3) + 0 * 1j, 0 - 1j * (1 / (2 * alpha_s[0] ** 3)) * dn
 Ci0_0 = 1 / (alpha_s[3] ** 3) + 0 * 1j
-Ck_0 = jnp.zeros((2 * Nn, 1, Nx, 1), dtype=jnp.complex128)
-Ck_0 = Ck_0.at[0, 0, int((Nx-1)/2-nx), 0].set(Ce0_mk)
-Ck_0 = Ck_0.at[0, 0, int((Nx-1)/2), 0].set(Ce0_0)
-Ck_0 = Ck_0.at[0, 0, int((Nx-1)/2+nx), 0].set(Ce0_k)
-Ck_0 = Ck_0.at[Nn, 0, int((Nx-1)/2), 0].set(Ci0_0)
+Ck_0 = jnp.zeros((2 * Nn * Nm * Np, Ny, Nx, Nz), dtype=jnp.complex128)
+Ck_0 = Ck_0.at[0, int((Ny-1)/2-ny), int((Nx-1)/2-nx), int((Nz-1)/2-nz)].set(Ce0_mk)
+Ck_0 = Ck_0.at[0, int((Ny-1)/2), int((Nx-1)/2), int((Nz-1)/2)].set(Ce0_0)
+Ck_0 = Ck_0.at[0, int((Ny-1)/2+ny), int((Nx-1)/2+nx), int((Nz-1)/2+nz)].set(Ce0_k)
+Ck_0 = Ck_0.at[Nn * Nm * Np, int((Ny-1)/2), int((Nx-1)/2), int((Nz-1)/2)].set(Ci0_0)
 input_parameters["Ck_0"] = Ck_0
 
 # Simulate

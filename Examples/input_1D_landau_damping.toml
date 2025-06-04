@@ -12,16 +12,18 @@ Omega_cs = [1.0, 0.00054]
 nu = 1.0
 t_max = 100.0
 nx = 1
-dn1 = 1.0
+ny = 0
+nz = 0
+dn1 = 0.000001
 ode_tolerance = 1e-10
 
 [solver_parameters]
-Nx=17
+Nx=33
 Ny=1
 Nz=1
 Nn=40
 Nm=1
 Np=1
 Ns=2
-timesteps=500
+timesteps=1000
 solver="Dopri8"
