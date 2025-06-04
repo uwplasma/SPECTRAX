@@ -10,8 +10,8 @@ def diagnostics(output):
     Ck = output["Ck"]
     Lx = output["Lx"]
     Nx = output["Nx"]
-    Ny = output["Nx"]
-    Nz = output["Nx"]
+    Ny = output["Ny"]
+    Nz = output["Nz"]
     Omega_cs = output["Omega_cs"]
     Nn = output["Nn"]
     Nm = output["Nm"]
@@ -35,16 +35,16 @@ def diagnostics(output):
 
     kinetic_energy_species2 = (0.5 * mi_me *  alpha_s[3] * alpha_s[4] * alpha_s[5]) * ((0.5 * (alpha_s[3] ** 2 + alpha_s[4] ** 2 + alpha_s[5] ** 2) + 
                                                 (u_s[3] ** 2 + u_s[4] ** 2 + u_s[5] ** 2)) * Ck[:, Nn * Nm * Np, half_ny, half_nx, half_nz] + 
-                                                jnp.sqrt(2) * (alpha_s[3] * u_s[3] * Ck[:, 1, half_ny, half_nx, half_nz] * jnp.sign(Nn - 1) + 
+                                                jnp.sqrt(2) * (alpha_s[3] * u_s[3] * Ck[:, Nn * Nm * Np + 1, half_ny, half_nx, half_nz] * jnp.sign(Nn - 1) + 
                                                                alpha_s[4] * u_s[4] * Ck[:, Nn * Nm * Np + Nn, half_ny, half_nx, half_nz] * jnp.sign(Nm - 1) +
                                                                alpha_s[5] * u_s[5] * Ck[:, Nn * Nm * Np + Nn * Nm, half_ny, half_nx, half_nz] * jnp.sign(Np - 1)) +
-                                          (1 / jnp.sqrt(2)) * ((alpha_s[3] ** 2) * Ck[:, Nn * Nm * Np + 2, half_ny, half_nx, half_nz] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) +
-                                                               (alpha_s[4] ** 2) * Ck[:, Nn * Nm * Np + 2 * Nn, half_ny, half_nx, half_nz] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) + 
-                                                               (alpha_s[5] ** 2) * Ck[:, Nn * Nm * Np + 2 * Nn * Nm, half_ny, half_nx, half_nz] * jnp.sign(Np - 1) * jnp.sign(Np - 2)))
+                                          (1 / jnp.sqrt(2)) * (alpha_s[3] ** 2 * Ck[:, Nn * Nm * Np + 2, half_ny, half_nx, half_nz] * jnp.sign(Nn - 1) * jnp.sign(Nn - 2) +
+                                                               alpha_s[4] ** 2 * Ck[:, Nn * Nm * Np + 2 * Nn, half_ny, half_nx, half_nz] * jnp.sign(Nm - 1) * jnp.sign(Nm - 2) + 
+                                                               alpha_s[5] ** 2 * Ck[:, Nn * Nm * Np + 2 * Nn * Nm, half_ny, half_nx, half_nz] * jnp.sign(Np - 1) * jnp.sign(Np - 2)))
                                                     
-    electric_field_energy = 0.5 * jnp.sum(jnp.abs(Fk) ** 2, axis=(-4, -3, -2, -1)) * Omega_cs[0] ** 2
+    EM_energy = 0.5 * jnp.sum(jnp.abs(Fk) ** 2, axis=(-4, -3, -2, -1)) * Omega_cs[0] ** 2
     
-    total_energy = kinetic_energy_species1 + kinetic_energy_species2 + electric_field_energy
+    total_energy = kinetic_energy_species1 + kinetic_energy_species2 + EM_energy
 
     output.update({
         'lambda_D': lambda_D,
@@ -52,7 +52,7 @@ def diagnostics(output):
         'kinetic_energy_species1': kinetic_energy_species1,
         'kinetic_energy_species2': kinetic_energy_species2,
         'kinetic_energy': kinetic_energy_species1 + kinetic_energy_species2,
-        'electric_field_energy': electric_field_energy,
+        'EM_energy': EM_energy,
         'total_energy': total_energy,
     })
     
