@@ -12,6 +12,7 @@ def plot(output):
     Nx = output["Nx"]; Ny = output["Ny"]; Nz = output["Nz"]
     Nn = int(output["Nn"]); Nm = int(output["Nm"]); Np = int(output["Np"])
     dn1 = output["dn1"]; Ck = output["Ck"]; dCk = output["dCk"]
+    t_max = output["t_max"]
     nx = output["nx"] if Nx > 1 else 0
     ny = output["ny"] if Ny > 1 else 0
     nz = output["nz"] if Nz > 1 else 0
@@ -25,12 +26,12 @@ def plot(output):
                  +rf'N_x = {Nx}, N_n = {Nn}, \delta n = {dn1}$', fontsize=14)
     
     # Energy plots
-    axes[0, 0].plot(time, output["electric_field_energy"], label="Electric Field Energy")
+    axes[0, 0].plot(time, output["EM_energy"], label="EM Energy")
     axes[0, 0].plot(time, output["kinetic_energy"], label="Kinetic Energy")
     axes[0, 0].plot(time, output["kinetic_energy_species1"], label="Kinetic Energy Species 1")
     axes[0, 0].plot(time, output["kinetic_energy_species2"], label="Kinetic Energy Species 2")
     axes[0, 0].plot(time, output["total_energy"], label="Total Energy")
-    axes[0, 0].set(title="Energy", xlabel=r"Time ($\omega_{pe}^{-1}$)", ylabel="Energy (J)", yscale="log")#, ylim=[1e-5, None])
+    axes[0, 0].set(title="Energy", xlabel=r"Time ($\omega_{pe}^{-1}$)", ylabel="Energy", yscale="log")#, ylim=[1e-5, None])
     axes[0, 0].legend()
     
     # Relative Energy Error
@@ -99,7 +100,7 @@ def plot(output):
 
     plt.figure(figsize=(8, 6))
     plt.imshow(jnp.log10(dC2[:, :Nn]), aspect='auto', cmap='viridis', 
-               interpolation='none', origin='lower', extent=(0, Nn, 0, 100), vmin=-10, vmax=10)
+               interpolation='none', origin='lower', extent=(0, Nn, 0, t_max), vmin=-10, vmax=10)
     plt.colorbar(label=r'$log_{10}(\langle |C_{1,n}|^2\rangle (t))$').ax.yaxis.label.set_size(16)
     plt.title(r"$\langle |C_{1,n}|^2 \rangle$ vs Time and Mode Number", fontsize=16)
 
