@@ -17,6 +17,7 @@ mesh = make_mesh((len(devices()),), ("batch"))
 spec = P("batch")
 sharding = NamedSharding(mesh, spec)
 
+
 __all__ = ["cross_product", "ode_system", "simulation"]
 
 @jit
@@ -32,6 +33,7 @@ def cross_product(k_vec, F_vec):
     kx, ky, kz = k_vec
     Fx, Fy, Fz = F_vec
     return jnp.array([ky * Fz - kz * Fy, kz * Fx - kx * Fz, kx * Fy - ky * Fx])
+
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns'])
 def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
@@ -53,14 +55,16 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
         Nn, Nm, Np)
     sharded_fun = jit(shard_map(vmap(partial_Hermite_Fourier_system), mesh, in_specs=spec, out_specs=spec, check_rep=False))
     indices_sharded = device_put(jnp.arange(total_count), sharding)
-    dCk_s_dt = sharded_fun(indices_sharded)
+    dCk_dt = sharded_fun(indices_sharded)
     nabla = jnp.array([kx_grid / Lx, ky_grid / Ly, kz_grid / Lz])
 
     dBk_dt = -cross_product(nabla, Fk[:3])
     current = plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns)
     dEk_dt = cross_product(nabla, Fk[3:]) - current
     dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
-    dy_dt = jnp.concatenate([dCk_s_dt.reshape(-1), dFk_dt.reshape(-1)])
+    dy_dt = jnp.concatenate([dCk_dt.reshape(-1), dFk_dt.reshape(-1)])
+
+
     return dy_dt
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver'])
@@ -94,21 +98,17 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
         - The function relies on JAX for numerical computations and efficient array operations.
     """
     
-    # **Initialize simulation parameters**
     parameters = initialize_simulation_parameters(input_parameters, Nx, Ny, Nz, Nn, Nm, Np, Ns, timesteps)
 
-    # Combine initial conditions.
     initial_conditions = jnp.concatenate([parameters["Ck_0"].flatten(), parameters["Fk_0"].flatten()])
 
-    # Define the time array for data output.
     time = jnp.linspace(0, parameters["t_max"], timesteps)
     
-    # Arguments for the ODE system.
+
     args = (parameters["qs"], parameters["nu"], parameters["D"], parameters["Omega_cs"], parameters["alpha_s"],
             parameters["u_s"], parameters["Lx"], parameters["Ly"], parameters["Lz"],
             parameters["kx_grid"], parameters["ky_grid"], parameters["kz_grid"])
 
-    # Solve the ODE system
     ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns)
     sol = diffeqsolve(
         ODETerm(ode_system_partial), solver=solver(),
@@ -133,10 +133,10 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
     offsets = jnp.cumsum(jnp.concatenate([jnp.array([0]), ncps[:-1]]))
 
     if Ns > 0 and ncps_list[0] > 0:
-        dCk = dCk.at[:, offsets[0], 0, 1, 0].set(0)
+        dCk = dCk.at[:, offsets[0], (Ny-1)//2, (Nx-1)//2, (Nz-1)//2].set(0)
 
     if Ns > 1 and ncps_list[1] > 0:
-        dCk = dCk.at[:, offsets[1], 0, 1, 0].set(0)
+        dCk = dCk.at[:, offsets[1], (Ny-1)//2, (Nx-1)//2, (Nz-1)//2].set(0)
 
 
     # Output results
