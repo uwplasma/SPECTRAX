@@ -55,7 +55,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "vte": lambda p: p["alpha_s"][0] / jnp.sqrt(2),
         "vti": lambda p: p["vte"] * jnp.sqrt(1 / p["mi_me"]),
     }
-    
+
     # Initialize distribution function as a two-stream instability
     indices = jnp.array([int((Nx-1)/2-1), int((Nx-1)/2+1)])
     dn1     = default_parameters["dn1"]
@@ -85,12 +85,10 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "Nn": Nn, "Nm": Nm, "Np": Np,
     })
 
-    # Merge user-provided parameters into the default dictionary
     parameters = {**default_parameters, **user_parameters}
     
-    # Compute derived parameters based on user-provided or default values
     for key, value in parameters.items():
-        if callable(value):  # If the value is a lambda function, compute it
+        if callable(value): 
             parameters[key] = value(parameters)
         if isinstance(value, list):
             parameters[key] = jnp.array(value)
