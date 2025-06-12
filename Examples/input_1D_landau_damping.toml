@@ -12,6 +12,8 @@ Omega_cs = [1.0, 0.00054]
 nu = 1.0
 t_max = 100.0
 nx = 1
+ny = 0
+nz = 0
 dn1 = 1.0
 ode_tolerance = 1e-10
 
@@ -19,7 +21,7 @@ ode_tolerance = 1e-10
 Nx=17
 Ny=1
 Nz=1
-Nn=[40,40]
+Nn=[50,50]
 Nm=[1,1]
 Np=[1,1]
 Ns=2
