@@ -122,7 +122,6 @@ def collision(Nn, Nm, Np, n, m, p):
     """
     N = jnp.array([Nn, Nm, Np], dtype=jnp.float32)
     idx = jnp.array([n, m, p], dtype=jnp.float32)
-    # Avoid division by zero by masking invalid terms
     def safe_term(Nj, nj):
         term = nj * (nj - 1) * (nj - 2)
         denom = (Nj - 1) * (Nj - 2) * (Nj - 3)
@@ -177,7 +176,7 @@ def Hermite_Fourier_system(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D,
     n = index_within_species % Nn_jnp[s] 
     m_temp = index_within_species // Nn_jnp[s] 
     m = m_temp % Nm_jnp[s] 
-    p = m_temp // Np_jnp[s] 
+    p = m_temp // Nm_jnp[s]
 
     u = dynamic_slice(u_s, (s * 3,), (3,))
     alpha = dynamic_slice(alpha_s, (s * 3,), (3,))
