@@ -79,9 +79,9 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
         Nx (int, optional): Number of grid points in the x-direction. Default is 33.
         Ny (int, optional): Number of grid points in the y-direction. Default is 1.
         Nz (int, optional): Number of grid points in the z-direction. Default is 1.
-        Nn (int, optional): Number of velocity space harmonics. Default is 20.
-        Nm (int, optional): Number of azimuthal harmonics. Default is 1.
-        Np (int, optional): Number of poloidal harmonics. Default is 1.
+        Nn (int, optional): Number of Hermite modes in the x direction in velocity space. Default is 20.
+        Nm (int, optional): Number of Hermite modes in the y direction in velocity space.
+        Np (int, optional): Number of Hermite modes in the z direction in velocity space.
         Ns (int, optional): Number of particle species. Default is 2.
         timesteps (int, optional): Number of time steps for the simulation. Default is 200.
     Returns:
