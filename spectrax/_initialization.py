@@ -3,10 +3,11 @@ try: import tomllib
 except ModuleNotFoundError: import pip._vendor.tomli as tomllib
 import diffrax
 import inspect
+from .crank_nicolson import CrankNicolson
 
 __all__ = ["load_parameters", "initialize_simulation_parameters"]
 
-def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, timesteps=500):
+def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, timesteps=500, dt=0.01):
     """
     Initialize the simulation parameters for a Vlasov solver with Hermite polynomials, 
     combining user-provided values with predefined defaults. This function 
@@ -45,23 +46,25 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         ]),
         "u_s": jnp.array([1.0, 0.0, 0.0, -1.0, 0.0, 0.0]),
         "Omega_cs": lambda p: jnp.array([1.0, 1.0 / p["mi_me"]]),
-        "nu": 2.0,
+        "nu": 3.0,
         "D": 0.0,
         "t_max": 0.3,
-        "kx": lambda p: 2 * jnp.pi / p["Lx"],
+        "nx": 1,
+        "ny": 0,
+        "nz": 0,
         "dn1": 0.001,
         "dn2": 0.001,
-        "ode_tolerance": 1e-6,
+        "ode_tolerance": 1e-12,
         "vte": lambda p: p["alpha_s"][0] / jnp.sqrt(2),
         "vti": lambda p: p["vte"] * jnp.sqrt(1 / p["mi_me"]),
     }
     
     # Initialize distribution function as a two-stream instability
-    indices = jnp.array([int((Nx-1)/2-1), int((Nx-1)/2+1)])
+    indices = jnp.array([int((Nx-1)/2-default_parameters["nx"]), int((Nx-1)/2+default_parameters["nx"])])
     dn1     = default_parameters["dn1"]
     dn2     = default_parameters["dn2"]
     alpha_e = default_parameters["alpha_e"]
-    values  = (dn1 + dn2) / (2 * default_parameters["kx"](default_parameters) * default_parameters["Omega_cs"](default_parameters)[0])
+    values  = (dn1 + dn2) * default_parameters["Lx"] / (4 * jnp.pi * default_parameters["nx"] * default_parameters["Omega_cs"](default_parameters)[0])
     Fk_0    = jnp.zeros((6, 1, Nx, 1), dtype=jnp.complex128).at[0, 0, indices, 0].set(values)
     C10     = jnp.array([
             0 + 1j * (1 / (2 * alpha_e[0] ** 3)) * dn1,
@@ -73,14 +76,14 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
             1 / (alpha_e[0] ** 3) + 0 * 1j,
             0 - 1j * (1 / (2 * alpha_e[0] ** 3)) * dn2
     ])
-    indices = jnp.array([int((Nx-1)/2-1), int((Nx-1)/2), int((Nx-1)/2+1)])
+    indices = jnp.array([int((Nx-1)/2-default_parameters["nx"]), int((Nx-1)/2), int((Nx-1)/2+default_parameters["nx"])])
     Ck_0    = jnp.zeros((2 * Nn, 1, Nx, 1), dtype=jnp.complex128)
     Ck_0    = Ck_0.at[0,  0, indices, 0].set(C10)
     Ck_0    = Ck_0.at[Nn, 0, indices, 0].set(C20)
     
     default_parameters.update({
-        "Ck_0": Ck_0, "Fk_0": Fk_0,
-        "timesteps": timesteps, "Ns": Ns,
+        "Ck_0": Ck_0, "Fk_0": Fk_0, "Ns": Ns,
+        "timesteps": timesteps, "dt": dt, 
         "Nx": Nx, "Ny": Ny, "Nz": Nz,
         "Nn": Nn, "Nm": Nm, "Np": Np,
     })
@@ -122,9 +125,11 @@ def load_parameters(input_file):
     input_parameters = parameters['input_parameters']
     solver_parameters = parameters['solver_parameters']
 
+
     def get_solver_class(name: str):
         for cls_name, cls in inspect.getmembers(diffrax, inspect.isclass):
-            if issubclass(cls, diffrax.AbstractSolver) and cls is not diffrax.AbstractSolver and cls_name == name: return cls
+            if issubclass(cls, diffrax.AbstractSolver) and cls is not diffrax.AbstractSolver and cls_name == name: return cls()
+            elif name == "CrankNicolson": return CrankNicolson(rtol=input_parameters["ode_tolerance"], atol=input_parameters["ode_tolerance"])
         raise ValueError(f"Solver '{name}' is not supported. Choose from Diffrax solvers.")
     solver_parameters["solver"] = get_solver_class(solver_parameters.get("solver", "Tsit5"))
     
