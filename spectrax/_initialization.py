@@ -3,7 +3,7 @@ try: import tomllib
 except ModuleNotFoundError: import pip._vendor.tomli as tomllib
 import diffrax
 import inspect
-from .crank_nicolson import CrankNicolson
+from .crank_nicolson_4 import CrankNicolson
 
 __all__ = ["load_parameters", "initialize_simulation_parameters"]
 
