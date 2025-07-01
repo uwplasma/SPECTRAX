@@ -100,7 +100,7 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, Nv, nvxyz, ma
 
 @partial(jit, static_argnames=['B', 'E', 'f1', 'f2', 'Nv', 'nvxyz', 'max_min_v_factor', 'Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver'])
 def initialize_xv(B, E, f1, f2, Nv=55, nvxyz=40, max_min_v_factor=5, input_parameters={},
-                  Nx=33, Ny=33, Nz=1, Nn=4, Nm=4, Np=4, Ns=None, timesteps=None, solver=None):
+                  Nx=33, Ny=33, Nz=1, Nn=4, Nm=4, Np=4, Ns=None, timesteps=None, dt=None, solver=None):
     alpha_s = input_parameters["alpha_s"]
     u_s = input_parameters["u_s"]
     Lx = input_parameters["Lx"]
