@@ -32,7 +32,7 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
         The total Ampère-Maxwell current (Jx, Jy, Jz).
     """
     # Reshape Ck into structured Hermite-Fourier coefficients: (Ns, Nn, Nm, Np, Nx, Ny, Nz)
-    Ck = Ck.reshape(Ns, Nn, Nm, Np, *Ck.shape[-3:])
+    Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-3:])
     
     # Reshape alpha and velocity
     alpha = alpha_s.reshape(Ns, 3)
@@ -40,9 +40,9 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
 
     # Grab the modes we need (0,1,1,1) for jx, jy, jz contributions
     C0 = Ck[:, 0, 0, 0]  # shape: (Ns, Nx, Ny, Nz)
-    C1 = Ck[:, 1, 0, 0] if Nn > 1 else jnp.zeros_like(C0)
-    Cn = Ck[:, 0, 1, 0] if Nm > 1 else jnp.zeros_like(C0)
-    Cnm = Ck[:, 0, 0, 1] if Np > 1 else jnp.zeros_like(C0)
+    C100 = Ck[:, 0, 0, 1] if Nn > 1 else jnp.zeros_like(C0)
+    C010 = Ck[:, 0, 1, 0] if Nm > 1 else jnp.zeros_like(C0)
+    C001 = Ck[:, 1, 0, 0] if Np > 1 else jnp.zeros_like(C0)
 
     # Pull out alpha and u components
     a0, a1, a2 = alpha[:, 0], alpha[:, 1], alpha[:, 2]
@@ -52,9 +52,9 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     # Compute terms
     pre = q * a0 * a1 * a2  # shape: (Ns,)
 
-    term1 = (1.0 / jnp.sqrt(2.0)) * jnp.stack([a0[:, None, None, None] * C1,
-                                               a1[:, None, None, None] * Cn,
-                                               a2[:, None, None, None] * Cnm], axis=0)
+    term1 = (1.0 / jnp.sqrt(2.0)) * jnp.stack([a0[:, None, None, None] * C100,
+                                               a1[:, None, None, None] * C010,
+                                               a2[:, None, None, None] * C001], axis=0)
     term2 = jnp.stack([u0[:, None, None, None] * C0,
                        u1[:, None, None, None] * C0,
                        u2[:, None, None, None] * C0], axis=0)
