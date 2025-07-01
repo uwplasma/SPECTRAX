@@ -24,5 +24,10 @@ Nm=1
 Np=1
 Ns=2
 timesteps=100
+<<<<<<< HEAD
 dt=1.5
 solver="CrankNicolson"
+=======
+solver="CrankNicolson"
+dt=1.5
+>>>>>>> 8d14d0c0d5f82e78313be1ea8b10ae62c34a7d67

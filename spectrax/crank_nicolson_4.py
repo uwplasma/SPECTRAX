@@ -8,7 +8,11 @@ from jax.scipy.sparse.linalg import gmres
 class CrankNicolson(diffrax.AbstractSolver):
     rtol: float = 1e-6
     atol: float = 1e-8
+<<<<<<< HEAD
     max_iters: int = 20
+=======
+    max_iters: int = 10
+>>>>>>> 8d14d0c0d5f82e78313be1ea8b10ae62c34a7d67
 
     term_structure = diffrax.ODETerm
     interpolation_cls = diffrax.LocalLinearInterpolation
@@ -67,4 +71,8 @@ def _newton_gmres(F_fn, y0, y_init, rtol, atol, max_iters):
         y1_final, _, _ = lax.while_loop(cond_fn, body_fn, init_state)
         return y1_final
 
+<<<<<<< HEAD
     return loop_fn(y_init)
+=======
+    return loop_fn(y_init)
+>>>>>>> 8d14d0c0d5f82e78313be1ea8b10ae62c34a7d67
