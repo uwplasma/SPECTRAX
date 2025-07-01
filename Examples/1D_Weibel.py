@@ -16,7 +16,7 @@ toml_file = os.path.join(os.path.dirname(__file__), 'input_1D_Weibel.toml')
 input_parameters, solver_parameters = load_parameters(toml_file)
 
 alpha_s = input_parameters["alpha_s"]
-dEz = input_parameters["dEz"]
+dE = input_parameters["dE"]
 Nx = solver_parameters["Nx"]
 Nn = solver_parameters["Nn"]
 Nm = solver_parameters["Nm"]
@@ -27,8 +27,8 @@ Omega_cs = input_parameters["Omega_cs"]
 
 # Fourier components of magnetic and electric fields.
 Fk_0 = jnp.zeros((6, 1, Nx, 1), dtype=jnp.complex128)
-Fk_0 = Fk_0.at[1, 0, int((Nx-1)/2-nx), 0].set(dEz / 2)
-Fk_0 = Fk_0.at[1, 0, int((Nx-1)/2+nx), 0].set(dEz / 2)
+Fk_0 = Fk_0.at[2, 0, int((Nx-1)/2-nx), 0].set(dE / 2)
+Fk_0 = Fk_0.at[2, 0, int((Nx-1)/2+nx), 0].set(dE / 2)
 input_parameters["Fk_0"] = Fk_0
 
 # Hermite-Fourier components of electron and ion distribution functions.
@@ -113,8 +113,10 @@ fig, axes = plt.subplots(figsize=(15, 9))
 fig.suptitle(rf'$N_x = {Nx}$, $N_n = {Nn}$, $N_m = {Nm}$, $N_p = {Np}$, $\nu = {nu}$, $|u_z| = {uz}$', fontsize=14)
 
 # Energy plots
-axes.plot(t, jnp.sum(jnp.abs(Fk[:,1,...]) ** 2, axis=(-1,-2,-3)), label=r"$|E_z|^2$")
-axes.set(xlabel=r"$t\omega_{pe}$", ylabel=r"$|E_z|^2$", yscale="log")#, ylim=[1e-5, None])
+axes.plot(t, jnp.sum(jnp.abs(Fk[:,0,...]) ** 2, axis=(-1,-2,-3)), label=r"$|E_x|^2$")
+axes.plot(t, jnp.sum(jnp.abs(Fk[:,2,...]) ** 2, axis=(-1,-2,-3)), label=r"$|E_z|^2$")
+axes.plot(t, jnp.sum(jnp.abs(Fk[:,4,...]) ** 2, axis=(-1,-2,-3)), label=r"$|B_y|^2$")
+axes.set(xlabel=r"$t\omega_{pe}$", ylabel=r"|Fields|$^2$", yscale="log")#, ylim=[1e-5, None])
 axes.legend()
 
 
