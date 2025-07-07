@@ -1,6 +1,6 @@
 [input_parameters]
-Lx = 50.0
-Ly = 50.0
+Lx = 10.0
+Ly = 10.0
 Lz = 1.0
 mi_me = 25.0
 Ti_Te = 1.0
@@ -16,8 +16,8 @@ vti = 0.0354
 ode_tolerance = 1e-6
 
 [solver_parameters]
-Nx = 33
-Ny = 33
+Nx = 23
+Ny = 23
 Nz = 1
 Nn = 5
 Nm = 5
@@ -25,4 +25,4 @@ Np = 5
 Ns = 2
 timesteps = 11
 dt = 0.5
-solver = "CrankNicolson"
+solver = "Midpoint"

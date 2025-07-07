@@ -5,7 +5,7 @@ from jax import lax
 from jax.scipy.sparse.linalg import gmres
 
 
-class CrankNicolson(diffrax.AbstractSolver):
+class Midpoint(diffrax.AbstractSolver):
     rtol: float = 1e-6
     atol: float = 1e-8
     max_iters: int = 20

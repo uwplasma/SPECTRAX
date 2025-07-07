@@ -24,4 +24,4 @@ Np = 5
 Ns = 2
 timesteps = 1001
 dt = 0.5
-solver = "CrankNicolson"
+solver = "Midpoint"
