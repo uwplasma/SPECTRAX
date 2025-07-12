@@ -26,6 +26,8 @@ Nn = solver_parameters["Nn"]
 indices = jnp.array([int((Nx-1)/2-nx), int((Nx-1)/2+nx)])
 values  = (dn1 + dn2) * Lx / (4 * jnp.pi * nx * Omega_cs[0])
 Fk_0    = jnp.zeros((6, 1, Nx, 1), dtype=jnp.complex128).at[0, 0, indices, 0].set(values)
+input_parameters["Fk_0"] = Fk_0
+
 C10     = jnp.array([
         0 + 1j * (1 / (2 * alpha_s[0] ** 3)) * dn1,
         1 / (alpha_s[0] ** 3) + 0 * 1j,
@@ -40,6 +42,7 @@ indices = jnp.array([int((Nx-1)/2-nx), int((Nx-1)/2), int((Nx-1)/2+nx)])
 Ck_0    = jnp.zeros((2 * Nn, 1, Nx, 1), dtype=jnp.complex128)
 Ck_0    = Ck_0.at[0,  0, indices, 0].set(C10)
 Ck_0    = Ck_0.at[Nn, 0, indices, 0].set(C20)
+input_parameters["Ck_0"] = Ck_0
 
 # Simulate
 start_time = time()
