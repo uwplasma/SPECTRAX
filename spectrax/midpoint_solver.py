@@ -8,7 +8,7 @@ from jax.scipy.sparse.linalg import gmres
 class Midpoint(diffrax.AbstractSolver):
     rtol: float = 1e-6
     atol: float = 1e-8
-    max_iters: int = 20
+    max_iters: int = 50
 
     term_structure = diffrax.ODETerm
     interpolation_cls = diffrax.LocalLinearInterpolation
