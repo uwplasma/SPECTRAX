@@ -8,7 +8,6 @@ from diffrax import (diffeqsolve, Tsit5, Dopri5, ODETerm,
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
 from ._diagnostics import diagnostics
-from .crank_nicolson import CrankNicolson 
 
 # Parallelize the simulation using JAX
 from jax.sharding import PartitionSpec as P
