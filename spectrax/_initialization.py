@@ -129,7 +129,7 @@ def load_parameters(input_file):
     def get_solver_class(name: str):
         for cls_name, cls in inspect.getmembers(diffrax, inspect.isclass):
             if issubclass(cls, diffrax.AbstractSolver) and cls is not diffrax.AbstractSolver and cls_name == name: return cls()
-            elif name == "CrankNicolson": return Midpoint(rtol=input_parameters["ode_tolerance"], atol=input_parameters["ode_tolerance"])
+            elif name == "Midpoint": return Midpoint(rtol=input_parameters["ode_tolerance"], atol=input_parameters["ode_tolerance"])
         raise ValueError(f"Solver '{name}' is not supported. Choose from Diffrax solvers.")
     solver_parameters["solver"] = get_solver_class(solver_parameters.get("solver", "Tsit5"))
     
