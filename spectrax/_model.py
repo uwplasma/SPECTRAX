@@ -31,7 +31,7 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     jnp.ndarray, shape (3, Nx, Ny, Nz)
         The total Ampère-Maxwell current (Jx, Jy, Jz).
     """
-    # Reshape Ck into structured Hermite-Fourier coefficients: (Ns, Nn, Nm, Np, Nx, Ny, Nz)
+    # Reshape Ck into structured Hermite-Fourier coefficients: (Ns, Nn, Nm, Np, Ny, Nx, Nz)
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-3:])
     
     # Reshape alpha and velocity
