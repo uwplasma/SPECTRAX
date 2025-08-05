@@ -112,7 +112,7 @@ def diffusion(kx, ky, kz, D, exponent=2):
     """
     k_squared = kx**exponent + ky**exponent + kz**exponent
     return -D * k_squared
-
+    
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np'])
 def Hermite_Fourier_system(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, index):
     """
@@ -180,9 +180,9 @@ def Hermite_Fourier_system(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D,
         (jnp.sqrt(2 * m) / alpha[1]) * convolve(Fk[1, ...], Ck[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m), mode='same') +
         (jnp.sqrt(2 * p) / alpha[2]) * convolve(Fk[2, ...], Ck[n + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p), mode='same')
     ) + q * Omega_c * (
-        convolve(Fk[3, ...], Ck_aux_x, mode='same') + 
-        convolve(Fk[4, ...], Ck_aux_y, mode='same') + 
-        convolve(Fk[5, ...], Ck_aux_z, mode='same')
+        convolve(Fk[3, ...], Ck_aux_x, mode='same', method='fft') + 
+        convolve(Fk[4, ...], Ck_aux_y, mode='same', method='fft') + 
+        convolve(Fk[5, ...], Ck_aux_z, mode='same', method='fft')
     ) + Col + Diff)
     
     return dCk_s_dt

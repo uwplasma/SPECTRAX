@@ -22,8 +22,8 @@ deltaB = 0.2 # In-plane magnetic field amplitude.
 U0 = deltaB * input_parameters["Omega_cs"][0] / jnp.sqrt(input_parameters["mi_me"])
 kx = 2 * jnp.pi / input_parameters["Lx"]
 ky = 2 * jnp.pi / input_parameters["Ly"]
-Nv = 201 # Number of velocity points in each dimension.
-nvxyz = 100 # Number of velocity points in each dimension for the velocity grid.
+Nv = 125 # Number of velocity points in each dimension.
+nvxyz = 40 # Number of velocity points in each dimension for the velocity grid.
 max_min_v_factor = 5 # Factor for the maximum and minimum velocity in each dimension.
 
 # Electron and ion fluid velocities.
@@ -70,7 +70,7 @@ C = ifftn(ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1)).real
 ne = alpha_s[0] * alpha_s[1] * alpha_s[2] * C[:, 0, :, :, 0]
 ni = alpha_s[3] * alpha_s[4] * alpha_s[5] * C[:, Nn * Nm * Np, :, :, 0]
 
-Jz = 0.5 * (alpha_s[3] * alpha_s[4] * (alpha_s[5]**2) * C[:, Nn * Nm * Np + Nn * Nm, :, :, 0] - alpha_s[0] * alpha_s[1] * (alpha_s[2]**2) * C[:, Nn * Nm, :, :, 0])
+Jz = (1 / jnp.sqrt(2)) * (alpha_s[3] * alpha_s[4] * (alpha_s[5]**2) * C[:, Nn * Nm * Np + Nn * Nm, :, :, 0] - alpha_s[0] * alpha_s[1] * (alpha_s[2]**2) * C[:, Nn * Nm, :, :, 0])
 
 plt.figure(figsize=(8, 6))
 plt.imshow(ne[50], aspect='auto', cmap='jet', 
@@ -156,8 +156,8 @@ anim.save("/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S4/Jz.gif"
 # Display the animation
 plt.show()
 
-# print('Saving results...')
-# jnp.savez('output_orszag.npz', **output)
+print('Saving results...')
+jnp.savez('output_orszag.npz', **output)
 
-# print("Loading results...")
-# output = jnp.load('output_orszag.npz')
+# # print("Loading results...")
+# # output = jnp.load('output_orszag.npz')

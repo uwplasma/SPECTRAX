@@ -3,7 +3,7 @@ try: import tomllib
 except ModuleNotFoundError: import pip._vendor.tomli as tomllib
 import diffrax
 import inspect
-from .midpoint_solver import Midpoint
+from .midpoint_solver import ImplicitMidpoint
 
 __all__ = ["load_parameters", "initialize_simulation_parameters"]
 
@@ -129,7 +129,7 @@ def load_parameters(input_file):
     def get_solver_class(name: str):
         for cls_name, cls in inspect.getmembers(diffrax, inspect.isclass):
             if issubclass(cls, diffrax.AbstractSolver) and cls is not diffrax.AbstractSolver and cls_name == name: return cls()
-            elif name == "CrankNicolson": return Midpoint(rtol=input_parameters["ode_tolerance"], atol=input_parameters["ode_tolerance"])
+            elif name == "ImplicitMidpoint": return ImplicitMidpoint(rtol=input_parameters["ode_tolerance"], atol=input_parameters["ode_tolerance"])
         raise ValueError(f"Solver '{name}' is not supported. Choose from Diffrax solvers.")
     solver_parameters["solver"] = get_solver_class(solver_parameters.get("solver", "Tsit5"))
     
