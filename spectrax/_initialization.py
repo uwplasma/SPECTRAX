@@ -90,6 +90,8 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
 
     # Merge user-provided parameters into the default dictionary
     parameters = {**default_parameters, **user_parameters}
+
+    Lx, Ly, Lz = parameters["Lx"], parameters["Ly"], parameters["Lz"]
     
     # Compute derived parameters based on user-provided or default values
     for key, value in parameters.items():
@@ -101,8 +103,24 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     ky_simulation = (jnp.arange(-Ny//2, Ny//2) + 1) * 2 * jnp.pi
     kz_simulation = (jnp.arange(-Nz//2, Nz//2) + 1) * 2 * jnp.pi  
     kx_grid, ky_grid, kz_grid = jnp.meshgrid(kx_simulation, ky_simulation, kz_simulation, indexing='xy')
+    k2_grid = kx_grid**2 + ky_grid**2 + kz_grid**2
+    nabla = jnp.array([kx_grid / Lx, ky_grid / Ly, kz_grid / Lz])
+
+    def precompute_collisions(Nn, Nm, Np):
+        n = jnp.arange(Nn)[:, None, None]
+        m = jnp.arange(Nm)[None, :, None]
+        p = jnp.arange(Np)[None, None, :]
+        def safe(N, i):
+            term = i * (i - 1) * (i - 2)
+            denom = (N - 1) * (N - 2) * (N - 3)
+            return jnp.where(N > 3, term / denom, 0.0)
+        col = safe(Nn, n) + safe(Nm, m) + safe(Np, p)
+        return col
+    
+
     parameters.update({
-        "kx_grid": kx_grid, "ky_grid": ky_grid, "kz_grid": kz_grid
+        "kx_grid": kx_grid, "ky_grid": ky_grid, "kz_grid": kz_grid, "k2_grid": k2_grid, 
+        "nabla": nabla, "collision_matrix": precompute_collisions(Nn, Nm, Np)
     })
 
     return parameters
