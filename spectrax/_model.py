@@ -4,7 +4,7 @@ from functools import partial
 from jax.lax import dynamic_slice
 from jax.scipy.signal import convolve
 
-__all__ = ['plasma_current', 'collision', 'Hermite_Fourier_system', 'diffusion']
+__all__ = ['plasma_current', 'Hermite_Fourier_system']
 
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
 def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
@@ -65,56 +65,56 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     # Sum over species → shape: (3, Nx, Ny, Nz)
     return jnp.sum(J_species, axis=1)
 
-@jit
-def collision(Nn, Nm, Np, n, m, p):
-    """
-    Computes the scalar collision term for the Vlasov-Maxwell system using 
-    a symmetric form over the Hermite-Fourier indices (n, m, p). 
-    The contribution from each index is included only if the corresponding 
-    mode count (Nn, Nm, Np) exceeds 3. The result is a differentiable sum 
-    over valid contributions.
-    Args:
-        Nn (int): Number of grid points in the n direction.
-        Nm (int): Number of grid points in the m direction.
-        Np (int): Number of grid points in the p direction.
-        n (int): Index in the n direction.
-        m (int): Index in the m direction.
-        p (int): Index in the p direction.
-    Returns:
-        jnp.ndarray: Scalar collision term.
-    """
-    N = jnp.array([Nn, Nm, Np], dtype=jnp.float32)
-    idx = jnp.array([n, m, p], dtype=jnp.float32)
-    # Avoid division by zero by masking invalid terms
-    def safe_term(Nj, nj):
-        term = nj * (nj - 1) * (nj - 2)
-        denom = (Nj - 1) * (Nj - 2) * (Nj - 3)
-        return jnp.where(Nj > 3, term / denom, 0.0)
-    terms = vmap(safe_term)(N, idx)
-    return jnp.sum(terms)
+# @jit
+# def collision(Nn, Nm, Np, n, m, p):
+#     """
+#     Computes the scalar collision term for the Vlasov-Maxwell system using 
+#     a symmetric form over the Hermite-Fourier indices (n, m, p). 
+#     The contribution from each index is included only if the corresponding 
+#     mode count (Nn, Nm, Np) exceeds 3. The result is a differentiable sum 
+#     over valid contributions.
+#     Args:
+#         Nn (int): Number of grid points in the n direction.
+#         Nm (int): Number of grid points in the m direction.
+#         Np (int): Number of grid points in the p direction.
+#         n (int): Index in the n direction.
+#         m (int): Index in the m direction.
+#         p (int): Index in the p direction.
+#     Returns:
+#         jnp.ndarray: Scalar collision term.
+#     """
+#     N = jnp.array([Nn, Nm, Np], dtype=jnp.float32)
+#     idx = jnp.array([n, m, p], dtype=jnp.float32)
+#     # Avoid division by zero by masking invalid terms
+#     def safe_term(Nj, nj):
+#         term = nj * (nj - 1) * (nj - 2)
+#         denom = (Nj - 1) * (Nj - 2) * (Nj - 3)
+#         return jnp.where(Nj > 3, term / denom, 0.0)
+#     terms = vmap(safe_term)(N, idx)
+#     return jnp.sum(terms)
 
-@jit
-def diffusion(kx, ky, kz, D, exponent=2):
-    """
-    Computes the diffusion term for the Vlasov-Maxwell system.
+# @jit
+# def diffusion(kx, ky, kz, D, exponent=2):
+#     """
+#     Computes the diffusion term for the Vlasov-Maxwell system.
 
-    Parameters
-    ----------
-    kx, ky, kz : jnp.ndarray
-        Wavevector components in the x, y, and z directions.
-    D : float
-        Diffusion coefficient.
+#     Parameters
+#     ----------
+#     kx, ky, kz : jnp.ndarray
+#         Wavevector components in the x, y, and z directions.
+#     D : float
+#         Diffusion coefficient.
 
-    Returns
-    -------
-    jnp.ndarray
-        Diffusion term proportional to kx**2 + ky**2 + kz**2.
-    """
-    k_squared = kx**exponent + ky**exponent + kz**exponent
-    return -D * k_squared
+#     Returns
+#     -------
+#     jnp.ndarray
+#         Diffusion term proportional to kx**2 + ky**2 + kz**2.
+#     """
+#     k_squared = kx**exponent + ky**exponent + kz**exponent
+#     return -D * k_squared
     
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np'])
-def Hermite_Fourier_system(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, index):
+def Hermite_Fourier_system(Ck, Ck_hat, Fk_hat, kx_grid, ky_grid, kz_grid, k2_grid, col, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, index):
     """
     Computes the time derivative of a single Hermite-Fourier coefficient Ck[n, m, p] for species s
     in a Vlasov-Maxwell spectral solver using a Hermite-Fourier basis.
@@ -124,7 +124,8 @@ def Hermite_Fourier_system(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D,
     dCk_s_dt : jax.Array, shape (Nx, Ny, Nz)
         Time derivative of the Hermite-Fourier coefficient Ck[n, m, p] for species s.
     """
-    
+    Ny, Nx, Nz = Ck.shape[-3], Ck.shape[-2], Ck.shape[-1]
+
     # Species. s = 0 corresponds to electrons and s = 1 corresponds to ions.
     s = jnp.floor(index / (Nn * Nm * Np)).astype(jnp.int32)
     
@@ -139,27 +140,27 @@ def Hermite_Fourier_system(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D,
     q, Omega_c = qs[s], Omega_cs[s]
     
     # Define terms to be used in ODEs below.
-    Ck_aux_x = (jnp.sqrt(m * p) * (alpha[2] / alpha[1] - alpha[1] / alpha[2]) * Ck[n + (m-1) * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m) * jnp.sign(p) + 
-        jnp.sqrt(m * (p + 1)) * (alpha[2] / alpha[1]) * Ck[n + (m-1) * Nn + (p+1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m) * jnp.sign(Np - p - 1) - 
-        jnp.sqrt((m + 1) * p) * (alpha[1] / alpha[2]) * Ck[n + (m+1) * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p) * jnp.sign(Nm - m - 1) + 
-        jnp.sqrt(2 * m) * (u[2] / alpha[1]) * Ck[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m) - 
-        jnp.sqrt(2 * p) * (u[1] / alpha[2]) * Ck[n + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p)) 
+    Ck_hat_aux_x = (jnp.sqrt(m * p) * (alpha[2] / alpha[1] - alpha[1] / alpha[2]) * Ck_hat[n + (m-1) * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m) * jnp.sign(p) + 
+        jnp.sqrt(m * (p + 1)) * (alpha[2] / alpha[1]) * Ck_hat[n + (m-1) * Nn + (p+1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m) * jnp.sign(Np - p - 1) - 
+        jnp.sqrt((m + 1) * p) * (alpha[1] / alpha[2]) * Ck_hat[n + (m+1) * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p) * jnp.sign(Nm - m - 1) + 
+        jnp.sqrt(2 * m) * (u[2] / alpha[1]) * Ck_hat[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m) - 
+        jnp.sqrt(2 * p) * (u[1] / alpha[2]) * Ck_hat[n + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p)) 
 
-    Ck_aux_y = (jnp.sqrt(n * p) * (alpha[0] / alpha[2] - alpha[2] / alpha[0]) * Ck[n-1 + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n) * jnp.sign(p) + 
-        jnp.sqrt((n + 1) * p) * (alpha[0] / alpha[2]) * Ck[n+1 + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p) * jnp.sign(Nn - n - 1) - 
-        jnp.sqrt(n * (p + 1)) * (alpha[2] / alpha[0]) * Ck[n-1 + m * Nn + (p+1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n) * jnp.sign(Np - p - 1) + 
-        jnp.sqrt(2 * p) * (u[0] / alpha[2]) * Ck[n + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p) - 
-        jnp.sqrt(2 * n) * (u[2] / alpha[0]) * Ck[n-1 + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n))
+    Ck_hat_aux_y = (jnp.sqrt(n * p) * (alpha[0] / alpha[2] - alpha[2] / alpha[0]) * Ck_hat[n-1 + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n) * jnp.sign(p) + 
+        jnp.sqrt((n + 1) * p) * (alpha[0] / alpha[2]) * Ck_hat[n+1 + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p) * jnp.sign(Nn - n - 1) - 
+        jnp.sqrt(n * (p + 1)) * (alpha[2] / alpha[0]) * Ck_hat[n-1 + m * Nn + (p+1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n) * jnp.sign(Np - p - 1) + 
+        jnp.sqrt(2 * p) * (u[0] / alpha[2]) * Ck_hat[n + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p) - 
+        jnp.sqrt(2 * n) * (u[2] / alpha[0]) * Ck_hat[n-1 + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n))
     
-    Ck_aux_z = (jnp.sqrt(n * m) * (alpha[1] / alpha[0] - alpha[0] / alpha[1]) * Ck[n-1 + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n) * jnp.sign(m) + 
-        jnp.sqrt(n * (m + 1)) * (alpha[1] / alpha[0]) * Ck[n-1 + (m+1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n) * jnp.sign(Nm - m - 1) - 
-        jnp.sqrt((n + 1) * m) * (alpha[0] / alpha[1]) * Ck[n+1 + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m) * jnp.sign(Nn - n - 1) + 
-        jnp.sqrt(2 * n) * (u[1] / alpha[0]) * Ck[n-1 + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n) - 
-        jnp.sqrt(2 * m) * (u[0] / alpha[1]) * Ck[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m))
+    Ck_hat_aux_z = (jnp.sqrt(n * m) * (alpha[1] / alpha[0] - alpha[0] / alpha[1]) * Ck_hat[n-1 + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n) * jnp.sign(m) + 
+        jnp.sqrt(n * (m + 1)) * (alpha[1] / alpha[0]) * Ck_hat[n-1 + (m+1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n) * jnp.sign(Nm - m - 1) - 
+        jnp.sqrt((n + 1) * m) * (alpha[0] / alpha[1]) * Ck_hat[n+1 + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m) * jnp.sign(Nn - n - 1) + 
+        jnp.sqrt(2 * n) * (u[1] / alpha[0]) * Ck_hat[n-1 + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n) - 
+        jnp.sqrt(2 * m) * (u[0] / alpha[1]) * Ck_hat[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m))
 
-    Col  = -nu * collision(Nn, Nm, Np, n, m, p)    * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
+    Col  = -nu * col[n, m, p] * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
     
-    Diff = diffusion(kx_grid, ky_grid, kz_grid, D) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
+    Diff = -D * k2_grid * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
         
     # ODEs for Hermite-Fourier coefficients.
     # Closure is achieved by setting to zero coefficients with index out of range.
@@ -175,14 +176,11 @@ def Hermite_Fourier_system(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D,
         jnp.sqrt((p + 1) / 2) * Ck[n + m * Nn + (p+1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(Np - p - 1) +
         jnp.sqrt(p / 2) * Ck[n + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p) +
         (u[2] / alpha[2]) * Ck[n + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...]
-    ) + q * Omega_c * (
-        (jnp.sqrt(2 * n) / alpha[0]) * convolve(Fk[0, ...], Ck[n-1 + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n), mode='same') +
-        (jnp.sqrt(2 * m) / alpha[1]) * convolve(Fk[1, ...], Ck[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m), mode='same') +
-        (jnp.sqrt(2 * p) / alpha[2]) * convolve(Fk[2, ...], Ck[n + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p), mode='same')
-    ) + q * Omega_c * (
-        convolve(Fk[3, ...], Ck_aux_x, mode='same', method='fft') + 
-        convolve(Fk[4, ...], Ck_aux_y, mode='same', method='fft') + 
-        convolve(Fk[5, ...], Ck_aux_z, mode='same', method='fft')
+    ) + q * Omega_c * Nx * Ny * Nz * (
+        jnp.fft.fftshift(jnp.fft.fftn((jnp.sqrt(2 * n) / alpha[0]) * Fk_hat[0] * Ck_hat[n-1 + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n) +
+                      (jnp.sqrt(2 * m) / alpha[1]) * Fk_hat[1] * Ck_hat[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m) + 
+                      (jnp.sqrt(2 * p) / alpha[2]) * Fk_hat[2] * Ck_hat[n + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p) +
+                      Fk_hat[3] * Ck_hat_aux_x + Fk_hat[4] * Ck_hat_aux_y + Fk_hat[5] * Ck_hat_aux_z, axes=(-3, -2, -1)), axes=(-3, -2, -1)) 
     ) + Col + Diff)
     
     return dCk_s_dt
