@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-number_of_processors_to_use = 5 # Parallelization, this should divide total resolution
+number_of_processors_to_use = 1 # Parallelization, this should divide total resolution
 os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
 from jax import block_until_ready
@@ -63,6 +63,9 @@ Nz = solver_parameters["Nz"]
 Nn = solver_parameters["Nn"]
 Nm = solver_parameters["Nm"]
 Np = solver_parameters["Np"]
+t = output["time"]
+nu = output["nu"]
+uz = output["u_s"][2]
 Ck = output["Ck"]
 
 C = ifftn(ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1)).real
@@ -71,6 +74,23 @@ ne = alpha_s[0] * alpha_s[1] * alpha_s[2] * C[:, 0, :, :, 0]
 ni = alpha_s[3] * alpha_s[4] * alpha_s[5] * C[:, Nn * Nm * Np, :, :, 0]
 
 Jz = (1 / jnp.sqrt(2)) * (alpha_s[3] * alpha_s[4] * (alpha_s[5]**2) * C[:, Nn * Nm * Np + Nn * Nm, :, :, 0] - alpha_s[0] * alpha_s[1] * (alpha_s[2]**2) * C[:, Nn * Nm, :, :, 0])
+
+
+
+fig, axes = plt.subplots(1, 2, figsize=(15, 9))
+fig.suptitle(rf'$N_x = {Nx}$, $N_n = {Nn}$, $N_m = {Nm}$, $N_p = {Np}$, $\nu = {nu}$, $|u_z| = {uz}$', fontsize=14)
+
+# Energy plots
+axes[0].plot(t, output["EM_energy"], label="EM energy")
+axes[0].plot(t, output["kinetic_energy"], label="Kinetic energy")
+axes[0].plot(t, output["kinetic_energy_species1"], label="Kinetic energy species 1")
+axes[0].plot(t, output["kinetic_energy_species2"], label="Kinetic energy species 2")
+axes[0].plot(t, output["total_energy"], label="Total energy")
+axes[0].set(title="Energy", xlabel=r"$t\omega_{pe}$", ylabel="Energy", yscale="log")#, ylim=[1e-5, None])
+axes[0].legend()
+
+axes[1].plot(t[1:], jnp.abs(output["total_energy"][1:]-output["total_energy"][0])/(output["total_energy"][0]+1e-9), label="Relative energy error")
+axes[1].set(xlabel=r"$t\omega_{pe}$", ylabel="Relative Energy Error", yscale="log")#, ylim=[1e-5, None])
 
 plt.figure(figsize=(8, 6))
 plt.imshow(ne[50], aspect='auto', cmap='jet', 
@@ -151,13 +171,13 @@ anim = FuncAnimation(
 )
 
 # Save the animation as a GIF
-anim.save("/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S4/Jz.gif", writer=PillowWriter(fps=5))
+anim.save("/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S8/Jz.gif", writer=PillowWriter(fps=5))
 
 # Display the animation
 plt.show()
 
 print('Saving results...')
-jnp.savez('output_orszag.npz', **output)
+jnp.savez('/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S8/output_orszag.npz', **output)
 
 # # print("Loading results...")
 # # output = jnp.load('output_orszag.npz')
