@@ -179,7 +179,7 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         jnp.fft.fftshift(jnp.fft.fftn((sqrt_n_minus * jnp.sqrt(2) / a0) * F[0] * shift_multi(C, dn=-1, dm=0, dp=0) +
                       (sqrt_m_minus * jnp.sqrt(2) / a1) * F[1] * shift_multi(C, dn=0, dm=-1, dp=0) + 
                       (sqrt_p_minus * jnp.sqrt(2) / a2) * F[2] * shift_multi(C, dn=0, dm=0, dp=-1) +
-                      F[3] * C_aux_x + F[4] * C_aux_y + F[5] * C_aux_z, axes=(-3, -2, -1)), axes=(-3, -2, -1)) * mask23
+                      F[3] * C_aux_x + F[4] * C_aux_y + F[5] * C_aux_z, axes=(-3, -2, -1)), axes=(-3, -2, -1)) #* mask23
     ) + Col + Diff)
     
     return dCk_s_dt

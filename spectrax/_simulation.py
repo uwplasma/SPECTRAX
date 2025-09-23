@@ -120,7 +120,6 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
         stepsize_controller=ConstantStepSize(),
         t0=0, t1=parameters["t_max"], dt0=dt,
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
-        max_steps=1000000
         max_steps=1000000, progress_meter=TqdmProgressMeter())
     
     ## Idea: take the eigenvalues of ODE_system to determine the stability of the system.
