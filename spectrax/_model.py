@@ -6,6 +6,24 @@ from jax.scipy.signal import convolve
 
 __all__ = ['plasma_current', 'Hermite_Fourier_system']
 
+def _twothirds_mask(Ny: int, Nx: int, Nz: int):
+    """Return a boolean mask in fftshifted (zero-centered) k-ordering that keeps |k|<=N//3 in each dim."""
+    def centered_modes(N):
+        # integer mode numbers in fftshift ordering: [-N//2, ..., -1, 0, 1, ..., N//2-1]
+        k = jnp.fft.fftfreq(N) * N
+        return jnp.fft.fftshift(k)
+
+    ky = centered_modes(Ny)[:, None, None]
+    kx = centered_modes(Nx)[None, :, None]
+    kz = centered_modes(Nz)[None, None, :]
+
+    # cutoffs (keep indices with |k| <= floor(N/3)); if N<3 this naturally keeps only k=0
+    cy = Ny // 3
+    cx = Nx // 3
+    cz = Nz // 3
+
+    return (jnp.abs(ky) <= cy) & (jnp.abs(kx) <= cx) & (jnp.abs(kz) <= cz)
+
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
 def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     """
@@ -114,7 +132,7 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
 #     return -D * k_squared
     
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np'])
-def Hermite_Fourier_system(Ck, Ck_hat, Fk_hat, kx_grid, ky_grid, kz_grid, k2_grid, col, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, index):
+def Hermite_Fourier_system(Ck, Ck_hat, Fk_hat, kx_grid, ky_grid, kz_grid, k2_grid, col, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, index, mask23):
     """
     Computes the time derivative of a single Hermite-Fourier coefficient Ck[n, m, p] for species s
     in a Vlasov-Maxwell spectral solver using a Hermite-Fourier basis.
@@ -180,7 +198,7 @@ def Hermite_Fourier_system(Ck, Ck_hat, Fk_hat, kx_grid, ky_grid, kz_grid, k2_gri
         jnp.fft.fftshift(jnp.fft.fftn((jnp.sqrt(2 * n) / alpha[0]) * Fk_hat[0] * Ck_hat[n-1 + m * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(n) +
                       (jnp.sqrt(2 * m) / alpha[1]) * Fk_hat[1] * Ck_hat[n + (m-1) * Nn + p * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(m) + 
                       (jnp.sqrt(2 * p) / alpha[2]) * Fk_hat[2] * Ck_hat[n + m * Nn + (p-1) * Nn * Nm + s * Nn * Nm * Np, ...] * jnp.sign(p) +
-                      Fk_hat[3] * Ck_hat_aux_x + Fk_hat[4] * Ck_hat_aux_y + Fk_hat[5] * Ck_hat_aux_z, axes=(-3, -2, -1)), axes=(-3, -2, -1)) 
+                      Fk_hat[3] * Ck_hat_aux_x + Fk_hat[4] * Ck_hat_aux_y + Fk_hat[5] * Ck_hat_aux_z, axes=(-3, -2, -1)), axes=(-3, -2, -1))  * mask23
     ) + Col + Diff)
     
     return dCk_s_dt

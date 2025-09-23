@@ -6,7 +6,7 @@ from functools import partial
 from diffrax import (diffeqsolve, Tsit5, Dopri5, ODETerm,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
 from ._initialization import initialize_simulation_parameters
-from ._model import plasma_current, Hermite_Fourier_system
+from ._model import plasma_current, Hermite_Fourier_system, _twothirds_mask
 from ._diagnostics import diagnostics
 
 # Parallelize the simulation using JAX
@@ -52,11 +52,20 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     Fk_hat = jnp.fft.ifftn(jnp.fft.ifftshift(Fk, axes=(-3, -2, -1)), axes=(-3, -2, -1))
     Ck_hat = jnp.fft.ifftn(jnp.fft.ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1))  # batched over Ncoef
 
-    
+    # Build the 2/3 mask once per call (JIT will constant-fold it since Nx/Ny/Nz are static)
+    mask23 = _twothirds_mask(Ny, Nx, Nz)
+
     partial_Hermite_Fourier_system = partial(
         Hermite_Fourier_system,
-        Ck, Ck_hat, Fk_hat, kx_grid, ky_grid, kz_grid, k2_grid, col, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np)
-    sharded_fun = jit(shard_map(vmap(partial_Hermite_Fourier_system), mesh, in_specs=spec, out_specs=spec, check_rep=False))
+        Ck, Ck_hat, Fk_hat, kx_grid, ky_grid, kz_grid, k2_grid, col, Lx, Ly, Lz, nu, D,
+        alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, mask23=mask23
+    )
+    sharded_fun = jit(
+        shard_map(
+            vmap(lambda idx: partial_Hermite_Fourier_system(index=idx)),
+            mesh, in_specs=spec, out_specs=spec, check_rep=False
+        )
+    )
     indices_sharded = device_put(jnp.arange(Nn * Nm * Np * Ns), sharding)
     dCk_s_dt = sharded_fun(indices_sharded)
 
@@ -122,7 +131,9 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
         # stepsize_controller=ConstantStepSize(),
         t0=0, t1=parameters["t_max"], dt0=dt,
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
-        max_steps=1000000, progress_meter=NoProgressMeter())
+        progress_meter=TqdmProgressMeter(), #NoProgressMeter(),
+        max_steps=1000000
+        )
     
     ## Idea: take the eigenvalues of ODE_system to determine the stability of the system.
     
