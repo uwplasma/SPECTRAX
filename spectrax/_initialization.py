@@ -125,15 +125,12 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         m = jnp.arange(Nm)[None, None, :, None, None, None, None]
         n = jnp.arange(Nn)[None, None, None, :, None, None, None]
 
-        # Example Hermite recurrence coefficients (replace with your exact formulas)
-        # Shape them as (Ns,Nn,Nm,Np,1,1,1) to broadcast over space.
         sqrt_n_plus  = jnp.sqrt(n+1)
-        sqrt_n_minus = jnp.sqrt(n) # safe when multiplied with shifted/padded C
+        sqrt_n_minus = jnp.sqrt(n) 
         sqrt_m_plus  = jnp.sqrt(m+1)
         sqrt_m_minus = jnp.sqrt(m)
         sqrt_p_plus  = jnp.sqrt(p+1)
         sqrt_p_minus = jnp.sqrt(p)
-        # ... etc for m/p, or whatever physics requires
 
         return sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus
     
