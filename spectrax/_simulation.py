@@ -45,21 +45,10 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     Ck = Ck_Fk[:total_Ck_size].reshape(Nn * Nm * Np * Ns, Ny, Nx, Nz)
     Fk = Ck_Fk[total_Ck_size:].reshape(6, Ny, Nx, Nz)
 
-    # dCk_s_dt = vmap(
-    #     Hermite_Fourier_system,
-    #     in_axes=(None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, 0)
-    # )(Ck, Fk, kx_grid, ky_grid, kz_grid, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, jnp.arange(Nn * Nm * Np * Ns))
 
     F = jnp.fft.ifftn(jnp.fft.ifftshift(Fk, axes=(-3, -2, -1)), axes=(-3, -2, -1))
-    C = jnp.fft.ifftn(jnp.fft.ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1))  # batched over Ncoef
+    C = jnp.fft.ifftn(jnp.fft.ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1))
 
-    
-    # partial_Hermite_Fourier_system = partial(
-    #     Hermite_Fourier_system,
-    #     Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np)
-    # sharded_fun = jit(shard_map(vmap(partial_Hermite_Fourier_system), mesh, in_specs=spec, out_specs=spec, check_rep=False))
-    # indices_sharded = device_put(jnp.arange(Nn * Nm * Np * Ns), sharding)
-    # dCk_s_dt = sharded_fun(indices_sharded)
 
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
