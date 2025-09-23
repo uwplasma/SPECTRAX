@@ -13,7 +13,7 @@ D = 0.0
 t_max = 0.2
 vte = 0.177
 vti = 0.0354
-ode_tolerance = 1e-6
+ode_tolerance = 1e-5
 
 [solver_parameters]
 Nx = 17
@@ -23,6 +23,6 @@ Nn = 4
 Nm = 4
 Np = 4
 Ns = 2
-timesteps = 21
+timesteps = 501
 dt = 0.1
 solver = "Dopri8"

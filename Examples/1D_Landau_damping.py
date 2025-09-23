@@ -7,7 +7,6 @@ from time import time
 import jax.numpy as jnp
 from jax import block_until_ready
 from spectrax import simulation, load_parameters, plot
-import pandas as pd
 
 # Read from input.toml
 # input_parameters, solver_parameters = load_parameters('input_1D_landau_damping.toml')

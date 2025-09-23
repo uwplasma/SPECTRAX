@@ -50,7 +50,7 @@ def plot(output):
                       k_to_idx(nz, Nz)
         ].imag
     ) * alpha_s[0] * alpha_s[1] * alpha_s[2]
-    axes[1, 1].plot(time, dnk1, label='$|\delta n^{S1}_{k}|$', linestyle='-', linewidth=2.0)
+    axes[1, 1].plot(time, dnk1, label=r'$|\delta n^{S1}_{k}|$', linestyle='-', linewidth=2.0)
     axes[1, 1].set(title='Species 1 density fluctuation', ylabel=r'$log(|\delta n^{s1}_{k}|)$', xlabel=r'$t\omega_{pe}$', yscale="log")#, ylim=[1e-20, None])
     
     # Plot ion density fluctuation vs t.
@@ -61,7 +61,7 @@ def plot(output):
                     k_to_idx(nz, Nz)
         ].imag
     ) * alpha_s[3] * alpha_s[4] * alpha_s[5]
-    axes[1, 2].plot(time, dnk2, label='$|\delta n^{s2}_{k}|$', linestyle='-', linewidth=2.0)
+    axes[1, 2].plot(time, dnk2, label=r'$|\delta n^{s2}_{k}|$', linestyle='-', linewidth=2.0)
     axes[1, 2].set(title='Species 2 density fluctuation', ylabel=r'$log(|\delta n^{s2}_{k}|)$', xlabel=r'$t\omega_{pe}$', yscale="log")#, ylim=[1e-20, None])
     
     # Electron Phase space plot

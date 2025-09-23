@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-number_of_processors_to_use = 4 # Parallelization, this should divide total resolution
+number_of_processors_to_use = 5 # Parallelization, this should divide total resolution
 os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
 from jax import block_until_ready
@@ -22,7 +22,7 @@ deltaB = 0.2 # In-plane magnetic field amplitude.
 U0 = deltaB * input_parameters["Omega_cs"][0] / jnp.sqrt(input_parameters["mi_me"])
 kx = 2 * jnp.pi / input_parameters["Lx"]
 ky = 2 * jnp.pi / input_parameters["Ly"]
-Nv = 125 
+Nv = 55 
 nvxyz = 40 # Number of velocity points in each dimension for the velocity grid.
 max_min_v_factor = 5 # Factor for the maximum and minimum velocity in each dimension.
 
