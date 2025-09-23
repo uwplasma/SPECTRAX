@@ -7,21 +7,11 @@ from jax.scipy.signal import convolve
 __all__ = ['plasma_current', 'Hermite_Fourier_system']
 
 def _twothirds_mask(Ny: int, Nx: int, Nz: int):
-    """Return a boolean mask in fftshifted (zero-centered) k-ordering that keeps |k|<=N//3 in each dim."""
-    def centered_modes(N):
-        # integer mode numbers in fftshift ordering: [-N//2, ..., -1, 0, 1, ..., N//2-1]
-        k = jnp.fft.fftfreq(N) * N
-        return jnp.fft.fftshift(k)
-
-    ky = centered_modes(Ny)[:, None, None]
-    kx = centered_modes(Nx)[None, :, None]
-    kz = centered_modes(Nz)[None, None, :]
-
-    # cutoffs (keep indices with |k| <= floor(N/3)); if N<3 this naturally keeps only k=0
-    cy = Ny // 3
-    cx = Nx // 3
-    cz = Nz // 3
-
+    """Boolean mask in **unshifted** FFT ordering that keeps |k| <= N//3 in each dim."""
+    ky = (jnp.fft.fftfreq(Ny) * Ny)[:, None, None]  # e.g. [0,1,2,...,-2,-1]
+    kx = (jnp.fft.fftfreq(Nx) * Nx)[None, :, None]
+    kz = (jnp.fft.fftfreq(Nz) * Nz)[None, None, :]
+    cy, cx, cz = Ny // 3, Nx // 3, Nz // 3
     return (jnp.abs(ky) <= cy) & (jnp.abs(kx) <= cx) & (jnp.abs(kz) <= cz)
 
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
@@ -176,10 +166,13 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         sqrt_p_minus / jnp.sqrt(2) * shift_multi(Ck, dn=0, dm=0, dp=-1) +
         (u2 / a2) * Ck
     ) + q * Omega_c * Nx * Ny * Nz * (
-        jnp.fft.fftshift(jnp.fft.fftn((sqrt_n_minus * jnp.sqrt(2) / a0) * F[0] * shift_multi(C, dn=-1, dm=0, dp=0) +
-                      (sqrt_m_minus * jnp.sqrt(2) / a1) * F[1] * shift_multi(C, dn=0, dm=-1, dp=0) + 
-                      (sqrt_p_minus * jnp.sqrt(2) / a2) * F[2] * shift_multi(C, dn=0, dm=0, dp=-1) +
-                      F[3] * C_aux_x + F[4] * C_aux_y + F[5] * C_aux_z, axes=(-3, -2, -1)), axes=(-3, -2, -1)) * mask23
+        jnp.fft.fftn(
+            (sqrt_n_minus * jnp.sqrt(2) / a0) * F[0] * shift_multi(C, dn=-1, dm=0, dp=0) +
+            (sqrt_m_minus * jnp.sqrt(2) / a1) * F[1] * shift_multi(C, dn=0, dm=-1, dp=0) + 
+            (sqrt_p_minus * jnp.sqrt(2) / a2) * F[2] * shift_multi(C, dn=0, dm=0, dp=-1) +
+            F[3] * C_aux_x + F[4] * C_aux_y + F[5] * C_aux_z,
+            axes=(-3, -2, -1)
+        ) * mask23
     ) + Col + Diff)
     
     return dCk_s_dt

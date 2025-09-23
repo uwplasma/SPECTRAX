@@ -79,8 +79,8 @@ lambda_D = jnp.sqrt(1 / (2 * (1 / alpha_s[0] ** 2 + 1 / (mi_me * alpha_s[3] ** 2
 k_norm = jnp.sqrt(2) * jnp.pi * alpha_s[0] / Lx # Perturbation wavenumber normalized to the inverse of the Debye length.
 
 # Set n = 0, k = 0 mode to zero to get array with time evolution of perturbation.
-dCk = Ck.at[:, 0, 0, 1, 0].set(0)
-dCk = dCk.at[:, Nn * Nm * Np, 0, 1, 0].set(0)
+dCk = Ck.at[:, 0, 0, 0, 0].set(0)                   # species 1, n=m=p=0, k=0,0,0
+dCk = dCk.at[:, Nn * Nm * Np, 0, 0, 0].set(0)       # species 2, n=m=p=0, k=0,0,0
 
 peaks, _ = find_peaks(jnp.abs(dCk[:, 0, 0, 0, 0].imag))
 p = jnp.polyfit(t[peaks], jnp.log(jnp.abs(dCk[:, 0, 0, 0, 0].imag[peaks])), 1)

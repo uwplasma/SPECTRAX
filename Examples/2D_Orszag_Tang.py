@@ -1,14 +1,14 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-number_of_processors_to_use = 5 # Parallelization, this should divide total resolution
+number_of_processors_to_use = 4 # Parallelization, this should divide total resolution
 os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
 from jax import block_until_ready
 import jax.numpy as jnp
 from spectrax import simulation, load_parameters, plot, initialize_xv
 import matplotlib.pyplot as plt
-from jax.numpy.fft import ifftn, ifftshift
+from jax.numpy.fft import ifftn
 from matplotlib.animation import FuncAnimation, PillowWriter
 
 # Read from input.toml
@@ -65,7 +65,7 @@ Nm = solver_parameters["Nm"]
 Np = solver_parameters["Np"]
 Ck = output["Ck"]
 
-C = ifftn(ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1)).real
+C = ifftn(Ck, axes=(-3, -2, -1)).real
 
 ne = alpha_s[0] * alpha_s[1] * alpha_s[2] * C[:, 0, :, :, 0]
 ni = alpha_s[3] * alpha_s[4] * alpha_s[5] * C[:, Nn * Nm * Np, :, :, 0]
@@ -151,7 +151,7 @@ anim = FuncAnimation(
 )
 
 # Save the animation as a GIF
-anim.save("/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S4/Jz.gif", writer=PillowWriter(fps=5))
+anim.save("Jz.gif", writer=PillowWriter(fps=5))
 
 # Display the animation
 plt.show()

@@ -1,7 +1,7 @@
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
-from jax.numpy.fft import ifftn, ifftshift
+from jax.numpy.fft import ifftn
 from jax.scipy.special import factorial
 from orthax.hermite import hermval
 from jax import jit, vmap
@@ -41,7 +41,7 @@ def generate_Hermite_term_vmap(C, Herm_x, Herm_y, Herm_z, Nn, Nm, Np, xi_x, xi_y
 
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np'])
 def inverse_HF_transform(Ck, Nn, Nm, Np, xi_x, xi_y, xi_z):
-    C = ifftn(ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1)).real
+    C = ifftn(Ck, axes=(-3, -2, -1)).real
 
     # Precompute Hermite functions up to desired order
     Herm_x = generate_Hermite_basis(Nn, xi_x)  # [Nn, Nvy, Nvx, Nvz]

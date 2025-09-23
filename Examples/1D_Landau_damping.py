@@ -35,20 +35,23 @@ n = nx + ny + nz
 L = Lx * jnp.sign(nx) + Ly * jnp.sign(ny) + Lz * jnp.sign(nz)
 E_field_component = int(jnp.sign(ny) + 2 * jnp.sign(nz))
 
+def k_to_idx(k, N):  # unshifted FFT index
+    return int(k % N)
+
 # Fourier components of magnetic and electric fields.
 Fk_0 = jnp.zeros((6, Ny, Nx, Nz), dtype=jnp.complex128)
-Fk_0 = Fk_0.at[E_field_component, int((Ny-1)/2-ny), int((Nx-1)/2-nx), int((Nz-1)/2-nz)].set(dn * L / (4 * jnp.pi * n * Omega_cs[0]))
-Fk_0 = Fk_0.at[E_field_component, int((Ny-1)/2+ny), int((Nx-1)/2+nx), int((Nz-1)/2+nz)].set(dn * L / (4 * jnp.pi * n * Omega_cs[0]))
+Fk_0 = Fk_0.at[E_field_component, k_to_idx(-ny, Ny), k_to_idx(-nx, Nx), k_to_idx(-nz, Nz)].set(dn * L / (4 * jnp.pi * n * Omega_cs[0]))
+Fk_0 = Fk_0.at[E_field_component, k_to_idx( ny, Ny), k_to_idx( nx, Nx), k_to_idx( nz, Nz)].set(dn * L / (4 * jnp.pi * n * Omega_cs[0]))
 input_parameters["Fk_0"] = Fk_0
 
 # Hermite-Fourier components of electron and ion distribution functions.
 Ce0_mk, Ce0_0, Ce0_k = 0 + 1j * (1 / (2 * alpha_s[0] ** 3)) * dn, 1 / (alpha_s[0] ** 3) + 0 * 1j, 0 - 1j * (1 / (2 * alpha_s[0] ** 3)) * dn
 Ci0_0 = 1 / (alpha_s[3] ** 3) + 0 * 1j
 Ck_0 = jnp.zeros((2 * Nn * Nm * Np, Ny, Nx, Nz), dtype=jnp.complex128)
-Ck_0 = Ck_0.at[0, int((Ny-1)/2-ny), int((Nx-1)/2-nx), int((Nz-1)/2-nz)].set(Ce0_mk)
-Ck_0 = Ck_0.at[0, int((Ny-1)/2), int((Nx-1)/2), int((Nz-1)/2)].set(Ce0_0)
-Ck_0 = Ck_0.at[0, int((Ny-1)/2+ny), int((Nx-1)/2+nx), int((Nz-1)/2+nz)].set(Ce0_k)
-Ck_0 = Ck_0.at[Nn * Nm * Np, int((Ny-1)/2), int((Nx-1)/2), int((Nz-1)/2)].set(Ci0_0)
+Ck_0 = Ck_0.at[0, k_to_idx(-ny, Ny), k_to_idx(-nx, Nx), k_to_idx(-nz, Nz)].set(Ce0_mk)
+Ck_0 = Ck_0.at[0, k_to_idx( 0,  Ny), k_to_idx( 0,  Nx), k_to_idx( 0,  Nz)].set(Ce0_0)
+Ck_0 = Ck_0.at[0, k_to_idx( ny, Ny), k_to_idx( nx, Nx), k_to_idx( nz, Nz)].set(Ce0_k)
+Ck_0 = Ck_0.at[Nn * Nm * Np, k_to_idx(0, Ny), k_to_idx(0, Nx), k_to_idx(0, Nz)].set(Ci0_0)
 input_parameters["Ck_0"] = Ck_0
 
 # Simulate

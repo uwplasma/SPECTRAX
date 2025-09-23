@@ -2,7 +2,7 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax import vmap, jit
-from jax.numpy.fft import fftn, fftshift
+from jax.numpy.fft import fftn
 from jax.scipy.special import factorial
 from jax.scipy.integrate import trapezoid
 from functools import partial
@@ -19,11 +19,30 @@ sharding = NamedSharding(mesh, spec)
 
 @jit
 def Hermite(n, x):
-    def body(m, acc):
-        coeff = (-1.0)**m / (factorial(m) * factorial(n - 2 * m))
-        term = coeff * (2 * x)**(n - 2 * m)
-        return acc + term
-    return factorial(n) * jax.lax.fori_loop(0, (n // 2) + 1, body, jnp.zeros_like(x))
+    """Physicists' Hermite H_n(x) via stable recurrence."""
+    n = jnp.asarray(n, dtype=jnp.int32)
+    H0 = jnp.ones_like(x)
+    H1 = 2.0 * x
+    def n_is_0(_): return H0
+    def n_is_1(_): return H1
+    def n_ge_2(_):
+        # Iterative recurrence: H_{k+1} = 2 x H_k - 2 k H_{k-1}
+        k = jnp.int32(1)
+        Hkm1 = H0
+        Hk = H1
+        def cond(c):
+            k, *_ = c
+            return k < n
+        def body(c):
+            k, Hkm1, Hk = c
+            Hkp1 = 2.0 * x * Hk - 2.0 * k * Hkm1
+            return (k + 1, Hk, Hkp1)
+        _, _, Hn = jax.lax.while_loop(cond, body, (k, Hkm1, Hk))
+        return Hn
+    return jax.lax.switch(
+         jnp.clip(n, 0, 2),
+        (n_is_0, n_is_1, n_ge_2),
+        operand=None)
 
 @jit
 def generate_Hermite_function(xi_x, xi_y, xi_z, Nn, Nm, indices):
@@ -51,8 +70,14 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, Nv, nvxyz, ma
     vz = jnp.linspace(-max_min_v_factor * alpha[2] + u[2], max_min_v_factor * alpha[2] + u[2], nvxyz)
     # Precompute all 8x8x8 velocity subgrids
     def slice_1d(v):
-        return jnp.stack([v[i * 8:(i + 1) * 8] for i in range(5)])
-    vx_chunks = slice_1d(vx)  # shape (5, 8)
+        # Prefer 4 equal chunks if possible; else fall back to 5×8
+        if (v.shape[0] % 4) == 0:
+            n_chunks = 4
+        else:
+            n_chunks = 5
+        chunk = v.shape[0] // n_chunks
+        return jnp.stack([v[i * chunk:(i + 1) * chunk] for i in range(n_chunks)])
+    vx_chunks = slice_1d(vx)
     vy_chunks = slice_1d(vy)
     vz_chunks = slice_1d(vz)
     
@@ -63,9 +88,12 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, Nv, nvxyz, ma
   
     @jit
     def single_C_nmp(i):
-        ivx = jnp.floor(i / (5 ** 2)).astype(int)
-        ivy = jnp.floor((i - ivx * 5 ** 2) / 5).astype(int)
-        ivz = (i - ivx * 5 ** 2 - ivy * 5).astype(int)
+        n_vx = vx_chunks.shape[0]
+        n_vy = vy_chunks.shape[0]
+        n_vz = vz_chunks.shape[0]
+        ivx = (i // (n_vy * n_vz)).astype(int)
+        ivy = ((i // n_vz) % n_vy).astype(int)
+        ivz = (i % n_vz).astype(int)
         
         vx_slice = vx_chunks[ivx]
         vy_slice = vy_chunks[ivy]
@@ -90,12 +118,30 @@ def compute_C_nmp(f, alpha, u, Nx, Ny, Nz, Lx, Ly, Lz, Nn, Nm, Np, Nv, nvxyz, ma
         integrand = f(X, Y, Z, Vx, Vy, Vz) * Hx * Hy * Hz / hermite_norm
         
         # Compute the contribution to C_nmp from the velocity space.
-        contribution = trapezoid(trapezoid(trapezoid(integrand,
-                    (vy_slice - u[1]) / alpha[1], axis=-3),
-                    (vx_slice - u[0]) / alpha[0], axis=-2),
-                    (vz_slice - u[2]) / alpha[2], axis=-1)
+        # Spacing in ξ = (v - u)/α for each axis (uniform because you used linspace)
+        dxi = (vx_slice[1] - vx_slice[0]) / alpha[0]
+        dyi = (vy_slice[1] - vy_slice[0]) / alpha[1]
+        dzi = (vz_slice[1] - vz_slice[0]) / alpha[2]
+
+        # General 1D trapezoid weights for arbitrary chunk length
+        def trap1d(npts, dtype):
+            w = jnp.ones((npts,), dtype=dtype)
+            # interior gets 2, endpoints remain 1
+            w = w.at[1:-1].set(2.0) if (npts > 2) else w
+            return w
+        wx = trap1d(vx_slice.shape[0], integrand.dtype) * dxi
+        wy = trap1d(vy_slice.shape[0], integrand.dtype) * dyi
+        wz = trap1d(vz_slice.shape[0], integrand.dtype) * dzi
+
+        # Outer product weights for the (8×8×8) velocity subgrid (broadcasted)
+        W = (wx[None, None, None, :, None, None] *
+             wy[None, None, None, None, :, None] *
+             wz[None, None, None, None, None, :]) * 0.125  # (1/2)^3 for 3D trapezoid
+
+        # Single fused reduction over the last 3 axes
+        contribution = jnp.sum(integrand * W, axis=(-3, -2, -1))
         return contribution
-    C_nmp_all = vmap(single_C_nmp)(jnp.arange(Nv))  # shape (Nv, Ny, Nx, Nz)
+    C_nmp_all = vmap(single_C_nmp)(jnp.arange(vx_chunks.shape[0] * vy_chunks.shape[0] * vz_chunks.shape[0]))
     return jnp.sum(C_nmp_all, axis=0)
 
 @partial(jit, static_argnames=['B', 'E', 'f1', 'f2', 'Nv', 'nvxyz', 'max_min_v_factor', 'Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver'])
@@ -119,8 +165,8 @@ def initialize_xv(B, E, f1, f2, Nv=55, nvxyz=40, max_min_v_factor=5, input_param
     C2_0 = sharded_C20_fun(indices_sharded)
 
     # Combine Ce_0 and Ci_0 into single array and compute the fast Fourier transform.
-    C1k_0 = fftshift(fftn(C1_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
-    C2k_0 = fftshift(fftn(C2_0, axes=(-3, -2, -1)), axes=(-3, -2, -1))
+    C1k_0 = fftn(C1_0, axes=(-3, -2, -1))
+    C2k_0 = fftn(C2_0, axes=(-3, -2, -1))
     Ck_0 = jnp.concatenate([C1k_0, C2k_0])
     
     # Define 3D grid for functions E(x, y, z) and B(x, y, z).
@@ -130,8 +176,8 @@ def initialize_xv(B, E, f1, f2, Nv=55, nvxyz=40, max_min_v_factor=5, input_param
     X, Y, Z = jnp.meshgrid(x, y, z, indexing='xy')
     
     # Combine E and B into single array and compute the fast Fourier transform.
-    Ek_0 = fftshift(fftn(E(X, Y, Z), axes=(-3, -2, -1)), axes=(-3, -2, -1))
-    Bk_0 = fftshift(fftn(B(X, Y, Z), axes=(-3, -2, -1)), axes=(-3, -2, -1))
+    Ek_0 = fftn(E(X, Y, Z), axes=(-3, -2, -1))
+    Bk_0 = fftn(B(X, Y, Z), axes=(-3, -2, -1))
     Fk_0 = jnp.concatenate([Ek_0, Bk_0])
     
     return Ck_0, Fk_0

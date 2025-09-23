@@ -7,7 +7,7 @@ from time import time
 import jax.numpy as jnp
 from jax import block_until_ready
 from spectrax import simulation, load_parameters, plot
-from jax.numpy.fft import ifftn, ifftshift
+from jax.numpy.fft import ifftn
 import matplotlib.pyplot as plt
 
 # Read from input.toml
@@ -56,7 +56,7 @@ nu = output["nu"]
 uz = output["u_s"][2]
 
 
-F = ifftn(ifftshift(Fk, axes=(-3, -2, -1)), axes=(-3, -2, -1)).real
+F = ifftn(Fk, axes=(-3, -2, -1)).real
 
 # p = jnp.polyfit(t[800:], jnp.log(jnp.sum(jnp.abs(Fk[800:,4,...]) ** 2, axis=(-1,-2,-3))), 1)
 # print(p[0])
