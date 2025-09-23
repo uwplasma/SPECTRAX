@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-number_of_processors_to_use = 5 # Parallelization, this should divide total resolution
+number_of_processors_to_use = 4 # Parallelization, this should divide total resolution
 os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
 import jax.numpy as jnp
@@ -55,8 +55,15 @@ Nz = output["Nz"]
 nu = output["nu"]
 uz = output["u_s"][2]
 
+
 F = ifftn(ifftshift(Fk, axes=(-3, -2, -1)), axes=(-3, -2, -1)).real
 
+# p = jnp.polyfit(t[800:], jnp.log(jnp.sum(jnp.abs(Fk[800:,4,...]) ** 2, axis=(-1,-2,-3))), 1)
+# print(p[0])
+# p2 = jnp.polyfit(t[800:], jnp.log(jnp.sum(jnp.abs(Fk[800:,0,...]) ** 2, axis=(-1,-2,-3))), 1)
+# print(p2[0])
+# p3 = jnp.polyfit(t[1200:], jnp.log(jnp.sum(jnp.abs(Fk[1200:,2,...]) ** 2, axis=(-1,-2,-3))), 1)
+# print(p3[0])
 
 fig, axes = plt.subplots(2, 3, figsize=(15, 9))
 plt.subplots_adjust(hspace=0.2, wspace=0.2)

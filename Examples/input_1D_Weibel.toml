@@ -1,27 +1,27 @@
 [input_parameters]
-Lx = 10.0
+Lx = 10.47
 Ly = 1.0
 Lz = 1.0
 mi_me = 10000.0
 Ti_Te = 1.0
 qs = [-1.0, 1.0]
-alpha_s = [0.141421354, 1.41421354, 1.41421354, 0.00141421354, 0.0141421354, 0.0141421354]
+alpha_s = [0.014142135, 0.14142135, 0.14142135, 0.00014142135, 0.0014142135, 0.0014142135]
 u_s = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-Omega_cs = [1.0, 0.01]
+Omega_cs = [1.0, 0.0001]
 nu = 2.0
-t_max = 100.0
+t_max = 20.0
 nx = 5
-dE = 0.0001
+dE = 0.03
 ode_tolerance = 1e-8
 
 [solver_parameters]
-Nx = 101
+Nx = 51
 Ny = 1
 Nz = 1
-Nn = 5
+Nn = 16
 Nm = 1
-Np = 5
+Np = 16
 Ns = 2
-timesteps = 1001
-dt = 0.5
-solver = "Midpoint"
+timesteps = 201
+dt = 0.1
+solver = "ImplicitMidpoint"
