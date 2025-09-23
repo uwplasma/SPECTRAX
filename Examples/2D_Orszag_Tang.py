@@ -22,7 +22,7 @@ deltaB = 0.2 # In-plane magnetic field amplitude.
 U0 = deltaB * input_parameters["Omega_cs"][0] / jnp.sqrt(input_parameters["mi_me"])
 kx = 2 * jnp.pi / input_parameters["Lx"]
 ky = 2 * jnp.pi / input_parameters["Ly"]
-Nv = 125 # Number of velocity points in each dimension.
+Nv = 125 
 nvxyz = 40 # Number of velocity points in each dimension for the velocity grid.
 max_min_v_factor = 5 # Factor for the maximum and minimum velocity in each dimension.
 

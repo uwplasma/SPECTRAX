@@ -11,6 +11,7 @@ u_s = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 Omega_cs = [1.0, 0.00054]
 nu = 1.0
 t_max = 50.0
+t_max = 50.0
 nx = 1
 ny = 0
 nz = 0
@@ -19,8 +20,10 @@ ode_tolerance = 1e-14
 
 [solver_parameters]
 Nx=33
+Nx=33
 Ny=1
 Nz=1
+Nn=40
 Nn=40
 Nm=1
 Np=1

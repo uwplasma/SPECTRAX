@@ -6,7 +6,7 @@ from functools import partial
 from diffrax import (diffeqsolve, Tsit5, Dopri5, ODETerm,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
 from ._initialization import initialize_simulation_parameters
-from ._model import plasma_current, Hermite_Fourier_system
+from ._model import plasma_current, Hermite_Fourier_system, _twothirds_mask
 from ._diagnostics import diagnostics
 
 # Parallelize the simulation using JAX
@@ -49,10 +49,11 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     F = jnp.fft.ifftn(jnp.fft.ifftshift(Fk, axes=(-3, -2, -1)), axes=(-3, -2, -1))
     C = jnp.fft.ifftn(jnp.fft.ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1))
 
-
+    # Build the 2/3 mask once per call (JIT will constant-fold it since Nx/Ny/Nz are static)
+    mask23 = _twothirds_mask(Ny, Nx, Nz)
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
-                                      Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns)
+                                      Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23=mask23)
 
     # nabla = jnp.array([kx_grid / Lx, ky_grid / Ly, kz_grid / Lz])
     dBk_dt = -1j * cross_product(nabla, Fk[:3])

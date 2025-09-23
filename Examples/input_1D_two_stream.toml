@@ -16,10 +16,10 @@ dn2 = 0.01
 ode_tolerance = 1e-8
 
 [solver_parameters]
-Nx=31
+Nx=33
 Ny=1
 Nz=1
-Nn=50
+Nn=100
 Nm=1
 Np=1
 Ns=2

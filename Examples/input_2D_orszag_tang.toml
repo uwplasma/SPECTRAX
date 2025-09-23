@@ -25,4 +25,4 @@ Np = 4
 Ns = 2
 timesteps = 51
 dt = 0.1
-solver = "ImplicitMidpoint"
+solver = "Dopri8"
