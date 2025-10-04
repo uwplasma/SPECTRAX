@@ -77,6 +77,9 @@ class ODEVecField(eqx.Module):
         current = plasma_current(self.qs, self.alpha_s, self.u_s, Ck, self.Nn, self.Nm, self.Np, self.Ns)
         dEk_dt =  1j * cross_product(self.nabla, Fk[3:]) - current / self.Omega_cs[0]
         dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
+        dCk_s_dt = dCk_s_dt.reshape(
+            self.Ns * self.Np * self.Nm * self.Nn, self.Ny, self.Nx, self.Nz
+        )
         return (dCk_s_dt, dFk_dt)
 
 @eqx.filter_jit
@@ -143,15 +146,14 @@ def cross_product(k_vec, F_vec):
 #     dy_dt  = jnp.concatenate([dCk_s_dt.reshape(-1), dFk_dt.reshape(-1)])
 #     return dy_dt
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver'])
+# @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, timesteps=200, dt=0.01, solver=Dopri5()):
     parameters = initialize_simulation_parameters(input_parameters, Nx, Ny, Nz, Nn, Nm, Np, Ns, timesteps, dt)
 
     # normalize Ck_0 to 4D so sharding kicks in
-    if parameters["Ck_0"].ndim == 7:  # (Ns, Np, Nm, Nn, Ny, Nx, Nz)
-        Ns_ = parameters["Ns"]; Nn_ = parameters["Nn"]; Nm_ = parameters["Nm"]; Np_ = parameters["Np"]
-        Ny_ = parameters["Ny"]; Nx_ = parameters["Nx"]; Nz_ = parameters["Nz"]
-        parameters["Ck_0"] = parameters["Ck_0"].reshape(Ns_ * Np_ * Nm_ * Nn_, Ny_, Nx_, Nz_)
+    if parameters["Ck_0"].ndim == 7:
+        parameters["Ck_0"] = parameters["Ck_0"].reshape(Ns * Np * Nm * Nn, Ny, Nx, Nz)
+
 
     # --- SHARD once along the FFT x-axis (optional but recommended)
     for k in ["Ck_0","Fk_0","kx_grid","ky_grid","kz_grid","k2_grid","nabla","mask23"]:
