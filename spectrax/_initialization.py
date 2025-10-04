@@ -6,6 +6,7 @@ except ModuleNotFoundError: import pip._vendor.tomli as tomllib
 import diffrax
 import inspect
 from .midpoint_solver import ImplicitMidpoint
+from ._model import _twothirds_mask 
 
 __all__ = ["load_parameters", "initialize_simulation_parameters"]
 
@@ -142,6 +143,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "sqrt_n_plus": sqrt_n_plus, "sqrt_n_minus": sqrt_n_minus,
         "sqrt_m_plus": sqrt_m_plus, "sqrt_m_minus": sqrt_m_minus,
         "sqrt_p_plus": sqrt_p_plus, "sqrt_p_minus": sqrt_p_minus,
+        "mask23": _twothirds_mask(Ny, Nx, Nz),
     })
 
     return parameters

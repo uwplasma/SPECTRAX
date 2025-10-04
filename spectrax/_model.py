@@ -4,7 +4,7 @@ from functools import partial
 from jax.lax import dynamic_slice
 from jax.scipy.signal import convolve
 
-__all__ = ['plasma_current', 'Hermite_Fourier_system']
+__all__ = ['plasma_current', 'Hermite_Fourier_system', '_twothirds_mask']
 
 def _twothirds_mask(Ny: int, Nx: int, Nz: int):
     """Return a boolean mask in fftshifted (zero-centered) k-ordering that keeps |k|<=N//3 in each dim."""

@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-number_of_processors_to_use = 1 # Parallelization, this should divide total resolution
+number_of_processors_to_use = 4 # Parallelization, this should divide total resolution
 os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
 from jax import block_until_ready
@@ -135,55 +135,55 @@ axes[0].legend()
 axes[1].plot(t[1:], jnp.abs(output["total_energy"][1:]-output["total_energy"][0])/(output["total_energy"][0]+1e-9), label="Relative energy error")
 axes[1].set(xlabel=r"$t\omega_{pe}$", ylabel="Relative Energy Error", yscale="log")#, ylim=[1e-5, None])
 
-plt.figure(figsize=(8, 6))
-plt.imshow(ne[50], aspect='auto', cmap='jet', 
-           interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
-plt.colorbar(label=r'$n_e$').ax.yaxis.label.set_size(16)
+# plt.figure(figsize=(8, 6))
+# plt.imshow(ne[50], aspect='auto', cmap='jet', 
+#            interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
+# plt.colorbar(label=r'$n_e$').ax.yaxis.label.set_size(16)
 
-# plt.imshow(C2[:10000, :Nn * Nm * Np], aspect='auto', cmap='viridis', 
-# interpolation='none', origin='lower', extent=(0, Nn, 0, 1000))
-# plt.colorbar(label=r'$\langle |C_{e,n}|^2\rangle (t)$').ax.yaxis.label.set_size(16)
+# # plt.imshow(C2[:10000, :Nn * Nm * Np], aspect='auto', cmap='viridis', 
+# # interpolation='none', origin='lower', extent=(0, Nn, 0, 1000))
+# # plt.colorbar(label=r'$\langle |C_{e,n}|^2\rangle (t)$').ax.yaxis.label.set_size(16)
 
-# plt.plot(jnp.arange(Nn) + 0.5, 3.6*jnp.sqrt(jnp.arange(Nn)), label='$3.60\sqrt{n}$', linestyle='-', color='black', linewidth=3.0)
-plt.xlabel('x/d_e', fontsize=16)
-plt.ylabel('y/d_e', fontsize=16)
-# plt.title(rf'$\nu ={nu}, L_x/d_e = {Lx}, \lambda_D/d_e = {lambda_D:.1e}, m_i/m_e = {mi_me}, N_n = {Nn}$', fontsize=14)
-# plt.legend()
-plt.show()
+# # plt.plot(jnp.arange(Nn) + 0.5, 3.6*jnp.sqrt(jnp.arange(Nn)), label='$3.60\sqrt{n}$', linestyle='-', color='black', linewidth=3.0)
+# plt.xlabel('x/d_e', fontsize=16)
+# plt.ylabel('y/d_e', fontsize=16)
+# # plt.title(rf'$\nu ={nu}, L_x/d_e = {Lx}, \lambda_D/d_e = {lambda_D:.1e}, m_i/m_e = {mi_me}, N_n = {Nn}$', fontsize=14)
+# # plt.legend()
+# plt.show()
 
-# plt.savefig("/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S9/Energy.png", dpi=300, bbox_inches='tight')
+# # plt.savefig("/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S9/Energy.png", dpi=300, bbox_inches='tight')
 
-plt.figure(figsize=(8, 6))
-plt.imshow(ni[50], aspect='auto', cmap='jet', 
-           interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
-plt.colorbar(label=r'$n_i$').ax.yaxis.label.set_size(16)
+# plt.figure(figsize=(8, 6))
+# plt.imshow(ni[50], aspect='auto', cmap='jet', 
+#            interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
+# plt.colorbar(label=r'$n_i$').ax.yaxis.label.set_size(16)
 
-# plt.imshow(C2[:10000, :Nn * Nm * Np], aspect='auto', cmap='viridis', 
-# interpolation='none', origin='lower', extent=(0, Nn, 0, 1000))
-# plt.colorbar(label=r'$\langle |C_{e,n}|^2\rangle (t)$').ax.yaxis.label.set_size(16)
+# # plt.imshow(C2[:10000, :Nn * Nm * Np], aspect='auto', cmap='viridis', 
+# # interpolation='none', origin='lower', extent=(0, Nn, 0, 1000))
+# # plt.colorbar(label=r'$\langle |C_{e,n}|^2\rangle (t)$').ax.yaxis.label.set_size(16)
 
-# plt.plot(jnp.arange(Nn) + 0.5, 3.6*jnp.sqrt(jnp.arange(Nn)), label='$3.60\sqrt{n}$', linestyle='-', color='black', linewidth=3.0)
-plt.xlabel('x/d_e', fontsize=16)
-plt.ylabel('y/d_e', fontsize=16)
-# plt.title(rf'$\nu ={nu}, L_x/d_e = {Lx}, \lambda_D/d_e = {lambda_D:.1e}, m_i/m_e = {mi_me}, N_n = {Nn}$', fontsize=14)
-# plt.legend()
-plt.show()
+# # plt.plot(jnp.arange(Nn) + 0.5, 3.6*jnp.sqrt(jnp.arange(Nn)), label='$3.60\sqrt{n}$', linestyle='-', color='black', linewidth=3.0)
+# plt.xlabel('x/d_e', fontsize=16)
+# plt.ylabel('y/d_e', fontsize=16)
+# # plt.title(rf'$\nu ={nu}, L_x/d_e = {Lx}, \lambda_D/d_e = {lambda_D:.1e}, m_i/m_e = {mi_me}, N_n = {Nn}$', fontsize=14)
+# # plt.legend()
+# plt.show()
 
-plt.figure(figsize=(8, 6))
-plt.imshow(Jz[50], aspect='auto', cmap='jet', 
-           interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
-plt.colorbar(label=r'$J_z$').ax.yaxis.label.set_size(16)
+# plt.figure(figsize=(8, 6))
+# plt.imshow(Jz[50], aspect='auto', cmap='jet', 
+#            interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
+# plt.colorbar(label=r'$J_z$').ax.yaxis.label.set_size(16)
 
-# plt.imshow(C2[:10000, :Nn * Nm * Np], aspect='auto', cmap='viridis', 
-# interpolation='none', origin='lower', extent=(0, Nn, 0, 1000))
-# plt.colorbar(label=r'$\langle |C_{e,n}|^2\rangle (t)$').ax.yaxis.label.set_size(16)
+# # plt.imshow(C2[:10000, :Nn * Nm * Np], aspect='auto', cmap='viridis', 
+# # interpolation='none', origin='lower', extent=(0, Nn, 0, 1000))
+# # plt.colorbar(label=r'$\langle |C_{e,n}|^2\rangle (t)$').ax.yaxis.label.set_size(16)
 
-# plt.plot(jnp.arange(Nn) + 0.5, 3.6*jnp.sqrt(jnp.arange(Nn)), label='$3.60\sqrt{n}$', linestyle='-', color='black', linewidth=3.0)
-plt.xlabel('x/d_e', fontsize=16)
-plt.ylabel('y/d_e', fontsize=16)
-# plt.title(rf'$\nu ={nu}, L_x/d_e = {Lx}, \lambda_D/d_e = {lambda_D:.1e}, m_i/m_e = {mi_me}, N_n = {Nn}$', fontsize=14)
-# plt.legend()
-plt.show()
+# # plt.plot(jnp.arange(Nn) + 0.5, 3.6*jnp.sqrt(jnp.arange(Nn)), label='$3.60\sqrt{n}$', linestyle='-', color='black', linewidth=3.0)
+# plt.xlabel('x/d_e', fontsize=16)
+# plt.ylabel('y/d_e', fontsize=16)
+# # plt.title(rf'$\nu ={nu}, L_x/d_e = {Lx}, \lambda_D/d_e = {lambda_D:.1e}, m_i/m_e = {mi_me}, N_n = {Nn}$', fontsize=14)
+# # plt.legend()
+# plt.show()
 
 vmin = float(jnp.min(Jz))
 vmax = float(jnp.max(Jz))
@@ -226,13 +226,13 @@ anim = FuncAnimation(
 )
 
 # Save the animation as a GIF
-anim.save("/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S12/Jz.gif", writer=PillowWriter(fps=5))
+anim.save("Jz.gif", writer=PillowWriter(fps=5))
 
 # Display the animation
 plt.show()
 
-print('Saving results...')
-jnp.savez('/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S12/output_orszag.npz', **output)
+# print('Saving results...')
+# jnp.savez('output_orszag.npz', **output)
 
 
 

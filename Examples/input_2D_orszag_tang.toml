@@ -10,19 +10,19 @@ u_s = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 Omega_cs = [0.5, 0.02]
 nu = 1.0
 D = 0.0
-t_max = 1500.0
+t_max = 300.0
 vte = 0.177
 vti = 0.0354
 ode_tolerance = 1e-7
 
 [solver_parameters]
-Nx = 61
-Ny = 61
+Nx = 17
+Ny = 17
 Nz = 1
 Nn = 4
 Nm = 4
 Np = 4
 Ns = 2
-timesteps = 1001
-dt = 0.0001
+timesteps = 501
+dt = 0.01
 solver = "Dopri8"
