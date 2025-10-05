@@ -96,9 +96,8 @@ class ODEVecField(eqx.Module):
         current = plasma_current(self.qs, self.alpha_s, self.u_s, Ck, self.Nn, self.Nm, self.Np, self.Ns)
         dEk_dt =  1j * cross_product(self.nabla, Fk[3:]) - current / self.Omega_cs[0]
         dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
-        dCk_s_dt = dCk_s_dt.reshape(
-            self.Ns * self.Np * self.Nm * self.Nn, self.Ny, self.Nx, self.Nz
-        )
+        ny = self.Ny_loc if self.use_mpi else self.Ny
+        dCk_s_dt = dCk_s_dt.reshape(self.Ns * self.Np * self.Nm * self.Nn, ny, self.Nx, self.Nz)
         return (dCk_s_dt, dFk_dt)
 
 @eqx.filter_jit
