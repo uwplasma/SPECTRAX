@@ -6,7 +6,8 @@ os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_pr
 from time import time
 import jax
 import jax.numpy as jnp
-from jax import block_until_ready
+from jax import block_until_ready, config
+config.update("jax_enable_x64", True)
 from spectrax import simulation, load_parameters, plot
 
 # Read from input.toml
