@@ -13,16 +13,16 @@ t_max = 50.0
 nx = 1
 dn1 = 0.01
 dn2 = 0.01
-ode_tolerance = 1e-8
+ode_tolerance = 1e-6
 
 [solver_parameters]
 Nx=33
 Ny=1
 Nz=1
-Nn=100
+Nn=50
 Nm=1
 Np=1
 Ns=2
-timesteps=51
-dt=1.0
-solver="ImplicitMidpoint"
+timesteps=501
+dt=0.01
+solver="Dopri8"

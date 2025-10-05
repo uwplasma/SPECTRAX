@@ -4,7 +4,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 number_of_processors_to_use = 1 # Parallelization, this should divide total resolution
 os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
-from jax import block_until_ready
+from jax import block_until_ready, config
+config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.scipy.special import factorial
 from spectrax import simulation, load_parameters, plot, initialize_xv
@@ -185,54 +186,54 @@ plt.ylabel('y/d_e', fontsize=16)
 # plt.legend()
 plt.show()
 
-vmin = float(jnp.min(Jz))
-vmax = float(jnp.max(Jz))
+# vmin = float(jnp.min(Jz))
+# vmax = float(jnp.max(Jz))
 
-fig, ax = plt.subplots()
-im = ax.imshow(
-    jnp.transpose(Jz[0]),
-    extent=(0, Lx, 0, Ly),
-    cmap='jet',
-    interpolation='nearest',
-    origin='lower',
-    vmin=vmin,
-    vmax=vmax,
-)
-# Add a color bar
-cbar = plt.colorbar(im, ax=ax)
-cbar.set_label("$J_z$") 
+# fig, ax = plt.subplots()
+# im = ax.imshow(
+#     jnp.transpose(Jz[0]),
+#     extent=(0, Lx, 0, Ly),
+#     cmap='jet',
+#     interpolation='nearest',
+#     origin='lower',
+#     vmin=vmin,
+#     vmax=vmax,
+# )
+# # Add a color bar
+# cbar = plt.colorbar(im, ax=ax)
+# cbar.set_label("$J_z$") 
 
-# Set up the plot aesthetics
-title = ax.set_title("Frame 0")
-ax.set_xlabel("x/d_e")  # Set x-axis label
-ax.set_ylabel("y/d_e")  # Set y-axis label
-# ax.tick_params(axis='both', which='both', direction='in')  # Show tick marks
-# ax.axis('off')  
-# ax.set_aspect(0.5)
+# # Set up the plot aesthetics
+# title = ax.set_title("Frame 0")
+# ax.set_xlabel("x/d_e")  # Set x-axis label
+# ax.set_ylabel("y/d_e")  # Set y-axis label
+# # ax.tick_params(axis='both', which='both', direction='in')  # Show tick marks
+# # ax.axis('off')  
+# # ax.set_aspect(0.5)
 
-# Update function for the animation
-def update(frame):
-    im.set_array(jnp.transpose(Jz[frame]))
+# # Update function for the animation
+# def update(frame):
+#     im.set_array(jnp.transpose(Jz[frame]))
     
-    # im.set_clim(vmin=Jz[frame].min(), vmax=Jz[frame].max())
-    # cbar.update_normal(im)
+#     # im.set_clim(vmin=Jz[frame].min(), vmax=Jz[frame].max())
+#     # cbar.update_normal(im)
     
-    title.set_text(f"Frame {frame}")
-    return [im, title]
+#     title.set_text(f"Frame {frame}")
+#     return [im, title]
 
-# Create the animation
-anim = FuncAnimation(
-    fig, update, frames=Jz.shape[0], interval=50, blit=True  # Adjust interval as needed
-)
+# # Create the animation
+# anim = FuncAnimation(
+#     fig, update, frames=Jz.shape[0], interval=50, blit=True  # Adjust interval as needed
+# )
 
-# Save the animation as a GIF
-anim.save("/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S12/Jz.gif", writer=PillowWriter(fps=5))
+# # Save the animation as a GIF
+# anim.save("/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S12/Jz.gif", writer=PillowWriter(fps=5))
 
-# Display the animation
-plt.show()
+# # Display the animation
+# plt.show()
 
-print('Saving results...')
-jnp.savez('/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S12/output_orszag.npz', **output)
+# print('Saving results...')
+# jnp.savez('/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S12/output_orszag.npz', **output)
 
 
 
