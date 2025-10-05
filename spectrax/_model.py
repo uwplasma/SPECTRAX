@@ -4,7 +4,70 @@ from functools import partial
 from jax.lax import dynamic_slice
 from jax.scipy.signal import convolve
 
-__all__ = ['plasma_current', 'Hermite_Fourier_system', '_twothirds_mask']
+import os
+USE_MPI = os.environ.get("SPECTRAX_MPI", "0") == "1"
+if USE_MPI:
+    from mpi4py import MPI
+    from mpi4jax import allgather
+    _COMM = MPI.COMM_WORLD
+
+_ROW_COMM = None
+_COL_COMM = None
+
+def set_mpi_comms(row_comm, col_comm):
+    """Set global comms once from Python; avoid passing them through jitted fns."""
+    global _ROW_COMM, _COL_COMM
+    _ROW_COMM = row_comm
+    _COL_COMM = col_comm
+
+__all__ = ['plasma_current', 'Hermite_Fourier_system', '_twothirds_mask', '_best_pencil', '_ifft2_mpi', '_fft2_mpi']
+
+def _mpi_allgather(x, comm):
+    """Compatibility wrapper for mpi4jax allgather across versions."""
+    out = allgather(x, comm=comm)
+    # Some versions return (array, token), others return array directly.
+    return out[0] if isinstance(out, tuple) else out
+
+def _best_pencil(Ny, Nx, size):
+    best = None; best_aspect = 1e9
+    for Py in range(1, size + 1):
+        if size % Py: 
+            continue
+        Px = size // Py
+        if (Ny % Py == 0) and (Nx % Px == 0):
+            aspect = abs((Ny//Py) - (Nx//Px))
+            if aspect < best_aspect: best_aspect, best = aspect, (Py, Px)
+    if best is None:
+        raise ValueError(f"Cannot factor {size} into Py*Px dividing Ny={Ny}, Nx={Nx}.")
+    return best
+
+def _yslab_to_ypencil(a, Py, Px, rx, ry):
+    *batch, Ny_loc, Nx, Nz = a.shape
+    xblk = Nx // Px
+    x0 = rx * xblk
+    a_locx = a[..., x0:x0 + xblk, :]
+    a_stack = _mpi_allgather(a_locx, comm=_COL_COMM)   # gather down the column
+    a_stack = jnp.moveaxis(a_stack, 0, -3)
+    return a_stack.reshape(*batch, Py * Ny_loc, xblk, Nz)
+
+def _ypencil_to_yslab(a, Py, Px, rx, ry):
+    *batch, Ny, xblk, Nz = a.shape
+    Ny_loc = Ny // Py
+    y0 = ry * Ny_loc
+    a_locy = a[..., y0:y0 + Ny_loc, :, :]
+    g_x = _mpi_allgather(a_locy, comm=_ROW_COMM)       # gather across the row
+    g_x = jnp.moveaxis(g_x, 0, -2)
+    return g_x.reshape(*batch, Ny_loc, Px * xblk, Nz)
+
+def _ifft2_mpi(a, Py, Px, rx, ry):
+    ax = jnp.fft.ifft(a, axis=-2)
+    ypen = _yslab_to_ypencil(ax, Py, Px, rx, ry)
+    return jnp.fft.ifft(ypen, axis=-3)
+
+def _fft2_mpi(a, Py, Px, rx, ry):
+    ky = jnp.fft.fft(a, axis=-3)
+    slab = _ypencil_to_yslab(ky, Py, Px, rx, ry)
+    return jnp.fft.fft(slab, axis=-2)
 
 def _twothirds_mask(Ny: int, Nx: int, Nz: int):
     """Return a boolean mask in fftshifted (zero-centered) k-ordering that keeps |k|<=N//3 in each dim."""
@@ -104,10 +167,12 @@ def shift_multi(Ck, dn=0, dm=0, dp=0):
     p0 = 1 + dp
     return P[:, p0:p0+Np, m0:m0+Nm, n0:n0+Nn, :, :, :]
 
-@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
+@partial(jit, static_argnames=['Nn','Nm','Np','Ns',
+                               'use_mpi','Py','Px','rx','ry'])
 def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                            sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
-                           Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23):
+                           Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23,
+                           use_mpi: bool, Py: int, Px: int, rx: int, ry: int):
     """
     Computes the time derivative of a single Hermite-Fourier coefficient Ck[n, m, p] for species s
     in a Vlasov-Maxwell spectral solver using a Hermite-Fourier basis.
@@ -160,6 +225,21 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
     Col  = -nu * col[None, :, :, :, None, None, None] * Ck
     
     Diff = -D * k2_grid * Ck
+    
+    # Nonlinear convolution term: go to k-space
+    # We do FFT over (y,x) only; Nz is handled locally (typically Nz=1 in your inputs).
+    expr = ( (sqrt_n_minus * jnp.sqrt(2) / a0) * F[0] * shift_multi(C, dn=-1, dm=0, dp=0)
+           + (sqrt_m_minus * jnp.sqrt(2) / a1) * F[1] * shift_multi(C, dn=0, dm=-1, dp=0)
+           + (sqrt_p_minus * jnp.sqrt(2) / a2) * F[2] * shift_multi(C, dn=0, dm=0, dp=-1)
+           + F[3] * C_aux_x + F[4] * C_aux_y + F[5] * C_aux_z )
+
+    if use_mpi:
+        k_expr = _fft2_mpi(expr, Py, Px, rx, ry)   # 2D FFT (y,x)
+    else:
+        k_expr = jnp.fft.fftn(expr, axes=(-3, -2))
+
+    k_expr = jnp.fft.fftshift(k_expr, axes=(-3, -2))
+
         
     # ODEs for Hermite-Fourier coefficients.
     # Closure is achieved by setting to zero coefficients with index out of range.
@@ -175,11 +255,6 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         sqrt_p_plus / jnp.sqrt(2) * shift_multi(Ck, dn=0, dm=0, dp=1) +
         sqrt_p_minus / jnp.sqrt(2) * shift_multi(Ck, dn=0, dm=0, dp=-1) +
         (u2 / a2) * Ck
-    ) + q * Omega_c * Nx * Ny * Nz * (
-        jnp.fft.fftshift(jnp.fft.fftn((sqrt_n_minus * jnp.sqrt(2) / a0) * F[0] * shift_multi(C, dn=-1, dm=0, dp=0) +
-                      (sqrt_m_minus * jnp.sqrt(2) / a1) * F[1] * shift_multi(C, dn=0, dm=-1, dp=0) + 
-                      (sqrt_p_minus * jnp.sqrt(2) / a2) * F[2] * shift_multi(C, dn=0, dm=0, dp=-1) +
-                      F[3] * C_aux_x + F[4] * C_aux_y + F[5] * C_aux_z, axes=(-3, -2, -1)), axes=(-3, -2, -1)) * mask23
-    ) + Col + Diff)
+    ) + q * Omega_c * Nx * Ny * Nz * ( k_expr * mask23 ) + Col + Diff )
     
     return dCk_s_dt
