@@ -1,6 +1,6 @@
 [input_parameters]
-Lx = 10.0
-Ly = 10.0
+Lx = 50.0
+Ly = 50.0
 Lz = 1.0
 mi_me = 25.0
 Ti_Te = 1.0
@@ -8,21 +8,21 @@ qs = [-1.0, 1.0]
 alpha_s = [0.25, 0.25, 0.25, 0.05, 0.05, 0.05]
 u_s = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 Omega_cs = [0.5, 0.02]
-nu = 1.0
+nu = 0.5
 D = 0.0
-t_max = 2.0
+t_max = 1500.0
 vte = 0.177
 vti = 0.0354
-ode_tolerance = 1e-6
+ode_tolerance = 1e-7
 
 [solver_parameters]
-Nx = 23
-Ny = 23
+Nx = 61
+Ny = 61
 Nz = 1
-Nn = 5
-Nm = 5
-Np = 5
+Nn = 4
+Nm = 4
+Np = 4
 Ns = 2
-timesteps = 21
-dt = 0.1
+timesteps = 301
+dt = 0.00001
 solver = "Dopri8"

@@ -9,19 +9,19 @@ alpha_s = [0.014142135, 0.14142135, 0.14142135, 0.00014142135, 0.0014142135, 0.0
 u_s = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 Omega_cs = [1.0, 0.0001]
 nu = 2.0
-t_max = 20.0
+t_max = 15.0
 nx = 5
-dE = 0.03
-ode_tolerance = 1e-8
+dE = 0.0001
+ode_tolerance = 1e-10
 
 [solver_parameters]
 Nx = 51
 Ny = 1
 Nz = 1
-Nn = 16
+Nn = 10
 Nm = 1
-Np = 16
+Np = 10
 Ns = 2
-timesteps = 201
-dt = 0.1
-solver = "ImplicitMidpoint"
+timesteps = 151
+dt = 0.001
+solver = "Dopri8"

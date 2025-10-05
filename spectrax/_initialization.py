@@ -1,4 +1,6 @@
 import jax.numpy as jnp
+from jax import jit
+from functools import partial
 try: import tomllib
 except ModuleNotFoundError: import pip._vendor.tomli as tomllib
 import diffrax
@@ -7,6 +9,7 @@ from .midpoint_solver import ImplicitMidpoint
 
 __all__ = ["load_parameters", "initialize_simulation_parameters"]
 
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz','Nn', 'Nm', 'Np', 'Ns', 'timesteps'])
 def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, timesteps=500, dt=0.01):
     """
     Initialize the simulation parameters for a Vlasov solver with Hermite polynomials, 
@@ -90,6 +93,8 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
 
     # Merge user-provided parameters into the default dictionary
     parameters = {**default_parameters, **user_parameters}
+
+    Lx, Ly, Lz = parameters["Lx"], parameters["Ly"], parameters["Lz"]
     
     # Compute derived parameters based on user-provided or default values
     for key, value in parameters.items():
@@ -101,8 +106,42 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     ky_simulation = (jnp.arange(-Ny//2, Ny//2) + 1) * 2 * jnp.pi
     kz_simulation = (jnp.arange(-Nz//2, Nz//2) + 1) * 2 * jnp.pi  
     kx_grid, ky_grid, kz_grid = jnp.meshgrid(kx_simulation, ky_simulation, kz_simulation, indexing='xy')
+    k2_grid = kx_grid**2 + ky_grid**2 + kz_grid**2
+    nabla = jnp.array([kx_grid / Lx, ky_grid / Ly, kz_grid / Lz])
+
+    def precompute_collisions(Nn, Nm, Np):
+        p = jnp.arange(Np)[:, None, None]
+        m = jnp.arange(Nm)[None, :, None]
+        n = jnp.arange(Nn)[None, None, :]
+        def safe(N, i):
+            term = i * (i - 1) * (i - 2)
+            denom = (N - 1) * (N - 2) * (N - 3)
+            return jnp.where(N > 3, term / denom, 0.0)
+        col = safe(Nn, n) + safe(Nm, m) + safe(Np, p)
+        return col
+    
+    def build_coeff_tables(Nn, Nm, Np):
+        p = jnp.arange(Np)[None, :, None, None, None, None, None]
+        m = jnp.arange(Nm)[None, None, :, None, None, None, None]
+        n = jnp.arange(Nn)[None, None, None, :, None, None, None]
+
+        sqrt_n_plus  = jnp.sqrt(n+1)
+        sqrt_n_minus = jnp.sqrt(n) 
+        sqrt_m_plus  = jnp.sqrt(m+1)
+        sqrt_m_minus = jnp.sqrt(m)
+        sqrt_p_plus  = jnp.sqrt(p+1)
+        sqrt_p_minus = jnp.sqrt(p)
+
+        return sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus
+    
+    sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus = build_coeff_tables(Nn, Nm, Np)
+
     parameters.update({
-        "kx_grid": kx_grid, "ky_grid": ky_grid, "kz_grid": kz_grid
+        "kx_grid": kx_grid, "ky_grid": ky_grid, "kz_grid": kz_grid, "k2_grid": k2_grid, 
+        "nabla": nabla, "collision_matrix": precompute_collisions(Nn, Nm, Np),
+        "sqrt_n_plus": sqrt_n_plus, "sqrt_n_minus": sqrt_n_minus,
+        "sqrt_m_plus": sqrt_m_plus, "sqrt_m_minus": sqrt_m_minus,
+        "sqrt_p_plus": sqrt_p_plus, "sqrt_p_minus": sqrt_p_minus,
     })
 
     return parameters
