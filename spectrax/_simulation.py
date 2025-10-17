@@ -22,12 +22,19 @@ __all__ = ["cross_product", "ode_system", "simulation"]
 @jit
 def cross_product(k_vec, F_vec):
     """
-    Computes the cross product of two 3D vectors.
-    Args:
-        k_vec (array-like): A 3-element array representing the first vector (k).
-        F_vec (array-like): A 3-element array representing the second vector (F).
-    Returns:
-        jnp.ndarray: A 3-element array representing the cross product k x F.
+    Compute the cross product `k × F` for length-3 vectors or broadcastable arrays.
+
+    Parameters
+    ----------
+    k_vec : array-like
+        First vector with leading dimension 3.
+    F_vec : array-like
+        Second vector with leading dimension 3.
+
+    Returns
+    -------
+    jnp.ndarray
+        Array representing the cross product with the same trailing shape as the inputs.
     """
     kx, ky, kz = k_vec
     Fx, Fy, Fz = F_vec
@@ -35,6 +42,31 @@ def cross_product(k_vec, F_vec):
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns'])
 def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
+    """
+    Right-hand side for the coupled Vlasov-Maxwell system expressed in spectral form.
+
+    Parameters
+    ----------
+    Nx, Ny, Nz : int
+        Number of retained Fourier modes per spatial dimension.
+    Nn, Nm, Np : int
+        Number of Hermite modes per velocity-space dimension.
+    Ns : int
+        Number of species.
+    t : float
+        Integration time (unused but required by Diffrax interface).
+    Ck_Fk : jnp.ndarray
+        Flattened state vector containing concatenated Hermite coefficients followed
+        by electromagnetic field coefficients.
+    args : tuple
+        Cached parameter tuple produced in `simulation` providing physical constants,
+        grids, and helper arrays.
+
+    Returns
+    -------
+    jnp.ndarray
+        Flattened derivative vector matching the shape of `Ck_Fk`.
+    """
 
     (qs, nu, D, Omega_cs, alpha_s, u_s,
      Lx, Ly, Lz, kx_grid, ky_grid, kz_grid, k2_grid, nabla, col,
@@ -68,31 +100,31 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, timesteps=200, dt = 0.01, solver=Dopri5()):
     """
-    Simulates the Vlasov-Maxwell system using spectral methods.
-    This function initializes simulation parameters, sets up initial conditions,
-    and solves the system of ordinary differential equations (ODEs) representing
-    the Vlasov-Maxwell equations. The solution is returned as time-evolving
-    coefficients for the distribution function (Ck) and electromagnetic fields (Fk).
-    Args:
-        input_parameters (dict, optional): Dictionary of user-defined simulation parameters.
-        Nx (int, optional): Number of grid points in the x-direction. Default is 33.
-        Ny (int, optional): Number of grid points in the y-direction. Default is 1.
-        Nz (int, optional): Number of grid points in the z-direction. Default is 1.
-        Nn (int, optional): Number of Hermite modes in the x direction in velocity space. Default is 20.
-        Nm (int, optional): Number of Hermite modes in the y direction in velocity space.
-        Np (int, optional): Number of Hermite modes in the z direction in velocity space.
-        Ns (int, optional): Number of particle species. Default is 2.
-        timesteps (int, optional): Number of time steps for the simulation. Default is 200.
-    Returns:
-        tuple: A tuple containing:
-            - Ck (jnp.ndarray): Time-evolving coefficients for the distribution function.
-            - Fk (jnp.ndarray): Time-evolving coefficients for the electromagnetic fields.
-            - sol.ts (jnp.ndarray): Array of time points corresponding to the solution.
-    Notes:
-        - The simulation uses the `diffeqsolve` function to integrate the ODEs.
-        - The solution is reshaped to separate the coefficients for the distribution
-          function (Ck) and the electromagnetic fields (Fk).
-        - The function relies on JAX for numerical computations and efficient array operations.
+    Run a spectral Vlasov-Maxwell simulation and return the solution together with
+    the parameter dictionary used to produce it.
+
+    Parameters
+    ----------
+    input_parameters : dict, optional
+        User-specified overrides passed to `initialize_simulation_parameters`.
+    Nx, Ny, Nz : int, optional
+        Number of retained Fourier modes per spatial direction.
+    Nn, Nm, Np : int, optional
+        Number of Hermite modes per velocity-space axis.
+    Ns : int, optional
+        Number of species.
+    timesteps : int, optional
+        Number of solution snapshots to save between `t=0` and `t_max`.
+    dt : float, optional
+        Initial integration step size.
+    solver : diffrax.AbstractSolver, optional
+        Diffrax solver instance controlling the time integration.
+
+    Returns
+    -------
+    dict
+        Dictionary containing the evolved coefficients (`Ck`, `Fk`), time samples,
+        perturbation diagnostics, and all simulation parameters.
     """
     
     # **Initialize simulation parameters**

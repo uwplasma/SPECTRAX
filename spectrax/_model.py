@@ -27,18 +27,18 @@ def _twothirds_mask(Ny: int, Nx: int, Nz: int):
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
 def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     """
-    Computes the Ampère-Maxwell current from spectral coefficients for multiple species.
-    
+    Compute the spectral Ampère-Maxwell current from Hermite-Fourier coefficients.
+
     Parameters
     ----------
     qs : jnp.ndarray, shape (Ns,)
         Charges of the species.
     alpha_s : jnp.ndarray, shape (3 * Ns,)
-        Scaling factors for each species
+        Scaling factors for each species.
     u_s : jnp.ndarray, shape (3 * Ns,)
         Velocity components for each species, packed like alpha_s.
-    Ck : jnp.ndarray, shape (Ns * Nn * Nm * Np, Nx, Ny, Nz)
-        Spectral coefficients.
+    Ck : jnp.ndarray, shape (Ns * Np * Nm * Nn, Ny, Nx, Nz)
+        Fourier-space Hermite coefficients for all species stacked along the first axis.
     Nn, Nm, Np : int
         Number of Hermite modes in x, y, and z respectively.
     Ns : int
@@ -46,10 +46,10 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
 
     Returns
     -------
-    jnp.ndarray, shape (3, Nx, Ny, Nz)
-        The total Ampère-Maxwell current (Jx, Jy, Jz).
+    jnp.ndarray, shape (3, Ny, Nx, Nz)
+        The total Ampère-Maxwell current components `(Jx, Jy, Jz)`.
     """
-    # Reshape Ck into structured Hermite-Fourier coefficients: (Ns, Nn, Nm, Np, Ny, Nx, Nz)
+    # Reshape Ck into structured Hermite-Fourier coefficients: (Ns, Np, Nm, Nn, Ny, Nx, Nz)
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-3:])
     
     # Reshape alpha and velocity
@@ -57,7 +57,7 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     u = u_s.reshape(Ns, 3)
 
     # Grab the modes we need (0,1,1,1) for jx, jy, jz contributions
-    C0 = Ck[:, 0, 0, 0]  # shape: (Ns, Nx, Ny, Nz)
+    C0 = Ck[:, 0, 0, 0]  # shape: (Ns, Ny, Nx, Nz)
     C100 = Ck[:, 0, 0, 1] if Nn > 1 else jnp.zeros_like(C0)
     C010 = Ck[:, 0, 1, 0] if Nm > 1 else jnp.zeros_like(C0)
     C001 = Ck[:, 1, 0, 0] if Np > 1 else jnp.zeros_like(C0)
@@ -77,10 +77,10 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
                        u1[:, None, None, None] * C0,
                        u2[:, None, None, None] * C0], axis=0)
 
-    # Final current per species: shape (3, Ns, Nx, Ny, Nz)
+    # Final current per species: shape (3, Ns, Ny, Nx, Nz)
     J_species = (term1 + term2) * pre[None, :, None, None, None]
 
-    # Sum over species → shape: (3, Nx, Ny, Nz)
+    # Sum over species → shape: (3, Ny, Nx, Nz)
     return jnp.sum(J_species, axis=1)
 
 def _pad_hermite_axes(Ck):
@@ -109,13 +109,48 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
                            sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
                            Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23):
     """
-    Computes the time derivative of a single Hermite-Fourier coefficient Ck[n, m, p] for species s
-    in a Vlasov-Maxwell spectral solver using a Hermite-Fourier basis.
+    Evaluate the right-hand side of the coupled Hermite-Fourier moment equations.
+
+    Parameters
+    ----------
+    Ck : jnp.ndarray
+        Spectral Hermite coefficients with shape `(Ns * Np * Nm * Nn, Ny, Nx, Nz)`.
+    C : jnp.ndarray
+        Configuration-space coefficients, typically the inverse FFT of `Ck`, with
+        shape `(Ns * Np * Nm * Nn, Ny, Nx, Nz)`. The array is reshaped internally
+        to separate the species and Hermite indices.
+    F : jnp.ndarray
+        Configuration-space electromagnetic fields with shape `(6, Ny, Nx, Nz)` ordered
+        as `(Ex, Ey, Ez, Bx, By, Bz)`.
+    kx_grid, ky_grid, kz_grid : jnp.ndarray
+        Fourier wave-number grids scaled to the physical domain length.
+    k2_grid : jnp.ndarray
+        Squared magnitude of the wave number.
+    col : jnp.ndarray
+        Precomputed collision coefficients.
+    sqrt_* : jnp.ndarray
+        Square-root ladder coefficients for the Hermite recurrences along each axis.
+    Lx, Ly, Lz : float
+        Domain lengths in each spatial direction.
+    nu : float
+        Collision frequency.
+    D : float
+        Hyper-diffusion coefficient.
+    alpha_s, u_s : jnp.ndarray
+        Thermal scaling parameters and drift velocities per species.
+    qs : jnp.ndarray
+        Species charges.
+    Omega_cs : jnp.ndarray
+        Cyclotron frequencies per species.
+    Nn, Nm, Np, Ns : int
+        Number of Hermite modes and species.
+    mask23 : jnp.ndarray
+        Boolean mask implementing the 2/3 de-aliasing rule in Fourier space.
 
     Returns
     -------
-    dCk_s_dt : jax.Array, shape (Nx, Ny, Nz)
-        Time derivative of the Hermite-Fourier coefficient Ck[n, m, p] for species s.
+    jnp.ndarray
+        Time derivative `dCk/dt` with shape `(Ns, Np, Nm, Nn, Ny, Nx, Nz)`.
     """
 
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-3:])
