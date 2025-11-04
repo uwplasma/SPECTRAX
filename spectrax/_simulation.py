@@ -6,7 +6,7 @@ from functools import partial
 from diffrax import (diffeqsolve, Tsit5, Dopri5, ODETerm,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
 from ._initialization import initialize_simulation_parameters
-from ._model import plasma_current, Hermite_Fourier_system, _twothirds_mask
+from ._model import plasma_current, Hermite_Fourier_system
 from ._diagnostics import diagnostics
 
 # Parallelize the simulation using JAX
@@ -18,6 +18,25 @@ spec = P("batch")
 sharding = NamedSharding(mesh, spec)
 
 __all__ = ["cross_product", "ode_system", "simulation"]
+
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz'])
+def _twothirds_mask(Ny: int, Nx: int, Nz: int):
+    """Return a boolean mask in fftshifted (zero-centered) k-ordering that keeps |k|<=N//3 in each dim."""
+    def centered_modes(N):
+        # integer mode numbers in fftshift ordering: [-N//2, ..., -1, 0, 1, ..., N//2-1]
+        k = jnp.fft.fftfreq(N) * N
+        return jnp.fft.fftshift(k)
+
+    ky = centered_modes(Ny)[:, None, None]
+    kx = centered_modes(Nx)[None, :, None]
+    kz = centered_modes(Nz)[None, None, :]
+
+    # cutoffs (keep indices with |k| <= floor(N/3)); if N<3 this naturally keeps only k=0
+    cy = Ny // 3
+    cx = Nx // 3
+    cz = Nz // 3
+
+    return (jnp.abs(ky) <= cy) & (jnp.abs(kx) <= cx) & (jnp.abs(kz) <= cz)
 
 @jit
 def cross_product(k_vec, F_vec):
@@ -77,12 +96,12 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     Ck = Ck_Fk[:total_Ck_size].reshape(Nn * Nm * Np * Ns, Ny, Nx, Nz)
     Fk = Ck_Fk[total_Ck_size:].reshape(6, Ny, Nx, Nz)
 
-
-    F = jnp.fft.ifftn(jnp.fft.ifftshift(Fk, axes=(-3, -2, -1)), axes=(-3, -2, -1), norm="forward")
-    C = jnp.fft.ifftn(jnp.fft.ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1), norm="forward")
-
     # Build the 2/3 mask once per call (JIT will constant-fold it since Nx/Ny/Nz are static)
     mask23 = _twothirds_mask(Ny, Nx, Nz)
+
+    F = jnp.fft.ifftn(jnp.fft.ifftshift(Fk * mask23, axes=(-3, -2, -1)), axes=(-3, -2, -1), norm="forward")
+    C = jnp.fft.ifftn(jnp.fft.ifftshift(Ck * mask23, axes=(-3, -2, -1)), axes=(-3, -2, -1), norm="forward")
+
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
                                       Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23=mask23)

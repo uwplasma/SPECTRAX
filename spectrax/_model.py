@@ -6,23 +6,6 @@ from jax.scipy.signal import convolve
 
 __all__ = ['plasma_current', 'Hermite_Fourier_system']
 
-def _twothirds_mask(Ny: int, Nx: int, Nz: int):
-    """Return a boolean mask in fftshifted (zero-centered) k-ordering that keeps |k|<=N//3 in each dim."""
-    def centered_modes(N):
-        # integer mode numbers in fftshift ordering: [-N//2, ..., -1, 0, 1, ..., N//2-1]
-        k = jnp.fft.fftfreq(N) * N
-        return jnp.fft.fftshift(k)
-
-    ky = centered_modes(Ny)[:, None, None]
-    kx = centered_modes(Nx)[None, :, None]
-    kz = centered_modes(Nz)[None, None, :]
-
-    # cutoffs (keep indices with |k| <= floor(N/3)); if N<3 this naturally keeps only k=0
-    cy = Ny // 3
-    cx = Nx // 3
-    cz = Nz // 3
-
-    return (jnp.abs(ky) <= cy) & (jnp.abs(kx) <= cx) & (jnp.abs(kz) <= cz)
 
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
 def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
@@ -155,7 +138,7 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
 
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-3:])
     C = C.reshape(Ns, Np, Nm, Nn, *C.shape[-3:])
-    F = F[:, None, None, None, :, :, :]  # (6,1,1,1,Nx,Ny,Nz) for broadcasting  
+    F = F[:, None, None, None, None, :, :, :]  # (6,1,1,1,Nx,Ny,Nz) for broadcasting  
     Ny, Nx, Nz = Ck.shape[-3], Ck.shape[-2], Ck.shape[-1]
     
     # Define u, alpha, charge, and gyrofrequency depending on species.
