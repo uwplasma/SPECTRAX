@@ -172,6 +172,11 @@ def load_parameters(input_file):
     input_parameters = parameters['input_parameters']
     solver_parameters = parameters['solver_parameters']
 
+    # NEW: whether to use adaptive time-stepping or constant dt
+    # Default is True to preserve the current behavior.
+    adaptive_time_step = solver_parameters.get("adaptive_time_step", True)
+    solver_parameters["adaptive_time_step"] = adaptive_time_step
+
 
     def get_solver_class(name: str):
         for cls_name, cls in inspect.getmembers(diffrax, inspect.isclass):

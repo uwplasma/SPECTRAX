@@ -116,8 +116,8 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     dy_dt  = jnp.concatenate([dCk_s_dt.reshape(-1), dFk_dt.reshape(-1)])
     return dy_dt
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver'])
-def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, timesteps=200, dt = 0.01, solver=Dopri5()):
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step'])
+def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, timesteps=200, dt = 0.01, solver=Dopri5(), adaptive_time_step=True):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -162,19 +162,26 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
             parameters["sqrt_n_plus"], parameters["sqrt_n_minus"],
             parameters["sqrt_m_plus"], parameters["sqrt_m_minus"],
             parameters["sqrt_p_plus"], parameters["sqrt_p_minus"])
+    
+
+    controllers = {
+    True: PIDController(
+        rtol=parameters["ode_tolerance"],
+        atol=parameters["ode_tolerance"],
+    ),
+    False: ConstantStepSize(),
+    }
+    stepsize_controller = controllers[adaptive_time_step]
 
     # Solve the ODE system
     ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns)
     sol = diffeqsolve(
         ODETerm(ode_system_partial), solver=solver,
-        stepsize_controller=PIDController(rtol=parameters["ode_tolerance"], atol=parameters["ode_tolerance"]),
-        # stepsize_controller=ConstantStepSize(),
+        stepsize_controller=stepsize_controller,
         t0=0, t1=parameters["t_max"], dt0=dt,
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
         max_steps=1000000, progress_meter=TqdmProgressMeter())
-    
-    ## Idea: take the eigenvalues of ODE_system to determine the stability of the system.
-    
+        
     # Reshape the solution to extract Ck and Fk
     Ck = sol.ys[:,:(-6 * Nx * Ny * Nz)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx, Nz)
     Fk = sol.ys[:,(-6 * Nx * Ny * Nz):].reshape(len(sol.ts), 6, Ny, Nx, Nz)
