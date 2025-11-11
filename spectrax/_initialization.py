@@ -183,6 +183,6 @@ def load_parameters(input_file):
             if issubclass(cls, diffrax.AbstractSolver) and cls is not diffrax.AbstractSolver and cls_name == name: return cls()
             elif name == "ImplicitMidpoint": return ImplicitMidpoint(rtol=input_parameters["ode_tolerance"], atol=input_parameters["ode_tolerance"])
         raise ValueError(f"Solver '{name}' is not supported. Choose from Diffrax solvers.")
-    solver_parameters["solver"] = get_solver_class(solver_parameters.get("solver", "Tsit5"))
+    solver_parameters["solver"] = get_solver_class(solver_parameters.get("solver", "Dopri8"))
     
     return input_parameters, solver_parameters

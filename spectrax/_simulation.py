@@ -3,7 +3,7 @@ from jax import jit, config, vmap
 config.update("jax_enable_x64", True)
 from jax.debug import print as jprint
 from functools import partial
-from diffrax import (diffeqsolve, Tsit5, Dopri5, ODETerm,
+from diffrax import (diffeqsolve, Tsit5, Dopri8, ODETerm,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
@@ -117,7 +117,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     return dy_dt
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step'])
-def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, timesteps=200, dt = 0.01, solver=Dopri5(), adaptive_time_step=True):
+def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
