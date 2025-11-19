@@ -166,6 +166,10 @@ Other examples written in Python scripts, like those in the `Examples` directory
 python example_script.py
 ```
 
+
+The `simulation` function returns a dictionary containing the evolved Hermite coefficients `Ck`, electromagnetic coefficients `Fk`, time array, the input parameters and diagnostic quantities.
+
+<!--
 #### Running from Python
 
 You can import SPECTRAX in your own scripts. A typical workflow is:
@@ -182,8 +186,7 @@ output = simulation(input_params, **solver_params)
 
 plot(output)
 ```
-
-The `simulation` function returns a dictionary containing the evolved Hermite coefficients `Ck`, electromagnetic coefficients `Fk`, time array, the input parameters and diagnostic quantities (10).
+-->
 
 
 
@@ -297,4 +300,5 @@ This project is protected under the MIT License. For more details, refer to the 
 - We acknowledge the help of the whole [UWPlasma](https://rogerio.physics.wisc.edu/) plasma group.
 
 ---
+
 
