@@ -103,9 +103,11 @@ allows researchers to experiment with new closures, collision operators or bound
     │   └── file3.py
     └── tests
         └── test1.py
-``` -->
+``` 
 
 ---
+-->
+
 ##  Getting Started
 
 ###  Prerequisites
@@ -295,3 +297,4 @@ This project is protected under the MIT License. For more details, refer to the 
 - We acknowledge the help of the whole [UWPlasma](https://rogerio.physics.wisc.edu/) plasma group.
 
 ---
+
