@@ -62,13 +62,13 @@ SPECTRAX re‑implements this algorithm in a JAX framework. It uses just‑in‑
 
 ##  Mathematical Method
 
-The Hermite–Fourier spectral method replaces the Vlasov equation in the 6-dimensional phase-space with a hierarchy of coupled ordinary differential equations (ODEs) for the Hermite–Fourier coefficients. In the SPS formulation the velocity part of the distribution function is represented by Hermite functions while the spatial dependence is captured by Fourier modes. The expansion is truncated for closure. The resulting system of ODEs is integrated in time using solvers from the [Diffrax](https://github.com/patrick-kidger/diffrax) library. Diffrax's implementation of the Dormand-Prince’s 8/7 method, `Dopri8`, proved to be notoriously fast and stable, and is set as the default solver.
+The Hermite–Fourier spectral method replaces the Vlasov equation in the 6-dimensional phase-space with a hierarchy of coupled ordinary differential equations (ODEs) for the Hermite–Fourier moments of the one-particle probability density function and the electric and magnetic fields. The Hermite-Fourier expansion is truncated for closure and a hypercollisional operator is introduced in velocity space to suppress recurrence. The resulting system of ODEs is integrated in time using solvers from the [Diffrax](https://github.com/patrick-kidger/diffrax) library. Diffrax's implementation of the Dormand-Prince’s 8/7 method, `Dopri8`, proved to be notoriously fast and stable, and is set as the default solver.
 
 ---
 
 ##  Features
 
-* **JAX‑based spectral solver** – all core operations are implemented in JAX and compiled with `jit`, enabling execution on CPUs, GPUs or TPUs.
+* **JAX‑based spectral solver** – all core operations are implemented in JAX and compiled with `jit`, enabling execution on CPUs, GPUs, or TPUs.
 
 * **Efficient time integration** – SPECTRAX uses ODE solvers from the Diffrax library (e.g., `Dopri5`, `Dopri8`, `Tsit5`; a Diffrax-based, custom-made implicit midpoint solver is also available as `ImplicitMidpoint`) to advance the Hermite–Fourier coefficients in time. The `simulation` function assembles the right‑hand‑side, applies a 2⁄3 de‑aliasing mask on Fourier modes in the nonlinear term, and integrates the system until `t_max`, returning the time‑evolved coefficients.
 
@@ -300,5 +300,6 @@ This project is protected under the MIT License. For more details, refer to the 
 - We acknowledge the help of the whole [UWPlasma](https://rogerio.physics.wisc.edu/) plasma group.
 
 ---
+
 
 
