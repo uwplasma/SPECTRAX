@@ -72,14 +72,14 @@ The Hermite–Fourier spectral method replaces the Vlasov equation in the 6-dime
 
 * **Efficient time integration** – SPECTRAX uses ODE solvers from the Diffrax library (e.g., `Dopri5`, `Dopri8`, `Tsit5`; a Diffrax-based, custom-made implicit midpoint solver is also available as `ImplicitMidpoint`) to advance the Hermite–Fourier coefficients in time. The `simulation` function assembles the right‑hand‑side, applies a 2⁄3 de‑aliasing mask on Fourier modes in the nonlinear term, and integrates the system until `t_max`, returning the time‑evolved coefficients.
 
-* **Multi‑species and multi‑dimensional** – the code supports multiple particle species with distinct mass ratios, temperatures and drift velocities. Spatial dimensions are controlled via `Nx`, `Ny`, `Nz`, and velocity Hermite orders via `Nn`, `Nm`, `Np`.
+* **Multi‑species and multi‑dimensional** – the code supports multiple particle species with distinct mass ratios, temperatures and drift velocities. Resolution in spatial dimensions is controlled via `Nx`, `Ny`, `Nz`, and velocity Hermite orders via `Nn`, `Nm`, `Np`.
 
 * **Diagnostics** – after each simulation the `diagnostics` function computes the Debye length, normalized wavenumber, kinetic energies of each species, electromagnetic energy and total energy and stores them in the output dictionary.
 
 * **Plotting utilities** – the `plot` function produces a multi‑panel figure showing energy evolution,
-relative energy error, density fluctuations and phase‑space distributions for each species. It reconstructs the distribution function by performing an inverse Fourier transform followed by an inverse Hermite transform. The phase‑space reconstruction uses the `inverse_HF_transform` function, which evaluates Hermite polynomials and sums over all modes.
+relative energy error, density fluctuations and phase‑space distributions for each species. It reconstructs the distribution function by performing an inverse Fourier transform followed by an inverse Hermite transform. The phase‑space reconstruction uses the `inverse_HF_transform` function, which evaluates Hermite polynomials and sums over all modes. 
 
-* **Flexible initialization** – initial conditions may be provided through simple TOML files or directly in Python. The `load_parameters` function reads a TOML file and merges it with sensible defaults that initialize a two‑stream instability. Users can also construct the spectral coefficients manually, as shown in the example scripts.
+* **Flexible initialization** – initial conditions may be provided through simple TOML files or directly in Python. The `load_parameters` function reads a TOML file and merges it with sensible defaults that initialize a two‑stream instability. Users can also construct the initial spectral coefficients manually, as shown in the example scripts.
 
 * **Open source and extensible** – SPECTRAX is released under the MIT License. Its modular structure
 allows researchers to experiment with new closures, collision operators or boundary conditions.
@@ -300,6 +300,7 @@ This project is protected under the MIT License. For more details, refer to the 
 - We acknowledge the help of the whole [UWPlasma](https://rogerio.physics.wisc.edu/) plasma group.
 
 ---
+
 
 
 
