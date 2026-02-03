@@ -1,0 +1,105 @@
+usage: landau_hermite_jax.py [-h] [--backend {jax,numpy}] [--nmax NMAX]
+                             [--Q Q] [--maxK MAXK]
+                             [--integrator {rk2,ssprk3,rk4}]
+                             [--linearized {on,off}]
+                             [--linearized_method {tangent,matrix}]
+                             [--progress_chunks PROGRESS_CHUNKS] [--quiet]
+                             [--use_tt] [--tt_tol TT_TOL] [--tt_rmax TT_RMAX]
+                             [--dt_1sp DT_1SP] [--dt_2sp DT_2SP]
+                             [--tmax_1sp TMAX_1SP] [--tmax_2sp TMAX_2SP]
+                             [--steps_1sp STEPS_1SP] [--steps_2sp STEPS_2SP]
+                             [--fig1_ic {prl_m2,twostream}]
+                             [--no_enforce_nonneg_ic] [--amp1 AMP1]
+                             [--dT2 DT2] [--outprefix_fig1 OUTPREFIX_FIG1]
+                             [--outprefix_fig2 OUTPREFIX_FIG2]
+                             [--outprefix OUTPREFIX] [--skip_fig1]
+                             [--skip_fig2] [--fig2_strength FIG2_STRENGTH]
+                             [--seed SEED] [--entropy_nx ENTROPY_NX]
+                             [--entropy_xlim ENTROPY_XLIM] [--run_tests]
+                             [--tests_outdir TESTS_OUTDIR]
+                             [--tests_nmax_list TESTS_NMAX_LIST]
+                             [--tests_reps_rhs TESTS_REPS_RHS]
+                             [--tests_reps_bench TESTS_REPS_BENCH]
+                             [--tests_steps TESTS_STEPS] [--tests_dt TESTS_DT]
+                             [--tests_entropy_nx TESTS_ENTROPY_NX]
+                             [--tests_entropy_xlim TESTS_ENTROPY_XLIM]
+                             [--tests_Q_sweep TESTS_Q_SWEEP]
+                             [--tests_maxK_sweep TESTS_MAXK_SWEEP]
+                             [--tests_max_numpy_nmax TESTS_MAX_NUMPY_NMAX]
+
+Standalone fast SOE→MPO/TT Landau-Hermite (JAX-first): Fig1 + Fig2 panels.
+
+options:
+  -h, --help            show this help message and exit
+  --backend {jax,numpy}
+  --nmax NMAX
+  --Q Q
+  --maxK MAXK
+  --integrator {rk2,ssprk3,rk4}
+  --linearized {on,off}
+                        Include linearized (Maxwellian-background) overlays.
+  --linearized_method {tangent,matrix}
+                        How to compute linearized evolution (default: matrix-
+                        free tangent linear).
+  --progress_chunks PROGRESS_CHUNKS
+                        If >0, run JAX time stepping in fixed-size chunks and
+                        print progress per chunk.
+  --quiet               Reduce prints.
+  --use_tt              Use optional TT/MPO contraction in NumPy backend
+                        (debug/scaling).
+  --tt_tol TT_TOL
+  --tt_rmax TT_RMAX
+  --dt_1sp DT_1SP
+  --dt_2sp DT_2SP
+  --tmax_1sp TMAX_1SP
+  --tmax_2sp TMAX_2SP
+  --steps_1sp STEPS_1SP
+  --steps_2sp STEPS_2SP
+  --fig1_ic {prl_m2,twostream}
+                        Fig1 IC family for the 1-species case.
+  --no_enforce_nonneg_ic
+                        Disable IC nonnegativity enforcement on diagnostic
+                        grids (not recommended at low nmax).
+  --amp1 AMP1           Fig1 1sp control: for prl_m2 it's the 2nd-moment
+                        anisotropy amplitude; for twostream it's the stream
+                        separation u in vx/vth.
+  --dT2 DT2             Target temperature excess for the hot species in 2sp
+                        ICs (positivity-safe).
+  --outprefix_fig1 OUTPREFIX_FIG1
+  --outprefix_fig2 OUTPREFIX_FIG2
+  --outprefix OUTPREFIX
+                        (compat) Alias for --outprefix_fig1; if
+                        --outprefix_fig2 is default, set it to
+                        OUTPREFIX+'_Fig2'.
+  --skip_fig1
+  --skip_fig2
+  --fig2_strength FIG2_STRENGTH
+                        Scales the positive polynomial distortion used for the
+                        Fig2 initial condition (larger => farther from
+                        Maxwellian).
+  --seed SEED
+  --entropy_nx ENTROPY_NX
+  --entropy_xlim ENTROPY_XLIM
+  --run_tests           Run internal correctness/performance tests and write
+                        plots into tests_landau_hermite/.
+  --tests_outdir TESTS_OUTDIR
+  --tests_nmax_list TESTS_NMAX_LIST
+  --tests_reps_rhs TESTS_REPS_RHS
+  --tests_reps_bench TESTS_REPS_BENCH
+  --tests_steps TESTS_STEPS
+  --tests_dt TESTS_DT
+  --tests_entropy_nx TESTS_ENTROPY_NX
+                        Entropy grid resolution used in --run_tests physics
+                        checks (smaller is faster).
+  --tests_entropy_xlim TESTS_ENTROPY_XLIM
+                        Entropy grid half-width used in --run_tests physics
+                        checks.
+  --tests_Q_sweep TESTS_Q_SWEEP
+                        Comma-separated Q values for convergence sweeps in
+                        --run_tests.
+  --tests_maxK_sweep TESTS_MAXK_SWEEP
+                        Comma-separated maxK values for convergence sweeps in
+                        --run_tests.
+  --tests_max_numpy_nmax TESTS_MAX_NUMPY_NMAX
+                        In --run_tests, only do NumPy-vs-JAX comparisons up to
+                        this nmax (NumPy gets slow for larger nmax).
