@@ -25,7 +25,7 @@
 \graphicspath{{./}{tests_landau_hermite/}{tests_landau_hermite/latest/}}
 
 \title{Companion Notes for \texttt{landau\_hermite\_jax.py}:\\
-Fast Landau--Hermite Collisions via SOE$\to$MPO/TT (JAX-first)}
+Fast Landau--Hermite Collisions via SOE\texorpdfstring{$\to$}{->}MPO/TT (JAX-first)}
 \author{(auto-generated companion for the standalone script)}
 \date{\today}
 
@@ -160,17 +160,27 @@ The script self-documents its CLI via \code{-h}. For day-to-day use, the most im
 \end{itemize}
 The full help text is included in Appendix~\ref{app:cli}.
 
-\section{Physical model: Landau collision operator}
+\section{Physical model: Landau collision operator (first principles)}
 
 \subsection{Continuous operator (context)}
 For species $a$ colliding with species $b$, the Landau collision operator can be written
 (in one common form) as
 \begin{align}
   Q_{ab}(f_a,f_b)(\bm{v})
-  = \nabla_{\bm{v}}\cdot\!\int_{\RR^3} \mathbf{U}(\bm{v}-\bm{v}')
-  \left[f_b(\bm{v}')\nabla_{\bm{v}} f_a(\bm{v}) - f_a(\bm{v})\nabla_{\bm{v}'} f_b(\bm{v}')\right]\,\dd \bm{v}',
+  = \frac{\partial}{\partial v_i}\int_{\RR^3} U_{ij}(\bm{u})
+  \left[
+    f_b(\bm{v}')\,\frac{\partial f_a(\bm{v})}{\partial v_j}
+    - \frac{m_a}{m_b}\,f_a(\bm{v})\,\frac{\partial f_b(\bm{v}')}{\partial v'_j}
+  \right]\dd \bm{v}',\qquad \bm{u}=\bm{v}-\bm{v}',
 \end{align}
-where $\mathbf{U}$ is the Landau tensor kernel (Coulomb interaction case). This operator is:
+where repeated indices are summed over $i,j\in\{1,2,3\}$ and, for Coulomb interactions,
+\begin{align}
+  U_{ij}(\bm{u}) = \frac{\delta_{ij}|\bm{u}|^2-u_i u_j}{|\bm{u}|^3}
+  \;=\;\frac{1}{|\bm{u}|}\left(\delta_{ij}-\frac{u_i u_j}{|\bm{u}|^2}\right).
+\end{align}
+In this standalone script we absorb all dimensional prefactors (charges, Coulomb logarithm, etc.)
+into the scalar collision frequencies $\nu_{ab}$ and $\nu_{ba}$ that multiply $Q_{ab}$ in time.
+This operator is:
 \begin{itemize}[nosep]
   \item \textbf{bilinear} in $(f_a,f_b)$,
   \item \textbf{conservative}: it preserves total number, total momentum, and total energy
@@ -181,10 +191,85 @@ where $\mathbf{U}$ is the Landau tensor kernel (Coulomb interaction case). This 
 Standard references include Landau (1936), Rosenbluth--MacDonald--Judd (1957), and modern expositions such
 as Helander \& Sigmar (2002) and Villani (2002).
 
+\subsection{Rosenbluth potentials viewpoint (intuition)}
+One way to interpret the Landau operator is via \emph{Rosenbluth potentials}, which rewrite the
+nonlocal integral in terms of two scalar convolution-type potentials $G$ and $H$ of $f_b$.
+This viewpoint makes clear why the operator is simultaneously:
+\begin{itemize}[nosep]
+  \item \textbf{nonlocal} (it depends on velocity-space potentials), and
+  \item \textbf{differential} in $\bm{v}$ (it is a divergence of drift+diffusion terms).
+\end{itemize}
+The present code does not explicitly solve Poisson equations for potentials; instead it evaluates the
+same mathematical content directly in Hermite space via structured coefficient formulas. Still, it is
+helpful to keep the Rosenbluth picture in mind: ``build potentials of $f_b$'' then ``apply them to
+$f_a$''.
+
 \subsection{What the script discretizes}
 The code discretizes \emph{velocity} in a tensor-product Hermite basis and evolves the corresponding
 expansion coefficients in time for spatially homogeneous relaxation. All spatial dependence is absent:
 the ODE is in coefficient space.
+
+\section{From the continuous equation to a coefficient-space ODE}
+\subsection{Step 1: nondimensionalize velocity}
+For each species we pick a thermal speed $v_{\mathrm{th}}$ and define dimensionless velocity
+coordinates $(x,y,z)=\bm{v}/v_{\mathrm{th}}$. This isolates temperature/mass dependence into a few
+scalars and makes the basis and diagnostics simple.
+
+\subsection{Step 2: expand $f$ in a tensor-product Hermite basis}
+We represent the distribution in a truncated basis:
+\begin{align}
+  f(x,y,z,t) \approx \sum_{\alpha,\beta,\gamma=0}^{n_{\max}}
+  f[\alpha,\beta,\gamma](t)\,\psi_{\alpha}(x)\psi_{\beta}(y)\psi_{\gamma}(z),
+\end{align}
+and evolve the coefficient tensor $f[\alpha,\beta,\gamma](t)$.
+
+\subsection{Step 3: project $Q(f_a,f_b)$ onto the basis}
+Applying Galerkin projection (take inner products with test functions) yields a closed ODE system:
+\begin{align}
+  \frac{\dd}{\dd t} f_k(t) = \sum_{k_a,k_b} C^{ab}_{k,k_a,k_b}\; f_{a,k_a}(t)\;f_{b,k_b}(t),
+\end{align}
+where $k$ is a multi-index for $(\alpha,\beta,\gamma)$ and $C^{ab}$ is a (very large) dense bilinear
+coefficient tensor encoding the collision physics.
+
+\paragraph{What is $C^{ab}_{k,k_a,k_b}$ \emph{exactly}?}
+The script ultimately implements the coefficient-level expression obtained by projecting the Landau form
+onto the (species-dependent) Hermite basis. Using normalized velocities
+$\overline{\bm v}_a=\bm v/v_{\mathrm{th},a}$ and $\overline{\bm v}'_b=\bm v'/v_{\mathrm{th},b}$, and letting
+$\psi^a_k(\overline{\bm v}_a)$ denote the 3D tensor-product basis functions for species $a$ (with the 1D
+definition in Sec.~5), one convenient coefficient expression is:
+\begin{align}
+  C^{ab}_{k,k_a,k_b}
+  =-\frac{\nu_{ab}}{2}\int_{\RR^3}\!\!\int_{\RR^3}
+  \frac{\partial \psi^{a,k}}{\partial \overline v_{i,a}}(\overline{\bm v}_a)\;
+  \overline U_{ij}(\overline{\bm u}_a)\;
+  \left[
+    \psi^b_{k_b}(\overline{\bm v}'_b)\,\frac{\partial \psi^a_{k_a}}{\partial \overline v_{j,a}}(\overline{\bm v}_a)
+    - \frac{m_a}{m_b}\frac{v_{\mathrm{th},a}}{v_{\mathrm{th},b}}\,
+    \psi^a_{k_a}(\overline{\bm v}_a)\,\frac{\partial \psi^b_{k_b}}{\partial \overline v'_{j,b}}(\overline{\bm v}'_b)
+  \right]\dd \overline{\bm v}_a\,\dd \overline{\bm v}'_b,
+  \label{eq:Cabkkakb_companion}
+\end{align}
+where $\overline{\bm u}_a=\overline{\bm v}_a-(v_{\mathrm{th},b}/v_{\mathrm{th},a})\,\overline{\bm v}'_b$ and
+$\overline U_{ij}$ is the same Landau tensor kernel written in the normalized variables (so it depends only
+on the relative velocity argument). Equation \eqref{eq:Cabkkakb_companion} is the ``source of truth''
+equation we refer back to when explaining every fast step (SOE, MPO contractions, TT compression) below:
+all of the algorithmic machinery is about evaluating \eqref{eq:Cabkkakb_companion} \emph{without} forming a
+dense 6D coupling tensor.
+
+\subsection{Where the cost comes from (the bottleneck, explicitly)}
+If we denote $p=n_{\max}+1$ and $N=p^3$ coefficients per species, then a direct evaluation of the
+above dense bilinear form would be:
+\begin{itemize}[nosep]
+  \item \textbf{memory-prohibitive}: storing $C^{ab}$ is $\mathcal{O}(N^3)$;
+  \item \textbf{compute-prohibitive}: contracting it is also $\mathcal{O}(N^3)$ operations.
+\end{itemize}
+Even if one never explicitly forms $C^{ab}$, a naive implementation of the nested sums typically
+scales worse than $\mathcal{O}(p^6)$ in practice. The entire purpose of the fast machinery in this
+project is to compute the same RHS using only:
+\begin{itemize}[nosep]
+  \item precomputed \emph{1D tables} (cheap to build and reuse), and
+  \item a small number of repeated \emph{tensor-product contractions} (cheap to evaluate when fused).
+\end{itemize}
 
 \section{Normalization, basis, and coefficient tensor representation}
 
@@ -265,74 +350,67 @@ These are computed from low-order coefficients (see \code{invariants\_from\_tens
 \code{temperature\_components\_hat\_from\_tensor}). Conservation of $(n,\bm{P},W)$ (or total invariants
 for 2 species) is one of the most stringent correctness checks for collision operators.
 
-\section{Fast collision evaluation: SOE$\to$MPO/TT}
+\section{Fast collision evaluation: SOE\texorpdfstring{$\to$}{->}MPO/TT}
 
-\subsection{Why naive evaluation is expensive}
-In a generic coefficient formulation, the bilinear operator has the form
-\begin{align}
-  \frac{\dd f_k}{\dd t} = \sum_{k_a,k_b} C^{ab}_{k,k_a,k_b}\,f_{a,k_a}\,f_{b,k_b},
-\end{align}
-which is $O(N^3)$ if the dense tensor $C^{ab}$ is formed and contracted directly (with $N=p^3$).
-Even storing $C^{ab}$ is prohibitive.
+\subsection{What we are accelerating: the coefficient-space collision RHS}
+Equation \eqref{eq:Cabkkakb_companion} is a double velocity integral with products and derivatives of
+basis functions and a nonlocal kernel. After Galerkin projection, this becomes a dense bilinear form
+in coefficient space (Sec.~4), but the \emph{physics} structure has not disappeared; it is encoded in
+very specific combinatorial factors coming from Hermite identities and a small family of kernel
+moments.
 
-The script avoids forming $C^{ab}$ and instead uses a structured evaluation that exploits separability
-of the underlying integrals and the tensor-product basis.
+\subsection{Acronyms and the high-level idea}
+We will use three acronyms throughout:
+\begin{itemize}[nosep]
+  \item \textbf{SOE} (``separated sum'' / ``separable quadrature''): replace one blocking scalar factor by a finite sum of separable terms using quadrature; see \cite{BeylkinMonzon,GolubWelsch}.
+  \item \textbf{MPO} (matrix product operator): apply a tensor-product (Kronecker) operator to a tensor by successive 1D contractions; see \cite{Schollwoeck2011,Orus2014}.
+  \item \textbf{TT} (tensor train): compress 3D tensors via low-rank cores (same format as MPS); see \cite{Oseledets2011,Hackbusch2012}.
+\end{itemize}
+The overall goal is: turn the dense multi-index couplings into \emph{(i)} precomputed 1D tables and
+\emph{(ii)} a small number of repeated tensor-product contractions.
 
-\subsection{From dense mode coupling to a sum of separable contractions}
-The phrase ``SOE$\to$MPO'' can feel like jumping into implementation details. Here is the intuitive
-progression, starting from the equation.
+\subsection{Where the main bottleneck lives: one scalar factor that couples $x,y,z$}
+Using ladder identities (derivatives) and Hermite product expansions (products), most of the basis
+algebra in Eq.~\eqref{eq:Cabkkakb_companion} reduces to 1D tables such as $P^{k'}_{n,m}$ (stored as
+\code{P1D} in the script). What remains is the kernel moment structure. In the derivation used by the
+original project, the Coulomb kernel produces scalar moments
+\begin{align}
+  I_{K}=\int_{\RR^3}\frac{\psi_{K}(\bm u)}{|\bm u|}\,\dd \bm u,\qquad K=(2a,2b,2c),
+\end{align}
+that can be written in closed form as
+\begin{align}
+  I_{K}=\frac{(-1)^{A}}{\sqrt{\pi}(2A+1)}\,
+  \frac{\sqrt{(2a)!(2b)!(2c)!}}{2^{A-1}\,a!\,b!\,c!},\qquad A=a+b+c.
+  \label{eq:IK_companion}
+\end{align}
+Everything in \eqref{eq:IK_companion} is separable across dimensions \emph{except} the single rational
+factor $1/(2A+1)$, because $A=a+b+c$ is an \emph{additive} multi-index. Unlocking separability of this
+factor is the SOE step.
 
-\paragraph{Step 1: project the continuous operator onto a tensor-product basis.}
-Because we use a tensor-product basis in $(x,y,z)$, the projection of $Q(f_a,f_b)$ onto a mode
-$k=(\alpha,\beta,\gamma)$ naturally produces many factors that separate by dimension:
+\subsection{SOE (separable quadrature): separating the kernel factor}
+The key identity is the Beta-function integral
 \begin{align}
-  \langle \psi_{\alpha}\psi_{\beta}\psi_{\gamma},\; Q(f_a,f_b)\rangle
-  \sim \sum_{\text{many indices}} \big(\text{1D factor in }x\big)\big(\text{1D factor in }y\big)\big(\text{1D factor in }z\big)\times \big(\text{kernel moment}\big).
+  \frac{1}{2A+1}=\int_{0}^{1} s^{2A}\,\dd s.
+  \label{eq:boys0}
 \end{align}
-The difficulty is that the \emph{kernel moment} couples the three dimensions through combined indices,
-so at this stage a naive implementation still looks like a dense multi-index sum.
+With $A=a+b+c$,
+\begin{align}
+  s^{2A}=s^{2a}\,s^{2b}\,s^{2c},
+\end{align}
+so for each fixed $s$ the dependence is separable in $(a,b,c)$. Approximating \eqref{eq:boys0} by
+$Q$-point Gauss--Legendre quadrature on $[0,1]$ yields a finite separated sum:
+\begin{align}
+  \frac{1}{2(a+b+c)+1}\approx \sum_{q=1}^{Q} w_q\;\Big(s_q^{2a}\Big)\Big(s_q^{2b}\Big)\Big(s_q^{2c}\Big).
+  \label{eq:soe}
+\end{align}
+This is the \textbf{SOE} step: one coupled 3D dependence becomes a sum of $Q$ fully separable terms.
+In this code base, \code{Q} is small (default 8), so the $q$-sum is efficient and can be vectorized
+(\code{vmap}) or looped with compiled control flow (\code{lax.fori\_loop}) in JAX.
 
-\paragraph{Step 2: identify the scalar ``kernel-moment'' factor that blocks separability.}
-In the Hermite formulation used in this project, after reducing the Landau tensor kernel moments
-(and performing the necessary combinatorics from Hermite multiplications/derivatives), the remaining
-non-separable part is a scalar weight that depends on an integer index $A$ built from a \emph{sum}
-of three 1D indices:
-\begin{align}
-  A = A_x + A_y + A_z,
-\end{align}
-and the coefficient formulas contain weights of the schematic form
-\begin{align}
-  \frac{1}{2A+1}\;\times\;(\text{products of 1D combinatorial factors}).
-\end{align}
-If we can rewrite $\frac{1}{2A+1}$ in a way that factorizes with respect to $A_x,A_y,A_z$, then the
-entire operator becomes a sum of fully separable tensor-product contractions.
-
-\subsection{SOE idea: rewrite the blocking scalar factor as an integral, then quadrature}
-The key identity is not pulled from thin air: it is simply the Beta-function integral for a rational
-factor:
-\begin{align}
-  \frac{1}{2A+1} = \int_{0}^{1} s^{2A}\,\dd s.
-\end{align}
-Now substitute $A=A_x+A_y+A_z$:
-\begin{align}
-  s^{2A} = s^{2A_x}\,s^{2A_y}\,s^{2A_z},
-\end{align}
-which is the crucial separation across dimensions. Finally, approximate the integral using
-Gauss--Legendre quadrature on $[0,1]$:
-\begin{align}
-  \frac{1}{2A+1}
-  \approx \sum_{q=1}^{Q} w_q\, s_q^{2A}
-  = \sum_{q=1}^{Q} w_q\;\Big(s_q^{2A_x}\Big)\Big(s_q^{2A_y}\Big)\Big(s_q^{2A_z}\Big).
-\end{align}
-Each quadrature node $q$ produces a \emph{fully separable} contribution; the full operator is a sum of
-$Q$ separable terms. This is what the code refers to as ``SOE'': a \textbf{sum of separable terms}
-(also called a separated representation or sum-of-products). The quadrature size $Q$ is small
-(default $Q=8$), so looping over $q$ is cheap and amenable to \code{vmap} or \code{lax.fori\_loop} in JAX.
-
-\paragraph{Why Gauss--Legendre on $[0,1]$?}
-Because the identity is an integral on $[0,1]$, Gauss--Legendre provides a high-order approximation
-with very few nodes. This project uses the term ``SOE'' historically; the crucial feature is the
-finite separated sum, not exponentials per se.
+\paragraph{Accuracy knob.}
+At fixed $n_{\max}$, increasing $Q$ improves the kernel-moment accuracy (hence Maxwellian residuals).
+The script includes a small ``auto-$Q$'' heuristic (enabled by default) and the test suite includes
+$(Q,\texttt{maxK})$ convergence plots for reviewer-facing confidence.
 
 \subsection{Hankel-like tables: precomputing the remaining 1D dependence}
 After SOE separation, what remains are purely 1D combinatorial/lattice factors. A particularly
@@ -411,6 +489,17 @@ SVDs, which are expensive and (for this project) not always a net win at moderat
 TT compression is currently used primarily for the NumPy debug path and for experimentation. The main
 performance path is ``MPO + JIT''.
 
+\paragraph{TT-SVD (how the factors are computed).}
+The standard TT-SVD procedure for a 3D tensor $X\in\RR^{p\times p\times p}$ is:
+\begin{enumerate}[nosep]
+  \item Reshape $X$ into a matrix $X_{(1)}\in\RR^{p\times p^2}$ and compute its (truncated) SVD
+  $X_{(1)}\approx U_1 \Sigma_1 V_1^\top$; set $G^{(1)}=U_1$ and absorb $\Sigma_1$ into $V_1^\top$.
+  \item Reshape $\Sigma_1 V_1^\top$ into a matrix of shape $(r_1 p)\times p$ and compute another SVD
+  to obtain $G^{(2)}$ and $G^{(3)}$.
+\end{enumerate}
+Truncation tolerances control the ranks $(r_1,r_2)$ and the approximation error. See
+\cite{Oseledets2011,Hackbusch2012} for details and error bounds.
+
 TT/MPS references: Oseledets (2011), Hackbusch (2012), and related MPO/MPS reviews (Schollw\"ock 2011; Or\'us 2014).
 
 \subsection{Algorithmic walkthrough (as implemented)}
@@ -471,8 +560,36 @@ The main ODE uses the full bilinear operator:
 \end{align}
 
 \subsection{Linearization about a Maxwellian}
-Let $M$ denote a Maxwellian equilibrium (in the \emph{fixed} normalized coordinates for each species).
-For a perturbation $h$ with $f=M+h$ and $\|h\|\ll 1$,
+For many purposes it is useful to compare the full nonlinear evolution to a \emph{tangent-linear}
+approximation. The script can optionally compute such ``linearized overlays'' with
+\code{--linearized on}.
+
+\paragraph{Which Maxwellian do we linearize about?}
+The correct background is the \emph{equilibrium Maxwellian with the same conserved invariants} as the
+initial condition.
+For the 1-species case, this means the unique isotropic Maxwellian $M_{\mathrm{eq}}$ such that
+\begin{align}
+  (n,\bm P,W)[M_{\mathrm{eq}}]=(n,\bm P,W)[f_0].
+\end{align}
+For the 2-species cross-collision case, the equilibrium is a \emph{pair} $(M_{a,\mathrm{eq}},M_{b,\mathrm{eq}})$ with:
+\begin{itemize}[nosep]
+  \item each species keeps its own density ($n_a$ and $n_b$ are invariants),
+  \item both share a common drift velocity set by total momentum,
+  \item both share a common temperature set by total energy after removing drift energy.
+\end{itemize}
+In the code this is constructed by projecting the analytical Maxwellian onto the truncated Hermite basis
+(see \code{build\_maxwellian\_tensor\_from\_invariants} and
+\code{build\_common\_equilibrium\_maxwellians\_2sp\_from\_invariants}).
+
+\paragraph{Why this matters (the ``plateau'' issue).}
+The linearized Landau operator has a nontrivial nullspace corresponding to collision invariants. If one
+linearizes about a Maxwellian $M$ that does \emph{not} match the IC invariants, then $h_0=f_0-M$ contains
+nullspace components and they will not decay. In that case a quadratic free-energy diagnostic can
+decrease but plateau above zero. The overlays in this script are therefore always constructed about the
+invariant-matched equilibrium backgrounds.
+
+\paragraph{Definition of the linearized operator (1 species).}
+For a perturbation $h$ with $f=M_{\mathrm{eq}}+h$ and $\|h\|\ll 1$,
 \begin{align}
   Q(M+h,M+h) = Q(M,M) + Q(h,M) + Q(M,h) + O(h^2).
 \end{align}
@@ -482,20 +599,57 @@ Since $Q(M,M)=0$, the linearized operator is
 \end{align}
 For two species, the linearized Jacobian couples $\delta f_a$ and $\delta f_b$ through the mixed terms.
 
+\paragraph{How \code{--linearized\_method} works in the script.}
+The CLI flag \code{--linearized\_method} only affects \emph{how we compute} the linearized time histories:
+\begin{itemize}[nosep]
+  \item \code{tangent} (default): matrix-free tangent-linear evolution using JAX directional derivatives
+  (\code{jax.jvp}) in the JAX backend, or explicit bilinear expansions in the NumPy backend. This scales
+  to larger $n_{\max}$ because it never forms a dense Jacobian.
+  \item \code{matrix}: build an explicit dense Jacobian (via \code{jax.jacfwd} in JAX or a column-by-column
+  fast assembly in NumPy) and then evolve with \code{expm\_multiply}. This is convenient for small $n_{\max}$
+  but becomes expensive quickly.
+\end{itemize}
+
 \subsection{Entropy vs free energy for linearized dynamics}
-The nonlinear Landau operator satisfies an H-theorem: relative entropy to the \emph{instantaneous} local
-Maxwellian decreases. The script measures this via a grid-based KL divergence:
+This script uses two complementary Lyapunov-style diagnostics, each matched to the correct physics:
+
+\paragraph{Nonlinear: KL divergence to the instantaneous local Maxwellian.}
+The nonlinear Landau operator satisfies an H-theorem: a suitable relative entropy to the
+\emph{instantaneous} local Maxwellian is non-increasing in time. The script measures this with a
+grid-based Kullback--Leibler (KL) divergence
 \begin{align}
   \mathcal{D}(t) = \int f \log\!\left(\frac{f}{M_{\mathrm{local}}}\right)\dd v.
 \end{align}
+Here $M_{\mathrm{local}}(\bm v,t)$ is the Maxwellian with the same $(n,\bm u,T)$ as $f(\bm v,t)$, i.e.
+it depends on time through the low-order moments. For the spatially homogeneous setting, this ``local''
+Maxwellian is global in space but local in moment space.
+
+\paragraph{Explicit form of $M_{\mathrm{local}}$ (what the code evaluates).}
+In physical variables,
+\begin{align}
+  M_{\mathrm{local}}(\bm v,t)=\frac{n(t)}{\left(2\pi T(t)/m\right)^{3/2}}
+  \exp\!\left(-\frac{m|\bm v-\bm u(t)|^2}{2T(t)}\right),
+\end{align}
+with $n(t)=\int f\,\dd v$, $\bm u(t)=\bm P(t)/(m n(t))$, and $T(t)=\frac{2}{3}\frac{1}{n(t)}\int \frac{1}{2}m|\bm v-\bm u(t)|^2 f\,\dd v$.
+In the code, all of these are computed from low-order Hermite coefficients (Sec.~5), then the integral
+defining $\mathcal D$ is approximated on a fixed tensor-product grid in $(x,y,z)=\bm v/v_{\mathrm{th}}$.
+
+\paragraph{Why this is a strong physics check.}
+For the \emph{nonlinear} Landau operator, the H-theorem implies $\mathcal D(t)$ should be non-increasing
+(up to discretization and truncation error). If $\mathcal D$ increases noticeably, it is a red flag:
+either the operator is incorrect, or parameters $(n_{\max},Q,\texttt{maxK})$ are too low, or the entropy
+grid is too coarse. This is why monotonicity of $\mathcal D$ is included in \code{--run\_tests}.
+
 However, this KL functional is \emph{not} expected to be monotone for tangent-linear evolution (and can
 become ill-defined if the linearized solution produces slight negative values due to truncation).
 
-For linearized evolution, a standard Lyapunov functional is the quadratic ``free energy''
-(second variation of entropy at a Maxwellian):
+\paragraph{Linearized: quadratic free energy about the fixed equilibrium Maxwellian.}
+For tangent-linear evolution about a fixed Maxwellian background, the natural monotone quantity is the
+quadratic ``free energy'' (the second variation of entropy at $M$):
 \begin{align}
   \mathcal{F}(t;M) = \int \frac{(f-M)^2}{M}\,\dd v.
 \end{align}
+In the script, $M$ is the invariant-matched equilibrium Maxwellian described above.
 The script therefore plots $\mathcal{D}/\mathcal{D}_0$ for nonlinear curves and $\mathcal{F}/\mathcal{F}_0$
 for linearized curves in the main panels, and it tests monotonicity for each in \code{--run\_tests}.
 
@@ -517,31 +671,211 @@ Key performance choices:
 \end{itemize}
 These are typical ``best practices'' for XLA-based array programming systems.
 
+\section{Why JAX is a good fit for this solver (and how it reduces cost)}
+\subsection{What is JAX (in practical terms)?}
+JAX is a numerical computing library that looks like NumPy but is built around three ``program
+transformations'':
+\begin{itemize}[nosep]
+  \item \textbf{automatic differentiation} (forward- and reverse-mode),
+  \item \textbf{vectorization} (\code{vmap}: turn a function into a batched function),
+  \item \textbf{compilation} (\code{jit}: compile array programs with XLA).
+\end{itemize}
+The key idea is that, instead of executing Python loops and NumPy calls directly, JAX can \emph{trace}
+an array program and hand a static computation graph to the XLA compiler, which then generates optimized
+machine code. That is the main reason this project benefits from JAX: the Landau--Hermite RHS is a large
+composition of dense contractions with fixed shapes, repeated many times.
+
+\subsection{Where JAX helps the most for this code}
+At the level of the math, the fast RHS derived from Eq.~\eqref{eq:Cabkkakb_companion} boils down to:
+\begin{itemize}[nosep]
+  \item many \textbf{batched dense contractions} (mode products),
+  \item repeated for many time steps,
+  \item with \textbf{fixed shapes} once $n_{\max}$, $Q$, and \code{maxK} are chosen,
+  \item and with large constant tables reused at every call.
+\end{itemize}
+This profile matches JAX/XLA extremely well: it can compile the entire computation graph ahead of time
+and then execute fused kernels with minimal Python overhead. In contrast, pure Python/NumPy pays
+per-call dispatch overhead and does not automatically fuse chains of contractions.
+
+\subsection{Glossary: mode products, batched contractions, and static shapes}
+The most common operation in this solver is a \emph{mode product}: contracting a tensor with a matrix
+along one axis. For a 3D coefficient tensor $f\in\RR^{p\times p\times p}$ and a 1D operator
+$A\in\RR^{p'\times p}$, the mode-$x$ product is
+\begin{align}
+  (f\times_x A)[i,j,k]=\sum_{\alpha=1}^{p} A[i,\alpha]\,f[\alpha,j,k].
+\end{align}
+Applying a Kronecker-product operator $(A_x\otimes A_y\otimes A_z)$ is then just three mode products
+(first along $x$, then $y$, then $z$), as shown in Sec.~6.
+In code, these appear as \code{einsum} calls such as:
+\begin{Verbatim}[fontsize=\small]
+# schematic: g = (Ax kron Ay kron Az) f
+tmp = jnp.einsum("ia,ajk->ijk", Ax, f)      # x-mode product
+tmp = jnp.einsum("jb,ibk->ijk", Ay, tmp)    # y-mode product
+g   = jnp.einsum("kc,ijc->ijk", Az, tmp)    # z-mode product
+\end{Verbatim}
+``Static shapes'' means that the sizes $p$, $p'$, $Q$ are fixed for a run; this allows XLA to plan
+memory and fuse kernels aggressively.
+
+\subsection{How the script uses JAX transformations}
+\paragraph{\code{jax.jit}: compile the RHS and the stepper.}
+The JAX backend wraps the expensive kernels in \code{jax.jit}. Once compiled, subsequent calls run at
+steady-state speed. This is why the test suite reports both compile time and per-call time.
+
+\paragraph{\code{vmap}: batch over quadrature nodes.}
+The SOE separation introduces a sum over quadrature nodes $q=1,\dots,Q$. In the JAX RHS, the work for
+all $q$ is expressed as a batched computation using \code{vmap}, and then reduced by a weighted sum.
+This removes Python-level loops over $q$ while keeping the math identical.
+
+\paragraph{\code{lax.scan}: compile the time loop.}
+Time integration is a perfect match for \code{lax.scan}: it turns ``for step in range(N)'' into a
+single compiled loop. That reduces overhead and improves fusion opportunities.
+
+\subsection{JAX building blocks used here}
+\paragraph{Constants as compiled inputs.}
+The script builds all coefficient tables once per run (depending on $n_{\max},Q,\code{maxK}$ and the
+species pair). In the JAX path these arrays are transferred once and then treated as constants by the
+compiled kernels. This avoids repeated allocations and helps XLA reuse memory.
+
+\paragraph{Fusion and dispatch overhead.}
+Many parts of the RHS are ``small'' elementwise operations surrounding large contractions. In NumPy
+these would be multiple separate kernel launches and Python dispatches. XLA can fuse chains of
+elementwise ops into the surrounding contraction kernels, reducing memory traffic and call overhead.
+
+\subsection{How much does JAX reduce the cost? (measured in this repository)}
+The \code{--run\_tests} suite measures both NumPy and JAX steady-state RHS times for small $n_{\max}$
+values (NumPy comparisons are disabled at larger $n_{\max}$ because they become slow). The speedups are
+summarized in Table~\ref{tab:tests_sweep} and in the dedicated speedup plot.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.75\linewidth]{tests_landau_hermite/latest/speedup_numpy_vs_jax.png}
+  \caption{Measured speedup (NumPy time / JAX time) for per-call RHS evaluation at the $n_{\max}$ where
+  NumPy comparisons are enabled. The speedup comes primarily from JIT compilation and reduced Python
+  overhead.}
+  \label{fig:speedup}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \begin{subfigure}[t]{0.49\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{tests_landau_hermite/latest/runtime_rhs_scaling.png}
+    \caption{RHS steady-state scaling.}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.49\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{tests_landau_hermite/latest/runtime_integrate_short.png}
+    \caption{Short integration benchmark.}
+  \end{subfigure}
+  \caption{Performance figures generated by \code{--run\_tests}. These plots are anchored to the exact
+  kernels used in the main figures.}
+  \label{fig:perf}
+\end{figure}
+
+\subsection{Why this stays differentiable}
+All RHS computations in the JAX backend are written in terms of JAX primitives (array operations,
+\code{einsum}, \code{lax} control flow). This means that, in principle, one can differentiate through
+the RHS and through time stepping using \code{jax.grad} / \code{jax.jvp}/\code{jax.vjp}, subject to the
+usual considerations (memory cost for reverse-mode through long time horizons, stiffness constraints,
+etc.). The script is careful to avoid Python-side control flow inside jitted regions, which is a
+common pitfall for differentiability.
+
+\subsection{Citations and context}
+For the JAX programming model and transformations, see the JAX reference \cite{JAX2018}. JAX relies on
+the XLA compiler to generate optimized machine code for array programs; XLA is the compilation
+technology that enables kernel fusion and loop lowering used implicitly by \code{jax.jit} and
+\code{lax.scan} \cite{XLA}.
+
 \section{Initial conditions used in Fig.\ 1 and Fig.\ 2}
 
 \subsection{Fig.\ 1: one-species IC (two-stream-like, positivity-safe)}
-The default Fig.~1 one-species IC is designed to be qualitatively ``two-stream-like'' without any negative
-values. It is constructed as an even mixture of two shifted Maxwellians in $v_x$:
+The script supports two one-species IC families via \code{--fig1\_ic}:
+\begin{itemize}[nosep]
+  \item \code{twostream} (default): a manifestly nonnegative two-stream-like mixture designed to avoid negative
+  slices at moderate $n_{\max}$.
+  \item \code{prl\_m2}: the original low-order anisotropy IC (only second moments) used in the reference PRL panel logic.
+\end{itemize}
+
+\paragraph{Equilibrium Maxwellian in this basis.}
+In the normalized coordinate $(x,y,z)=\bm v/v_{\mathrm{th}}$, the equilibrium Maxwellian used by this script is
+simply the 3D tensor-product ground state
 \begin{align}
-  f(x,y,z)\ \propto\ \frac{1}{2}\Big(M(x-u)+M(x+u)\Big)\,M(y)\,M(z),
+  M_0(x,y,z)=\psi_0(x)\psi_0(y)\psi_0(z),
 \end{align}
-with $u$ set by \code{--amp1} (interpreted as stream separation for \code{--fig1\_ic twostream}).
-The code projects the 1D $x$ dependence onto the truncated $\{\psi_n\}$ basis and optionally scales the
-non-Maxwellian component to enforce nonnegativity on diagnostic grids.
+so a density-normalized Maxwellian is $f(x,y,z)=f_{000}\,M_0(x,y,z)$ with $f_{000}=n/v_{\mathrm{th}}^3$.
+
+\paragraph{\code{twostream} (default): shifted-Maxwellian mixture projected to the truncated basis.}
+The \emph{physical-space} target shape is the even mixture
+\begin{align}
+  g_u(x)=\tfrac12\Big(\psi_0(x-u)+\psi_0(x+u)\Big),
+\end{align}
+with $u=\code{--amp1}$ (stream separation in $v_x/v_{\mathrm{th}}$).
+The 3D IC is then
+\begin{align}
+  f_{\mathrm{ts}}(x,y,z)=\left(\sum_{n=0}^{n_{\max}} c_n\,\psi_n(x)\right)\psi_0(y)\psi_0(z),
+\end{align}
+where the coefficients $c_n$ are obtained by a weighted $L^2$ projection of $g_u$ onto
+$\mathrm{span}\{\psi_0,\dots,\psi_{n_{\max}}\}$ on a dense grid (see \code{build\_ic\_fig1\_1sp\_twostream}).
+Finally, the coefficients are scaled so that the resulting tensor satisfies
+\begin{align}
+  f[0,0,0]=\frac{1}{v_{\mathrm{th}}^3}\quad\text{(density normalization used by this script)}.
+\end{align}
+Optionally (default on), the script enforces nonnegativity on diagnostic grids by writing
+$f=f_M+\gamma(f-f_M)$ with $f_M$ the Maxwellian having the same $f_{000}$ and choosing the largest
+$\gamma\in[0,1]$ such that the slice $f(v_x,0,0)$ and plane $f(v_x,v_y,0)$ remain nonnegative on the
+diagnostic grids.
+
+\paragraph{\code{prl\_m2}: low-order anisotropy IC (exact in coefficient space).}
+When \code{--fig1\_ic prl\_m2} is selected, the IC is set directly in coefficient space:
+\begin{align}
+  f[0,0,0]&=\frac{1}{v_{\mathrm{th}}^3},\\
+  f[2,0,0]&=2a,\qquad f[0,2,0]=-a,\qquad f[0,0,2]=-a,
+\end{align}
+with $a=\code{--amp1}$ and all other coefficients zero.
 
 \subsection{Fig.\ 1: two-species IC (positivity-safe hot/equilibrium)}
-Representing an extremely cold Maxwellian at low $n_{\max}$ in a fixed normalized coordinate can lead to
-Gibbs-like oscillations and negative reconstructed $f$.
-To avoid this, the two-species IC used in this standalone script heats one species using a positive
-isotropic polynomial distortion of the equilibrium Maxwellian (exactly representable at low order), while
-keeping the other species near equilibrium. The parameter \code{--dT2} sets the target temperature excess
-for the hot species.
+The Fig.~1 two-species IC is designed to produce a clean temperature-exchange relaxation without requiring a
+very cold Maxwellian to be represented at low $n_{\max}$ (which is a common source of Gibbs-like oscillations).
+Let $M_{a,0}$ and $M_{b,0}$ denote the coefficient-space Maxwellians with $f_{000}=1/v_{\mathrm{th},s}^3$ for each
+species $s\in\{a,b\}$ (i.e.\ only the $(0,0,0)$ coefficient is nonzero). The IC is:
+\begin{itemize}[nosep]
+  \item one species is left at its equilibrium Maxwellian,
+  \item the other is ``heated'' by multiplying $M_{0}$ by a positive isotropic quadratic factor:
+  \begin{align}
+    f_{\mathrm{hot}}(x,y,z)=Z\,\psi_0(x)\psi_0(y)\psi_0(z)\,\Big(1+a_2(x^2+y^2+z^2)\Big),
+  \end{align}
+  and scaling $Z$ so that $f[0,0,0]=1/v_{\mathrm{th}}^3$.
+\end{itemize}
+The coefficient tensor for the polynomial factor is constructed exactly using the matrix representation of
+multiplication by $x$ in the $\{\psi_n\}$ basis (see \code{\_poly\_ic\_tensor\_from\_coeffs}). The scalar $a_2\ge 0$
+is then chosen by bisection so that the temperature diagnostic computed from the invariants matches the target
+hot temperature $T_{\mathrm{hot}}=T_{\mathrm{eq}}+|\code{--dT2}|$.
 
 \subsection{Fig.\ 2: far-from-Maxwellian ICs}
-Fig.~2 uses a positive polynomial distortion (including quartic terms when $n_{\max}\ge 4$) to create
-strongly non-Maxwellian shapes while maintaining nonnegativity on diagnostic grids. The strength is
-controlled by \code{--fig2\_strength}. The two-species Fig.~2 IC also tunes the temperature separation in
-a positivity-safe way.
+Fig.~2 uses the \emph{same dynamics and parameters} as Fig.~1, but with ICs that excite higher Hermite modes
+(up to $n_{\max}=4$ by default) while remaining nonnegative on diagnostic grids.
+
+\paragraph{1 species.}
+The IC is constructed as an equilibrium Maxwellian times a positive even polynomial (up to quartic):
+\begin{align}
+  f_{\mathrm{Fig2}}(x,y,z)=Z\,\psi_0(x)\psi_0(y)\psi_0(z)\Big(1+a_{2x}x^2+a_{2y}y^2+a_{2z}z^2+a_{4x}x^4+a_{4y}y^4+a_{4z}z^4\Big),
+\end{align}
+with $Z$ chosen so that $f[0,0,0]=1/v_{\mathrm{th}}^3$. The coefficients are set exactly by the code as
+\begin{align}
+  \texttt{base2}=0.22\,s,\quad \texttt{base4}=0.10\,s\ \ (\text{if }n_{\max}\ge 4),\quad s=\code{--fig2\_strength},
+\end{align}
+and then
+\begin{align}
+  a_{2x}=\texttt{base2}(1+0.9\,a),\quad a_{2y}=a_{2z}=\texttt{base2}(1-0.4\,a),\qquad a=\code{--amp1},
+\end{align}
+with the same pattern for the quartic coefficients $a_{4x},a_{4y},a_{4z}$.
+
+\paragraph{2 species.}
+Species $A$ is made hotter (target $T_{\mathrm{eq}}+|\code{--dT2}|$) using an \emph{isotropic} polynomial with
+quartic content (when $n_{\max}\ge 4$), tuning its quadratic coefficient by bisection.
+Species $B$ is made non-Maxwellian but kept near $T_{\mathrm{eq}}$ by tuning its quadratic coefficient (which can
+be negative) subject to a nonnegativity constraint on the diagnostic grids; if that tuning fails, the script
+falls back to a pure Maxwellian for species $B$.
 
 \section{Figures produced by the script}
 
@@ -576,6 +910,15 @@ The tests are designed around standard invariants and stability properties of th
   \item \textbf{H-theorem diagnostics}: nonlinear KL entropy to the instantaneous local Maxwellian should be
   non-increasing (up to truncation/time-discretization). Linearized dynamics should instead be monitored with
   quadratic free energy about the fixed Maxwellian background.
+  \item \textbf{Linearized operator structure}: the linearized Landau operator about a Maxwellian is (formally)
+  self-adjoint and dissipative in a Maxwellian-weighted inner product, once the nullspace (collision invariants)
+  is removed; the test suite includes an approximate symmetry/dissipation check on a velocity grid
+  \cite{Villani2002,HelanderSigmar}.
+  \item \textbf{Maxwellians with varied densities}: multispecies equilibrium allows different densities; the
+  test suite verifies $Q_{ab}(M_a,M_b)\approx 0$ when $M_a,M_b$ differ only by density factors.
+  \item \textbf{Galilean invariance vs truncation}: a drifted Maxwellian requires infinitely many Hermite modes.
+  The test suite therefore checks \emph{convergence} of the drifted-Maxwellian residual as $n_{\max}$ increases,
+  rather than expecting exact zero at fixed truncation.
   \item \textbf{Linearization correctness}: two complementary checks are used:
     (i) finite-difference self-consistency (NumPy, small $n_{\max}$) and
     (ii) small-perturbation agreement between nonlinear and tangent-linear time traces (JAX).
@@ -628,6 +971,13 @@ The tests are designed around standard invariants and stability properties of th
 
 \begin{figure}[t]
   \centering
+  \includegraphics[width=0.90\linewidth]{tests_landau_hermite/latest/linearized_backend_consistency.png}
+  \caption{Linearized operator consistency between NumPy (explicit linearization) and JAX (JVP-based linearization), where enabled.}
+  \label{fig:lin_backend}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
   \includegraphics[width=0.90\linewidth]{tests_landau_hermite/latest/linearization_small_perturb_1sp.png}
   \caption{Small-perturbation check: nonlinear vs tangent-linear for the 1-species problem.}
   \label{fig:lin_small_1sp}
@@ -652,6 +1002,27 @@ The tests are designed around standard invariants and stability properties of th
   \includegraphics[width=0.90\linewidth]{tests_landau_hermite/latest/runtime_integrate_short.png}
   \caption{Short integration benchmark (NumPy vs JAX where enabled).}
   \label{fig:integrate_short}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.90\linewidth]{tests_landau_hermite/latest/drifted_maxwellian_convergence.png}
+  \caption{Drifted Maxwellian residual versus truncation: at fixed small drift $u$, the residual decreases as $n_{\max}$ increases. This is a practical proxy for Galilean invariance under spectral truncation.}
+  \label{fig:drift_convergence}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.72\linewidth]{tests_landau_hermite/latest/cross_equilibrium_residuals.png}
+  \caption{Two-species equilibrium check with different densities: $Q_{ab}(M_a,M_b)\approx 0$ and $Q_{ba}(M_b,M_a)\approx 0$ for Maxwellians with shared temperature/velocity but different density prefactors.}
+  \label{fig:cross_density_equilibrium}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.90\linewidth]{tests_landau_hermite/latest/linearized_symmetry_dissipation.png}
+  \caption{Linearized operator structure check (approximate, grid-based): symmetry defect in the weighted inner product and weighted dissipation values $\langle h, Lh\rangle_M$ for two random perturbations with collision-invariant components removed.}
+  \label{fig:lin_sym_diss}
 \end{figure}
 
 \clearpage
@@ -679,12 +1050,34 @@ The separation accuracy is controlled by:
 The test suite includes Q/\code{maxK} sweeps and Maxwellian fixed-point residuals to help select safe
 defaults.
 
-\appendix
+\paragraph{Practical note on $Q$ at larger $n_{\max}$.}
+For moderate truncations ($n_{\max}\le 5$), $Q=8$ is typically sufficient to achieve Maxwellian
+fixed-point residuals near roundoff in double precision. As $n_{\max}$ increases, however, the
+quadrature error can become visible unless $Q$ is increased. For this reason, the script contains a
+simple heuristic auto-selection for $Q$ at larger $n_{\max}$ (enabled by default and disable-able via
+\code{--no\_auto\_Q}). The \code{--run\_tests} suite also includes a $Q$-sweep plot to make this
+dependence explicit.
 
-\section{Full CLI help}\label{app:cli}
-For completeness, this is the exact output of \code{python landau\_hermite\_jax.py -h} captured at the
-time this companion was generated:
-\VerbatimInput[fontsize=\small]{landau_hermite_jax_help.txt}
+\subsection{Other fast Landau algorithms in the literature (future directions)}
+The present script focuses on a Hermite basis and a separated (SOE) evaluation that is well matched to
+tensor-product contractions. There are also alternative fast strategies for the Landau operator:
+\begin{itemize}[nosep]
+  \item \textbf{FFT-based fast spectral methods:} represent $f$ on a uniform velocity grid and evaluate
+  the collision operator using Fourier techniques to reduce the cost of the nonlocal convolution-like
+  structures (e.g. Pareschi--Russo--Toscani \cite{PareschiRussoToscani2000} and follow-ups). These
+  methods can achieve $\mathcal{O}(N\log N)$-type costs in grid settings.
+  \item \textbf{Hermite with local basis adaptation:} recenter/rescale the Hermite basis using local
+  Maxwellian parameters (velocity shift and temperature) to reduce the number of modes needed to
+  represent far-from-equilibrium states (e.g. the local-approximation Hermite strategy in
+  \cite{HermiteLocalLandau2021}). This is a promising way to push to higher effective resolution
+  without increasing global $n_{\max}$ as much.
+  \item \textbf{Potential-based solvers:} compute Rosenbluth potentials via Poisson solves in velocity
+  space, then apply drift/diffusion operators. In Fourier bases, Poisson solves are diagonal; in
+  Hermite bases, they are structured but not diagonal, suggesting specialized solvers might help.
+\end{itemize}
+These directions are not implemented in this standalone script (which intentionally stays within one
+file and one numerical framework), but the test suite and modular structure are designed to make
+comparisons feasible.
 
 \section{References (selected)}
 \begin{thebibliography}{99}
@@ -733,12 +1126,35 @@ J.~P.~Boyd, \emph{Chebyshev and Fourier Spectral Methods}, 2nd ed., Dover (2001)
 \bibitem{Grad}
 H.~Grad, ``On the kinetic theory of rarefied gases,'' \emph{Communications on Pure and Applied Mathematics} \textbf{2} (1949).
 
+\bibitem{PareschiRussoToscani2000}
+L.~Pareschi, G.~Russo, and G.~Toscani, ``Fast spectral methods for the Fokker--Planck--Landau collision operator,'' \emph{Journal of Computational Physics} \textbf{165} (2000).
+
+\bibitem{HermiteLocalLandau2021}
+R.~Li, Y.~Ren, and Y.~Wang, ``A Hermite spectral method for the spatially homogeneous Landau equation based on local approximation,'' \emph{Journal of Computational Physics} \textbf{434} (2021), 110235. (See also arXiv:2004.06484.)
+
 \bibitem{BeylkinMonzon}
 G.~Beylkin and L.~Monz\'on, ``Approximation by exponential sums revisited,'' \emph{Applied and Computational Harmonic Analysis} (2005).
+
+\bibitem{HackbuschKhoromskij2006I}
+W.~Hackbusch and B.~N.~Khoromskij, ``Low-rank Kronecker-product approximation to multidimensional nonlocal operators. Part I. Separable approximation of multi-variate functions,'' \emph{Computing} \textbf{76} (2006).
+
+\bibitem{HackbuschKhoromskij2006II}
+W.~Hackbusch and B.~N.~Khoromskij, ``Low-rank Kronecker-product approximation to multidimensional nonlocal operators. Part II. HKT representation of certain operators,'' \emph{Computing} \textbf{76} (2006).
+
+\bibitem{ParrishHohensteinMartinez2012LS_THC}
+R.~M.~Parrish, E.~G.~Hohenstein, T.~J.~Mart\'inez, and C.~D.~Sherrill, ``Tensor hypercontraction. I. Least-squares tensor hypercontraction for the electron repulsion integral tensor,'' \emph{J. Chem. Phys.} \textbf{137} (2012).
 
 \bibitem{JAX2018}
 J.~Bradbury et al., ``JAX: composable transformations of Python+NumPy programs,'' (2018). \url{https://github.com/jax-ml/jax}
 
+\bibitem{XLA}
+Google, ``XLA: Accelerated Linear Algebra,'' documentation/reference for the XLA optimizing compiler used by JAX/TF. \url{https://www.tensorflow.org/xla}
+
 \end{thebibliography}
+
+\section{Appendix: full CLI help}\label{app:cli}
+For completeness, this is the exact output of \code{python landau\_hermite\_jax.py -h} captured at the
+time this companion was generated:
+\VerbatimInput[fontsize=\small]{landau_hermite_jax_help.txt}
 
 \end{document}

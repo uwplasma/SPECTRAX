@@ -3,14 +3,14 @@
 \centering
 \caption{Test sweep summary (JAX backend). Reported times are steady-state. Conservation rates are for cross-collision totals $d/dt\,(n,P,W)$ evaluated on a random near-Maxwellian state.}
 \label{tab:tests_sweep}
-\begin{tabular}{r r r r r r r}
+\begin{tabular}{r r r r r r r r}
 \toprule
-$n_{\max}$ & $N=(n_{\max}{+}1)^3$ & $t_{\mathrm{self}}$ [ms] & $t_{\mathrm{cross}}$ [ms] & $t_{\mathrm{int}}$ [s] & $\|RHS(M)\|/\|M\|$ (cross) & $|dW_{\rm tot}/dt|$ \\
+$n_{\max}$ & $N=(n_{\max}{+}1)^3$ & $t_{\mathrm{self}}$ [ms] & $t_{\mathrm{cross}}$ [ms] & $t_{\mathrm{int}}$ [s] & speedup$_{\mathrm{self}}$ & speedup$_{\mathrm{cross}}$ & $\|RHS(M)\|/\|M\|$ (cross) \\
 \midrule
-2 & 27 & 0.093 & 0.177 & 0.014 & 4.23e-16 & 1.63e-15 \\
-3 & 64 & 0.280 & 0.556 & 0.044 & 4.35e-16 & 8.50e-12 \\
-4 & 125 & 0.584 & 1.141 & 0.092 & 5.98e-16 & 4.78e-11 \\
-5 & 216 & 0.854 & 1.711 & 0.133 & 6.00e-16 & 3.26e-10 \\
+2 & 27 & 0.094 & 0.171 & 0.023 & $293.0\times$ & $460.5\times$ & 4.23e-16 \\
+3 & 64 & 0.457 & 0.811 & 0.073 & $562.9\times$ & $551.9\times$ & 4.35e-16 \\
+4 & 125 & 0.796 & 1.631 & 0.125 & -- & -- & 5.98e-16 \\
+5 & 216 & 1.349 & 2.605 & 0.198 & -- & -- & 6.00e-16 \\
 \bottomrule
 \end{tabular}
 \end{table}

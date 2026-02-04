@@ -8,7 +8,6 @@ implemented JAX-first (with a NumPy backend for debugging).
 
 By default (no flags) this script writes:
   - Fig1_panel.pdf / Fig1_panel.png  (collisional relaxation from the manuscript ICs)
-  - Fig2_panel.pdf / Fig2_panel.png  (same dynamics/parameters, but a different, strongly non-Maxwellian IC)
 with `--nmax 4` by default.
 
 --------------------------------------------------------------------------------
@@ -73,7 +72,7 @@ Key options:
   - `--linearized_method {tangent,matrix}`: default `tangent` uses matrix-free JVPs (scales better).
   - `--progress_chunks N`: prints progress during JAX stepping (optional; default keeps fastest single `lax.scan`).
   - `--run_tests`: writes correctness/performance plots to `tests_landau_hermite/`.
-  - `--skip_fig1` / `--skip_fig2`: skip producing either figure.
+  - `--skip_fig1`: skip producing the Fig1 panel.
 """
 
 from __future__ import annotations
@@ -718,22 +717,280 @@ def build_ic_fig1_1sp_twostream(
     return ICPositivityInfo(f=f, gamma=float(gamma), min_slice=float(ms), min_plane=float(mp))
 
 
+def build_ic_fig1_1sp_poly4(nmax: int, sp: Species, amp1: float) -> ICPositivityInfo:
+    """
+    Fig1 1-species IC (default): a strongly non-Maxwellian but positivity-safe distribution built as
+    an equilibrium Maxwellian times a positive even polynomial (up to quartic content when nmax>=4).
+
+    This IC is designed to be:
+      - farther from Maxwellian than the legacy `prl_m2` second-moment perturbation,
+      - robustly nonnegative (the physical-space target is >=0 everywhere),
+      - exactly representable for nmax>=4 (quartic terms live in modes up to n=4).
+
+    `amp1` only controls anisotropy between x and y/z; the overall strength is fixed by constants
+    chosen to give an obviously far-from-equilibrium shape while remaining well behaved at nmax=4.
+    """
+    p = nmax + 1
+    f000_target = 1.0 / (sp.vth**3)
+    if nmax < 2:
+        f = np.zeros((p, p, p), dtype=np.float64)
+        f[0, 0, 0] = f000_target
+        ms, mp = _min_f_checks_tensor(f, nmax=nmax, xlim=6.0, nx=161)
+        return ICPositivityInfo(f=f, gamma=1.0, min_slice=ms, min_plane=mp)
+
+    a = float(amp1)
+    # Far-from-equilibrium strength: positive coefficients guarantee global nonnegativity in physical space.
+    base2 = 0.55
+    base4 = 0.32 if nmax >= 4 else 0.0
+
+    a2x = base2 * (1.0 + 0.60 * a)
+    a2y = base2 * (1.0 - 0.30 * a)
+    a2z = base2 * (1.0 - 0.30 * a)
+    a4x = base4 * (1.0 + 0.60 * a)
+    a4y = base4 * (1.0 - 0.30 * a)
+    a4z = base4 * (1.0 - 0.30 * a)
+
+    f = _poly_ic_tensor_from_coeffs(
+        f000_target=f000_target,
+        a2x=a2x,
+        a2y=a2y,
+        a2z=a2z,
+        a4x=a4x,
+        a4y=a4y,
+        a4z=a4z,
+        nmax=nmax,
+    )
+    ms, mp = _min_f_checks_tensor(f, nmax=nmax, xlim=6.0, nx=161)
+    return ICPositivityInfo(f=f, gamma=1.0, min_slice=ms, min_plane=mp)
+
+
+def build_separable_tensor_from_1d_coeffs(c_x: np.ndarray, c_y: np.ndarray, c_z: np.ndarray) -> np.ndarray:
+    """
+    Given 1D coefficient vectors c_x,c_y,c_z (each length p=nmax+1) in the 1D ψ-basis, build the 3D
+    tensor-product coefficient array f[p,p,p] corresponding to the separable function
+
+        f(x,y,z) = (Σ_a c_x[a] ψ_a(x)) (Σ_b c_y[b] ψ_b(y)) (Σ_c c_z[c] ψ_c(z)).
+    """
+    c_x = np.asarray(c_x, dtype=np.float64)
+    c_y = np.asarray(c_y, dtype=np.float64)
+    c_z = np.asarray(c_z, dtype=np.float64)
+    if c_x.ndim != 1 or c_y.ndim != 1 or c_z.ndim != 1 or c_x.size != c_y.size or c_x.size != c_z.size:
+        raise ValueError("c_x,c_y,c_z must be 1D vectors of the same length")
+    return np.einsum("a,b,c->abc", c_x, c_y, c_z, optimize=True)
+
+
+def build_maxwellian_like_tensor_via_projection(
+    *,
+    nmax: int,
+    sp: Species,
+    ux_hat: float = 0.0,
+    uy_hat: float = 0.0,
+    uz_hat: float = 0.0,
+    alpha: float = 1.0,
+    density: float = 1.0,
+    xlim: float = 10.0,
+    nx: int = 4001,
+) -> np.ndarray:
+    """
+    Build coefficients for a (possibly drifted / temperature-scaled) Maxwellian-like separable state
+    by 1D projection on a dense grid. This is used only in tests (outside JIT).
+
+    In the normalized coordinate x=v/v_th, a Maxwellian with drift u_hat and temperature scaling alpha
+    has 1D shape:
+
+        g(x) = (1/alpha) ψ_0((x-u_hat)/alpha),
+
+    where ψ_0 is the equilibrium 1D Maxwellian used by this script (psi_1d(0,x)).
+    The 3D distribution is g_x(x) g_y(y) g_z(z), and we rescale so that f000 = density / vth^3.
+    """
+    p = int(nmax) + 1
+    x = np.linspace(-float(xlim), float(xlim), int(nx), dtype=np.float64)
+    dx = float(x[1] - x[0])
+    w = np.full_like(x, dx, dtype=np.float64)
+    w[0] *= 0.5
+    w[-1] *= 0.5
+
+    a = float(alpha)
+    if not np.isfinite(a) or a <= 0:
+        raise ValueError("alpha must be positive")
+
+    def g1(u):
+        return (1.0 / a) * psi_1d(0, (x - float(u)) / a)
+
+    cx = _project_1d_to_psi_basis(nmax=nmax, xgrid=x, w=w, g=g1(ux_hat), ridge=0.0)
+    cy = _project_1d_to_psi_basis(nmax=nmax, xgrid=x, w=w, g=g1(uy_hat), ridge=0.0)
+    cz = _project_1d_to_psi_basis(nmax=nmax, xgrid=x, w=w, g=g1(uz_hat), ridge=0.0)
+
+    c0 = float(cx[0] * cy[0] * cz[0])
+    if (not np.isfinite(c0)) or abs(c0) < 1e-300:
+        raise ValueError("projection produced invalid c0")
+
+    f000_target = float(density) / (sp.vth**3)
+    scale = f000_target / c0
+    return scale * build_separable_tensor_from_1d_coeffs(cx, cy, cz)
+
+
+def _thermal_temperature_from_invariants(inv: np.ndarray, sp: Species) -> float:
+    """
+    Thermal temperature inferred from invariants by subtracting drift kinetic energy.
+
+    Our invariant vector is inv = [n, Px, Py, Pz, W], where W is the total kinetic energy density:
+
+        W = ∫ (1/2) m |v|^2 f(v) dv.
+
+    For a drifting Maxwellian, W = (1/2) m n |u|^2 + (3/2) n T, so:
+
+        T = (2/3) * (W/n - (1/2) m |u|^2).
+    """
+    inv = np.asarray(inv, dtype=np.float64)
+    n = float(inv[0])
+    if not np.isfinite(n) or abs(n) < 1e-300:
+        return float("nan")
+    P = inv[1:4].astype(np.float64)
+    u = P / (float(sp.m) * n)
+    W = float(inv[4])
+    Wth_per_n = (W / n) - 0.5 * float(sp.m) * float(np.dot(u, u))
+    return (2.0 / 3.0) * Wth_per_n
+
+
+def build_maxwellian_tensor_from_invariants(
+    *,
+    nmax: int,
+    sp: Species,
+    inv: np.ndarray,
+    xlim: float = 10.0,
+    nx: int = 3001,
+) -> np.ndarray:
+    """
+    Build the truncated Hermite coefficient tensor for the (drifting, isotropic) Maxwellian with
+    the *same invariants* (n,P,W) as `inv`.
+
+    This is used to define the correct equilibrium background for the linearized operator:
+    linearized evolution should relax toward that Maxwellian, not necessarily toward the
+    reference equilibrium associated with `sp.vth`.
+
+    Implementation: we use a robust 1D projection on a dense grid (outside JIT).
+    """
+    inv = np.asarray(inv, dtype=np.float64)
+    n = float(inv[0])
+    P = inv[1:4].astype(np.float64)
+    if not np.isfinite(n) or abs(n) < 1e-300:
+        raise ValueError("invalid density in invariants")
+    u = P / (float(sp.m) * n)
+    ux_hat, uy_hat, uz_hat = (float(u[0] / sp.vth), float(u[1] / sp.vth), float(u[2] / sp.vth))
+
+    T = float(_thermal_temperature_from_invariants(inv, sp))
+    if not np.isfinite(T) or T <= 0:
+        # Fall back to the raw definition used elsewhere in the script; still yields a sensible scale
+        # when drift is essentially zero.
+        T = float(temperature_from_invariants(inv))
+        T = max(T, 1e-12)
+
+    Teq = _Teq_from_species(sp)
+    That = T / max(1e-300, Teq)
+    alpha = math.sqrt(max(That, 1e-12))
+
+    return build_maxwellian_like_tensor_via_projection(
+        nmax=nmax,
+        sp=sp,
+        ux_hat=ux_hat,
+        uy_hat=uy_hat,
+        uz_hat=uz_hat,
+        alpha=alpha,
+        density=n,
+        xlim=float(xlim),
+        nx=int(nx),
+    )
+
+
+def build_common_equilibrium_maxwellians_2sp_from_invariants(
+    *,
+    nmax: int,
+    spa: Species,
+    spb: Species,
+    inva: np.ndarray,
+    invb: np.ndarray,
+    xlim: float = 10.0,
+    nx: int = 3001,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """
+    Build (Ma, Mb) for the *common* two-species equilibrium Maxwellian implied by the total conserved
+    invariants of a cross-collision system:
+
+      - each species keeps its own density n_a, n_b,
+      - total momentum is shared via a common drift velocity u_eq,
+      - total thermal energy sets a common temperature T_eq.
+
+    Returns (faM_eq, fbM_eq, u_eq_phys, T_eq_phys).
+    """
+    inva = np.asarray(inva, dtype=np.float64)
+    invb = np.asarray(invb, dtype=np.float64)
+    na = float(inva[0])
+    nb = float(invb[0])
+    if (not np.isfinite(na)) or (not np.isfinite(nb)) or abs(na) < 1e-300 or abs(nb) < 1e-300:
+        raise ValueError("invalid species density in invariants")
+
+    Ptot = (inva[1:4] + invb[1:4]).astype(np.float64)
+    Wtot = float(inva[4] + invb[4])
+
+    Mtot = float(spa.m) * na + float(spb.m) * nb
+    u_eq = Ptot / max(1e-300, Mtot)
+    # Total thermal energy after removing drift kinetic energy of the common flow.
+    Wth_tot = Wtot - 0.5 * Mtot * float(np.dot(u_eq, u_eq))
+    T_eq = (2.0 / 3.0) * (Wth_tot / max(1e-300, (na + nb)))
+    if not np.isfinite(T_eq) or T_eq <= 0:
+        # Conservative fallback: use the average of raw per-species temperatures.
+        Ta = float(temperature_from_invariants(inva))
+        Tb = float(temperature_from_invariants(invb))
+        T_eq = max(0.5 * (Ta + Tb), 1e-12)
+
+    def _alpha_for(sp: Species) -> float:
+        Teq = _Teq_from_species(sp)
+        That = T_eq / max(1e-300, Teq)
+        return math.sqrt(max(That, 1e-12))
+
+    ua_hat = u_eq / float(spa.vth)
+    ub_hat = u_eq / float(spb.vth)
+
+    faM_eq = build_maxwellian_like_tensor_via_projection(
+        nmax=nmax,
+        sp=spa,
+        ux_hat=float(ua_hat[0]),
+        uy_hat=float(ua_hat[1]),
+        uz_hat=float(ua_hat[2]),
+        alpha=_alpha_for(spa),
+        density=na,
+        xlim=float(xlim),
+        nx=int(nx),
+    )
+    fbM_eq = build_maxwellian_like_tensor_via_projection(
+        nmax=nmax,
+        sp=spb,
+        ux_hat=float(ub_hat[0]),
+        uy_hat=float(ub_hat[1]),
+        uz_hat=float(ub_hat[2]),
+        alpha=_alpha_for(spb),
+        density=nb,
+        xlim=float(xlim),
+        nx=int(nx),
+    )
+    return faM_eq, fbM_eq, u_eq, float(T_eq)
+
+
 def build_ic_fig1_2sp(nmax: int, spa: Species, spb: Species, Teq: float, dT2: float) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Fig1 2-species IC (positivity-safe): one hotter, one at equilibrium, using a positive
-    polynomial distortion (exactly representable at low order) instead of attempting to
-    represent a much colder Maxwellian at small nmax.
+    Fig1 2-species IC (positivity-safe and strongly non-Maxwellian):
+      - one species is "hotter" than equilibrium (target Teq+|dT2|),
+      - both species are non-Maxwellian via a positive isotropic polynomial factor,
+      - densities are fixed by f000 = 1/vth^3.
 
-    Species densities are fixed by f000 = 1/vth^3, and the temperature perturbation
-    is applied to the hotter species via a positive quadratic factor:
+    Construction in physical space (normalized coordinates) is:
 
-        f_hot ∝ M(x,y,z) * (1 + a2 (x^2+y^2+z^2))
+        f(x,y,z) = Z * M0(x,y,z) * (1 + a2 r^2 + a4 r^4),   r^2=x^2+y^2+z^2,
 
-    which remains nonnegative and has controllable energy content with only modes up to n=2.
-
-    Note: At small truncation orders (e.g. nmax=4), representing an *extremely* cold Maxwellian
-    (Teq - dT2) in the fixed normalized coordinate can lead to Gibbs-like oscillations and
-    negative reconstructed f. This IC avoids that failure mode.
+    where M0 is the equilibrium Maxwellian (psi0 product) and Z rescales so that f[0,0,0]=1/vth^3.
+    For nmax>=4, quartic content (a4>0) is included to excite higher Hermite modes while keeping the
+    target shape globally nonnegative.
     """
     p = nmax + 1
     f000a = 1.0 / (spa.vth**3)
@@ -752,37 +1009,43 @@ def build_ic_fig1_2sp(nmax: int, spa: Species, spb: Species, Teq: float, dT2: fl
     if Thot <= float(Teq) + 1e-15:
         return faM, fbM
 
-    # Find a2 for the quadratic distortion to match target temperature.
-    def _temp_for_a2(a2: float, sp: Species, f000: float) -> float:
+    # Choose fixed quartic strengths (bigger => farther from Maxwellian but still positivity-safe).
+    a4_hot = 0.14 if nmax >= 4 else 0.0
+    a4_cool = 0.08 if nmax >= 4 else 0.0
+
+    # Helper: temperature for an isotropic (a2,a4) polynomial state.
+    def _temp_for_a2_a4(a2: float, a4: float, sp: Species, f000: float) -> float:
         f = _poly_ic_tensor_from_coeffs(
             f000_target=f000,
             a2x=a2,
             a2y=a2,
             a2z=a2,
-            a4x=0.0,
-            a4y=0.0,
-            a4z=0.0,
+            a4x=a4,
+            a4y=a4,
+            a4z=a4,
             nmax=nmax,
         )
         return float(temperature_from_invariants(invariants_from_tensor(f, sp)))
 
-    # Bracket on a2≥0 (this distortion always stays nonnegative).
+    # ----------------------------
+    # Hot species: tune a2>=0 to hit Thot (positivity is automatic for a2>=0,a4>=0).
+    # ----------------------------
     a2_lo = 0.0
     a2_hi = 5.0
     if heat_a:
-        T_lo = _temp_for_a2(a2_lo, spa, f000a)
-        T_hi = _temp_for_a2(a2_hi, spa, f000a)
+        T_lo = _temp_for_a2_a4(a2_lo, a4_hot, spa, f000a)
+        T_hi = _temp_for_a2_a4(a2_hi, a4_hot, spa, f000a)
     else:
-        T_lo = _temp_for_a2(a2_lo, spb, f000b)
-        T_hi = _temp_for_a2(a2_hi, spb, f000b)
+        T_lo = _temp_for_a2_a4(a2_lo, a4_hot, spb, f000b)
+        T_hi = _temp_for_a2_a4(a2_hi, a4_hot, spb, f000b)
     for _ in range(12):
         if T_hi >= Thot:
             break
         a2_hi *= 2.0
         if heat_a:
-            T_hi = _temp_for_a2(a2_hi, spa, f000a)
+            T_hi = _temp_for_a2_a4(a2_hi, a4_hot, spa, f000a)
         else:
-            T_hi = _temp_for_a2(a2_hi, spb, f000b)
+            T_hi = _temp_for_a2_a4(a2_hi, a4_hot, spb, f000b)
 
     if T_hi < Thot:
         # Saturate rather than fail.
@@ -793,9 +1056,9 @@ def build_ic_fig1_2sp(nmax: int, spa: Species, spb: Species, Teq: float, dT2: fl
         for _ in range(40):
             mid = 0.5 * (a2_lo + a2_hi)
             if heat_a:
-                T_mid = _temp_for_a2(mid, spa, f000a)
+                T_mid = _temp_for_a2_a4(mid, a4_hot, spa, f000a)
             else:
-                T_mid = _temp_for_a2(mid, spb, f000b)
+                T_mid = _temp_for_a2_a4(mid, a4_hot, spb, f000b)
             if T_mid >= Thot:
                 a2_star = mid
                 a2_hi = mid
@@ -807,14 +1070,75 @@ def build_ic_fig1_2sp(nmax: int, spa: Species, spb: Species, Teq: float, dT2: fl
         a2x=a2_star,
         a2y=a2_star,
         a2z=a2_star,
-        a4x=0.0,
-        a4y=0.0,
-        a4z=0.0,
+        a4x=a4_hot,
+        a4y=a4_hot,
+        a4z=a4_hot,
         nmax=nmax,
     )
+
+    # ----------------------------
+    # Cooler species: add non-Maxwellian quartic content but tune a2 (possibly negative) so T≈Teq.
+    # Keep global positivity by restricting a2 to satisfy 1 + a2 t + a4 t^2 >= 0 for all t>=0, i.e.
+    # a2^2 <= 4 a4 when a4>0.
+    # ----------------------------
+    def _tuned_cooler(sp: Species, f000: float) -> np.ndarray:
+        if a4_cool <= 0.0:
+            fM = np.zeros((p, p, p), dtype=np.float64)
+            fM[0, 0, 0] = f000
+            return fM
+
+        # Bracket a2 in [a2_lo, 0] where a2_lo is the global-positivity limit (slightly inside).
+        a2_lim = 0.98 * math.sqrt(max(0.0, 4.0 * a4_cool))
+        a2_lo = -a2_lim
+        a2_hi = 0.0
+        T_lo = _temp_for_a2_a4(a2_lo, a4_cool, sp, f000)
+        T_hi = _temp_for_a2_a4(a2_hi, a4_cool, sp, f000)
+
+        # If Teq is outside the bracket, reduce a4 and fall back if needed.
+        a4 = float(a4_cool)
+        for _ in range(6):
+            if min(T_lo, T_hi) <= float(Teq) <= max(T_lo, T_hi):
+                break
+            a4 *= 0.5
+            if a4 < 1e-10:
+                fM = np.zeros((p, p, p), dtype=np.float64)
+                fM[0, 0, 0] = f000
+                return fM
+            a2_lim = 0.98 * math.sqrt(max(0.0, 4.0 * a4))
+            a2_lo = -a2_lim
+            T_lo = _temp_for_a2_a4(a2_lo, a4, sp, f000)
+            T_hi = _temp_for_a2_a4(0.0, a4, sp, f000)
+
+        # Bisection to solve T(a2)=Teq on the bracket.
+        lo, hi = float(a2_lo), 0.0
+        a2_star = 0.0
+        for _ in range(50):
+            mid = 0.5 * (lo + hi)
+            T_mid = _temp_for_a2_a4(mid, a4, sp, f000)
+            if (T_mid >= float(Teq)) == (T_hi >= float(Teq)):
+                hi = mid
+            else:
+                lo = mid
+            a2_star = mid
+            if abs(hi - lo) < 1e-10:
+                break
+
+        return _poly_ic_tensor_from_coeffs(
+            f000_target=f000,
+            a2x=a2_star,
+            a2y=a2_star,
+            a2z=a2_star,
+            a4x=a4,
+            a4y=a4,
+            a4z=a4,
+            nmax=nmax,
+        )
+
+    f_cool = _tuned_cooler(spb if heat_a else spa, f000b if heat_a else f000a)
+
     if heat_a:
-        return f_hot, fbM
-    return faM, f_hot
+        return f_hot, f_cool
+    return f_cool, f_hot
 
 
 def reconstruct_plane_vx_vy_tensor(f: np.ndarray, nmax: int, xgrid: np.ndarray, ygrid: np.ndarray) -> np.ndarray:
@@ -834,7 +1158,7 @@ def _min_f_checks_tensor(f: np.ndarray, nmax: int, xlim: float = 6.0, nx: int = 
       - min on the 1D slice f(vx,0,0) over vx in [-xlim,xlim]
       - min on the 2D plane f(vx,vy,0) over vx,vy in [-xlim,xlim]
 
-    These checks are used only for Fig2 IC construction / reporting (outside jit).
+    These checks are used only for IC construction / reporting (outside jit).
     """
     x = np.linspace(-xlim, xlim, nx, dtype=np.float64)
     s = reconstruct_slice_vx_tensor(f, nmax=nmax, xgrid=x)
@@ -957,40 +1281,6 @@ def _poly_ic_tensor_from_coeffs(
         raise ValueError("constructed IC has invalid f000")
     f = (float(f000_target) / f000) * f
     return f
-
-
-def build_ic_fig2_1sp(nmax: int, sp: Species, amp1: float, strength: float = 1.0) -> ICPositivityInfo:
-    """
-    Fig2 1-species IC: a strongly non-Maxwellian but nonnegative distribution at t=0,
-    built as a Maxwellian times a positive even polynomial (up to x^4,y^4,z^4).
-
-    Note: For large anisotropies / temperature perturbations, a low-nmax truncated
-    Hermite expansion can easily produce small negative oscillations. This IC is
-    designed to remain >=0 on the diagnostic grids used by the script.
-    """
-    s = float(strength)
-    a = float(amp1)
-    # Larger `strength` => more higher-order content.
-    base2 = 0.22 * s
-    base4 = 0.10 * s if nmax >= 4 else 0.0
-    a2x = base2 * (1.0 + 0.9 * a)
-    a2y = base2 * (1.0 - 0.4 * a)
-    a2z = base2 * (1.0 - 0.4 * a)
-    a4x = base4 * (1.0 + 0.9 * a)
-    a4y = base4 * (1.0 - 0.4 * a)
-    a4z = base4 * (1.0 - 0.4 * a)
-    f = _poly_ic_tensor_from_coeffs(
-        f000_target=1.0 / (sp.vth**3),
-        a2x=a2x,
-        a2y=a2y,
-        a2z=a2z,
-        a4x=a4x,
-        a4y=a4y,
-        a4z=a4z,
-        nmax=nmax,
-    )
-    ms, mp = _min_f_checks_tensor(f, nmax=nmax, xlim=6.0, nx=161)
-    return ICPositivityInfo(f=f, gamma=1.0, min_slice=ms, min_plane=mp)
 
 
 def build_ic_fig2_2sp(
@@ -1294,17 +1584,21 @@ def build_jax_functions(T: ModelTablesNP):
         "M_buildS": jnp.asarray(T.M_buildS, dtype=jnp.float64),
     }
 
-    def apply_kronecker_3_jax(Mx, My, Mz, f):
-        tmp = jnp.tensordot(Mx, f, axes=(1, 0))  # (kx, py, pz)
-        tmp = jnp.tensordot(My, tmp, axes=(1, 1))  # (ky, kx, pz)
-        tmp = jnp.transpose(tmp, (1, 0, 2))  # (kx, ky, pz)
-        out = jnp.tensordot(Mz, tmp, axes=(1, 2))  # (kz, kx, ky)
-        return jnp.transpose(out, (1, 2, 0))
+    # Precompute sqrt tables (avoid per-call recomputation + helps XLA hoist constants).
+    sqrt_p = jnp.sqrt(jnp.arange(Tj["p"], dtype=jnp.float64))
+    sqrt_p_ext = jnp.sqrt(jnp.arange(Tj["p_ext"], dtype=jnp.float64))
 
     def build_S_jax(fb):
         fb = jnp.asarray(fb, dtype=jnp.float64)
         p_kp = Tj["p_kp"]
         p = Tj["p"]
+
+        def apply_kronecker_3_jax(Mx, My, Mz, f):
+            tmp = jnp.tensordot(Mx, f, axes=(1, 0))  # (kx, py, pz)
+            tmp = jnp.tensordot(My, tmp, axes=(1, 1))  # (ky, kx, pz)
+            tmp = jnp.transpose(tmp, (1, 0, 2))  # (kx, ky, pz)
+            out = jnp.tensordot(Mz, tmp, axes=(1, 2))  # (kz, kx, ky)
+            return jnp.transpose(out, (1, 2, 0))
 
         # Mq: (3,3,4,3,p_kp,p). Flatten (i,j,term) => B=36 to avoid Python loops in jit.
         def terms_for_q(Mq):
@@ -1324,14 +1618,13 @@ def build_jax_functions(T: ModelTablesNP):
 
     def shift_mul_sqrt_jax(fa_ext, j: int):
         p_ext = Tj["p_ext"]
-        sqrt_m = jnp.sqrt(jnp.arange(p_ext, dtype=jnp.float64))
         g = jnp.zeros_like(fa_ext)
         if j == 0:
-            g = g.at[1:, :, :].set(sqrt_m[1:, None, None] * fa_ext[:-1, :, :])
+            g = g.at[1:, :, :].set(sqrt_p_ext[1:, None, None] * fa_ext[:-1, :, :])
         elif j == 1:
-            g = g.at[:, 1:, :].set(sqrt_m[None, 1:, None] * fa_ext[:, :-1, :])
+            g = g.at[:, 1:, :].set(sqrt_p_ext[None, 1:, None] * fa_ext[:, :-1, :])
         else:
-            g = g.at[:, :, 1:].set(sqrt_m[None, None, 1:] * fa_ext[:, :, :-1])
+            g = g.at[:, :, 1:].set(sqrt_p_ext[None, None, 1:] * fa_ext[:, :, :-1])
         return g
 
     def mpo_dot_all_n_jax(g, S, Px, Py, Pz):
@@ -1363,17 +1656,16 @@ def build_jax_functions(T: ModelTablesNP):
         Pz = Px
 
         rhs = jnp.zeros((p, p, p), dtype=jnp.float64)
-        sqrt_k = jnp.sqrt(jnp.arange(p, dtype=jnp.float64))
 
         def add_shifted_i(rhs_acc, h, i: int, scale):
             if i == 0:
-                return rhs_acc.at[1:, :, :].add(scale * (sqrt_k[1:, None, None] * h[:-1, :, :]))
+                return rhs_acc.at[1:, :, :].add(scale * (sqrt_p[1:, None, None] * h[:-1, :, :]))
             if i == 1:
-                return rhs_acc.at[:, 1:, :].add(scale * (sqrt_k[None, 1:, None] * h[:, :-1, :]))
-            return rhs_acc.at[:, :, 1:].add(scale * (sqrt_k[None, None, 1:] * h[:, :, :-1]))
+                return rhs_acc.at[:, 1:, :].add(scale * (sqrt_p[None, 1:, None] * h[:, :-1, :]))
+            return rhs_acc.at[:, :, 1:].add(scale * (sqrt_p[None, None, 1:] * h[:, :, :-1]))
 
         # Compute all h1_{ij} and h2_{ij} with batching to reduce the number of large einsums.
-        # h1 uses g_j (depends on j) and S1[:,j] batched over i (3 at once).
+        # h1 depends on (i,j) through S1[i,j] and on j through the shifted tensor g_j.
         g_stack = jnp.stack([shift_mul_sqrt_jax(fa_ext, j=j) for j in range(3)], axis=0)  # (3,p_ext,p_ext,p_ext)
 
         h1_list = []
@@ -2586,6 +2878,15 @@ def run_tests(args) -> None:
     """
     Opt-in internal verification + benchmarking suite.
     Writes plots and CSV/JSON summaries to tests_landau_hermite/run_YYYYmmdd_HHMMSS/.
+
+    Design philosophy:
+      - Prefer structural properties of the Landau operator that are baseline-independent:
+        Maxwellian fixed points, conservation laws, and Lyapunov/monotonicity diagnostics.
+      - For "linearized" evolution, use the correct quadratic free energy (2nd variation of entropy)
+        rather than KL to a time-dependent Maxwellian.
+      - For properties that are exact only in the infinite-dimensional setting (e.g. Galilean
+        invariance / drifted Maxwellians), test *convergence with nmax* rather than exact zeros at
+        fixed truncation.
     """
     out_root = Path(str(args.tests_outdir))
     out_root.mkdir(parents=True, exist_ok=True)
@@ -2633,6 +2934,15 @@ def run_tests(args) -> None:
     nmax_list = sorted(set(int(x) for x in nmax_list))
 
     Q = int(args.Q)
+    if not bool(getattr(args, "no_auto_Q", False)):
+        nmax_max = max(nmax_list)
+        if nmax_max <= 5:
+            Q_rec = 8
+        else:
+            Q_rec = int(min(24, max(8, 2 * nmax_max)))
+        if Q < Q_rec:
+            print(f"[tests] auto_Q: overriding Q={Q} -> Q={Q_rec} (recommended for max nmax={nmax_max})", flush=True)
+            Q = Q_rec
     maxK = int(args.maxK)
     reps_rhs = int(args.tests_reps_rhs)
     reps_bench = int(args.tests_reps_bench)
@@ -2661,6 +2971,7 @@ def run_tests(args) -> None:
     maxw_res_11 = []
     maxw_res_2 = []
     physics_rows: list[dict] = []
+    lin_op_rows: list[dict] = []
 
     # For JAX timing
     jax, jnp = _maybe_import_jax("jax")
@@ -2839,6 +3150,13 @@ def run_tests(args) -> None:
         else:
             fd_best = float("nan")
 
+        # Linearized operator backend check: JAX JVP vs NumPy explicit linearization (small nmax only).
+        lin_backend_relerr = float("nan")
+        if do_numpy and (jax is not None and jnp is not None):
+            rhs11_jit_tmp = build_jax_functions(T11)
+            L_jax = make_linearized_rhs_1sp_jax(rhs11_jit_tmp, jnp.asarray(fM1))
+            lin_backend_relerr = float(_rel_l2(np.array(L_jax(jnp.asarray(h))), Lh_np))
+
         # Short integration compare (NumPy-vs-JAX) only when NumPy is enabled for this nmax.
         jax_int_s = float("nan")
         numpy_int_s = float("nan")
@@ -2932,6 +3250,7 @@ def run_tests(args) -> None:
                 "cons_rate_P": cons_rate_P,
                 "cons_rate_W": cons_rate_W,
                 "lin_fd_best_relerr": fd_best,
+                "lin_backend_relerr": lin_backend_relerr,
                 "numpy_integrate_s": numpy_int_s,
                 "jax_integrate_s": jax_int_s,
                 "ok_maxwell": ok_maxw,
@@ -3085,6 +3404,125 @@ def run_tests(args) -> None:
         )
         print(f"[tests] physics: min slice f(vx,0,0) nl={min_f1:.2e}  lin={min_f1_lin:.2e}", flush=True)
 
+        # Additional physics tests anchored in the Landau literature:
+        #  - Maxwellians with drift (common velocity) and/or temperature are equilibria.
+        #  - Linearized operator about a Maxwellian is (formally) self-adjoint and negative semidefinite
+        #    in the weighted inner product ⟨a,b⟩_M = ∫ a b / M dv (restricted away from the nullspace).
+        try:
+            # Galilean invariance is exact in the continuous equation, but a fixed truncated Hermite basis
+            # does *not* represent drifted Maxwellians exactly. We therefore test *convergence* in nmax
+            # for a small drift u: residual should decrease as nmax increases.
+            u_drift = 0.15
+            drift_res = []
+            drift_nmax = []
+            for nmx in sorted(set(int(x) for x in nmax_list)):
+                fU = build_maxwellian_like_tensor_via_projection(nmax=nmx, sp=sp1, ux_hat=float(u_drift), alpha=1.0, density=1.0, xlim=10.0, nx=2001)
+                TT = build_model_tables_np(nmax=nmx, Q=Q_phys, maxK=maxK_phys, ma=sp1.m, mb=sp1.m, vtha=sp1.vth, vthb=sp1.vth, nu_ab=nu_ab)
+                rhs11_tmp = build_jax_functions(TT)
+                rU = float(np.linalg.norm(np.array(rhs11_tmp(jnp.asarray(fU), jnp.asarray(fU))).ravel()) / max(1e-300, np.linalg.norm(fU.ravel())))
+                drift_nmax.append(int(nmx))
+                drift_res.append(float(rU))
+            drift_nmax = np.array(drift_nmax, dtype=int)
+            drift_res = np.array(drift_res, dtype=np.float64)
+
+            # Cross-species equilibrium: densities may differ but Maxwellians are exact fixed points.
+            # (Here "Maxwellian" means the equilibrium Gaussian in each species' normalized coordinate.)
+            faMd = np.zeros_like(faM); faMd[0, 0, 0] = 1.7 * faM[0, 0, 0]
+            fbMd = np.zeros_like(fbM); fbMd[0, 0, 0] = 0.4 * fbM[0, 0, 0]
+            rab = float(np.linalg.norm(np.array(rhsabp(jnp.asarray(faMd), jnp.asarray(fbMd))).ravel()) / max(1e-300, np.linalg.norm(faMd.ravel())))
+            rba = float(np.linalg.norm(np.array(rhsbap(jnp.asarray(fbMd), jnp.asarray(faMd))).ravel()) / max(1e-300, np.linalg.norm(fbMd.ravel())))
+
+            # Weighted inner-product checks for the linearized operator (1sp).
+            # Use the fixed background Maxwellian fM1 (u=0, Tvar=0.5 in these normalized coords).
+            def _Mxyz_from_fM(fM, sp: Species, grid: EntropyGrid):
+                fM000 = float(fM[0, 0, 0])
+                Tx_hat, Ty_hat, Tz_hat = temperature_components_hat_from_tensor(fM)
+                Tvar = float((Tx_hat + Ty_hat + Tz_hat) / 3.0)
+                r2 = grid.X**2 + grid.Y**2 + grid.Z**2
+                pref = fM000 / ((2.0 * math.pi * Tvar) ** 1.5)
+                return pref * np.exp(-0.5 * r2 / max(Tvar, 1e-12))
+
+            Mxyz = _Mxyz_from_fM(fM1, sp1, grid_phys)
+            dx3 = grid_phys.dx**3
+            rng2 = np.random.default_rng(1234)
+            h1 = 1e-3 * rng2.standard_normal((p, p, p))
+            h2 = 1e-3 * rng2.standard_normal((p, p, p))
+            # Remove the nullspace components (density, momentum, energy) to avoid degeneracy.
+            for arr in (h1, h2):
+                arr[0, 0, 0] = 0.0
+                if nmax_phys >= 1:
+                    arr[1, 0, 0] = 0.0; arr[0, 1, 0] = 0.0; arr[0, 0, 1] = 0.0
+                if nmax_phys >= 2:
+                    arr[2, 0, 0] = 0.0; arr[0, 2, 0] = 0.0; arr[0, 0, 2] = 0.0
+
+            Lh1 = np.array(L_apply(jnp.asarray(h1)))
+            Lh2 = np.array(L_apply(jnp.asarray(h2)))
+            h1xyz = np.einsum("nmp,nx,my,pz->xyz", h1, grid_phys.psi, grid_phys.psi, grid_phys.psi, optimize=True)
+            h2xyz = np.einsum("nmp,nx,my,pz->xyz", h2, grid_phys.psi, grid_phys.psi, grid_phys.psi, optimize=True)
+            Lh1xyz = np.einsum("nmp,nx,my,pz->xyz", Lh1, grid_phys.psi, grid_phys.psi, grid_phys.psi, optimize=True)
+            Lh2xyz = np.einsum("nmp,nx,my,pz->xyz", Lh2, grid_phys.psi, grid_phys.psi, grid_phys.psi, optimize=True)
+
+            def ip(a, b):
+                return float(np.sum(a * b / np.maximum(Mxyz, 1e-300)) * dx3)
+
+            sym_def = abs(ip(h1xyz, Lh2xyz) - ip(Lh1xyz, h2xyz)) / max(1e-300, abs(ip(h1xyz, h1xyz)) + abs(ip(h2xyz, h2xyz)))
+            diss1 = ip(h1xyz, Lh1xyz)
+            diss2 = ip(h2xyz, Lh2xyz)
+
+            physics_rows[-1].update(
+                {
+                    "drift_convergence_u": float(u_drift),
+                    "drift_convergence_nmax": drift_nmax.tolist(),
+                    "drift_convergence_relres": drift_res.tolist(),
+                    "cross_equilibrium_density_relres_ab": rab,
+                    "cross_equilibrium_density_relres_ba": rba,
+                    "lin_selfadjoint_sym_def": float(sym_def),
+                    "lin_weighted_diss_h1": float(diss1),
+                    "lin_weighted_diss_h2": float(diss2),
+                }
+            )
+
+            # Plots.
+            import matplotlib.pyplot as plt
+
+            fig = plt.figure(figsize=(6.2, 3.4), dpi=180)
+            ax = fig.add_subplot(111)
+            ax.set_title(f"Drifted Maxwellian convergence (u={u_drift}, 1sp)")
+            ax.set_xlabel("nmax")
+            ax.set_ylabel(r"$\Vert RHS(M_u)\Vert/\Vert M_u\Vert$")
+            ax.set_yscale("log")
+            ax.grid(True, which="both", alpha=0.3)
+            ax.plot(drift_nmax, drift_res, marker="o")
+            fig.savefig(out_dir / "drifted_maxwellian_convergence.png", dpi=220, bbox_inches="tight")
+            plt.close(fig)
+
+            fig = plt.figure(figsize=(6.2, 3.4), dpi=180)
+            ax = fig.add_subplot(111)
+            ax.set_title(f"Linearized operator: symmetry + dissipation (nmax={nmax_phys})")
+            ax.set_xlabel("metric")
+            ax.set_ylabel("value")
+            ax.set_yscale("symlog", linthresh=1e-18)
+            ax.grid(True, which="both", alpha=0.3)
+            ax.bar(["sym_def", "<h1,Lh1>_M", "<h2,Lh2>_M"], [sym_def, diss1, diss2])
+            fig.savefig(out_dir / "linearized_symmetry_dissipation.png", dpi=220, bbox_inches="tight")
+            plt.close(fig)
+
+            fig = plt.figure(figsize=(6.2, 2.8), dpi=180)
+            ax = fig.add_subplot(111)
+            ax.set_title(f"Cross Maxwellian equilibrium (densities) residuals (nmax={nmax_phys})")
+            ax.set_ylabel("relative residual")
+            ax.set_yscale("log")
+            ax.grid(True, which="both", alpha=0.3)
+            ax.bar(["ab", "ba"], [rab, rba])
+            fig.savefig(out_dir / "cross_equilibrium_residuals.png", dpi=220, bbox_inches="tight")
+            plt.close(fig)
+
+            print(f"[tests] drift convergence (u={u_drift}): {list(zip(drift_nmax.tolist(), drift_res.tolist()))}", flush=True)
+            print(f"[tests] cross equilibrium (densities) relres: ab={rab:.2e} ba={rba:.2e}", flush=True)
+            print(f"[tests] linearized symmetry defect={sym_def:.2e}  diss(h1)={diss1:.2e} diss(h2)={diss2:.2e}", flush=True)
+        except Exception as e:
+            print(f"[tests] extra physics tests failed: {type(e).__name__}: {e}", flush=True)
+
     # Convergence sweeps in (Q, maxK) for Maxwellian residuals at representative nmax.
     Q_sweep = _parse_int_list(str(getattr(args, 'tests_Q_sweep', '')))
     maxK_sweep = _parse_int_list(str(getattr(args, 'tests_maxK_sweep', '')))
@@ -3167,13 +3605,23 @@ def run_tests(args) -> None:
         lines.append("\\centering")
         lines.append("\\caption{Test sweep summary (JAX backend). Reported times are steady-state. Conservation rates are for cross-collision totals $d/dt\\,(n,P,W)$ evaluated on a random near-Maxwellian state.}")
         lines.append("\\label{tab:tests_sweep}")
-        lines.append("\\begin{tabular}{r r r r r r r}")
+        lines.append("\\begin{tabular}{r r r r r r r r}")
         lines.append("\\toprule")
-        lines.append("$n_{\\max}$ & $N=(n_{\\max}{+}1)^3$ & $t_{\\mathrm{self}}$ [ms] & $t_{\\mathrm{cross}}$ [ms] & $t_{\\mathrm{int}}$ [s] & $\\|RHS(M)\\|/\\|M\\|$ (cross) & $|dW_{\\rm tot}/dt|$ \\\\")
+        lines.append("$n_{\\max}$ & $N=(n_{\\max}{+}1)^3$ & $t_{\\mathrm{self}}$ [ms] & $t_{\\mathrm{cross}}$ [ms] & $t_{\\mathrm{int}}$ [s] & speedup$_{\\mathrm{self}}$ & speedup$_{\\mathrm{cross}}$ & $\\|RHS(M)\\|/\\|M\\|$ (cross) \\\\")
         lines.append("\\midrule")
         for r in rows:
+            # speedup vs NumPy (only available when NumPy was run for this nmax)
+            sp_self = "--"
+            sp_cross = "--"
+            try:
+                if np.isfinite(float(r.get("numpy_rhs_self_s", float("nan")))) and np.isfinite(float(r.get("jax_rhs_self_s", float("nan")))):
+                    sp_self = f"${float(r['numpy_rhs_self_s'])/max(1e-300,float(r['jax_rhs_self_s'])):.1f}\\times$"
+                if np.isfinite(float(r.get("numpy_rhs_cross_s", float('nan')))) and np.isfinite(float(r.get("jax_rhs_cross_s", float('nan')))):
+                    sp_cross = f"${float(r['numpy_rhs_cross_s'])/max(1e-300,float(r['jax_rhs_cross_s'])):.1f}\\times$"
+            except Exception:
+                pass
             lines.append(
-                f"{int(r['nmax'])} & {int(r['N'])} & {_as_ms(r['jax_rhs_self_s']):.3f} & {_as_ms(r['jax_rhs_cross_s']):.3f} & {float(r['jax_integrate_s']):.3f} & {float(r['maxwell_relres_cross']):.2e} & {float(r['cons_rate_W']):.2e} \\\\"
+                f"{int(r['nmax'])} & {int(r['N'])} & {_as_ms(r['jax_rhs_self_s']):.3f} & {_as_ms(r['jax_rhs_cross_s']):.3f} & {float(r['jax_integrate_s']):.3f} & {sp_self} & {sp_cross} & {float(r['maxwell_relres_cross']):.2e} \\\\"
             )
         lines.append("\\bottomrule")
         lines.append("\\end{tabular}")
@@ -3246,6 +3694,26 @@ def run_tests(args) -> None:
     ax.legend(frameon=False, loc="best")
     _save(fig, "runtime_rhs_scaling")
 
+    # Speedup plot (NumPy vs JAX), for the nmax where NumPy is enabled.
+    try:
+        fig = plt.figure(figsize=(6.2, 3.4), dpi=180)
+        ax = fig.add_subplot(111)
+        ax.set_title("Speedup: JAX vs NumPy (steady-state)")
+        ax.set_xlabel("nmax")
+        ax.set_ylabel("speedup (NumPy time / JAX time)")
+        ax.set_yscale("log")
+        ax.grid(True, which="both", alpha=0.3)
+        sp_self = numpy_self / np.maximum(1e-300, jax_self)
+        sp_cross = numpy_cross / np.maximum(1e-300, jax_cross)
+        m_sp_self = np.isfinite(sp_self)
+        m_sp_cross = np.isfinite(sp_cross)
+        ax.plot(nvals[m_sp_self], sp_self[m_sp_self], marker="o", label="self RHS")
+        ax.plot(nvals[m_sp_cross], sp_cross[m_sp_cross], marker="s", label="cross RHS")
+        ax.legend(frameon=False, loc="best")
+        _save(fig, "speedup_numpy_vs_jax")
+    except Exception:
+        pass
+
     fig = plt.figure(figsize=(6.2, 3.4), dpi=180)
     ax = fig.add_subplot(111)
     ax.set_title("JAX compile scaling (first call)")
@@ -3269,6 +3737,19 @@ def run_tests(args) -> None:
     m_fd = np.isfinite(y_fd)
     ax.plot(nvals[m_fd], y_fd[m_fd], marker="o")
     _save(fig, "linearization_fd_best")
+
+    # Linearized operator backend consistency (NumPy explicit linearization vs JAX JVP), where available.
+    fig = plt.figure(figsize=(6.2, 3.4), dpi=180)
+    ax = fig.add_subplot(111)
+    ax.set_title("Linearized operator: NumPy vs JAX consistency")
+    ax.set_xlabel("nmax")
+    ax.set_ylabel("relative L2 error")
+    ax.set_yscale("log")
+    ax.grid(True, which="both", alpha=0.3)
+    y_lin_b = np.array([r.get("lin_backend_relerr", float("nan")) for r in rows], dtype=float)
+    m_lin_b = np.isfinite(y_lin_b)
+    ax.plot(nvals[m_lin_b], y_lin_b[m_lin_b], marker="o")
+    _save(fig, "linearized_backend_consistency")
 
     fig = plt.figure(figsize=(6.2, 3.4), dpi=180)
     ax = fig.add_subplot(111)
@@ -3420,6 +3901,7 @@ def main() -> None:
     ap.add_argument("--backend", choices=["jax", "numpy"], default="jax")
     ap.add_argument("--nmax", type=int, default=4)
     ap.add_argument("--Q", type=int, default=8)
+    ap.add_argument("--no_auto_Q", action="store_true", help="Disable heuristic auto-selection of Q for larger nmax (advanced).")
     ap.add_argument("--maxK", type=int, default=256)
     ap.add_argument("--integrator", choices=["rk2", "ssprk3", "rk4"], default="ssprk3")
     ap.add_argument("--linearized", choices=["on", "off"], default="on", help="Include linearized (Maxwellian-background) overlays.")
@@ -3471,6 +3953,19 @@ def main() -> None:
     nmax = int(args.nmax)
     p = nmax + 1
     quiet = bool(args.quiet)
+
+    # For larger nmax, the SOE quadrature needs more nodes to keep the Maxwellian fixed point at roundoff.
+    # Empirically, Q≈2*nmax (capped) is a safe default for nmax≳6; users can override by specifying --Q
+    # and disabling auto-selection with --no_auto_Q.
+    if not bool(getattr(args, "no_auto_Q", False)):
+        Q_user = int(args.Q)
+        if nmax <= 5:
+            Q_rec = 8
+        else:
+            Q_rec = int(min(24, max(8, 2 * nmax)))
+        if Q_user < Q_rec:
+            print(f"[cfg] auto_Q: overriding Q={Q_user} -> Q={Q_rec} (recommended for nmax={nmax})", flush=True)
+            args.Q = Q_rec
 
     if args.outprefix is not None:
         args.outprefix_fig1 = str(args.outprefix)
@@ -3660,27 +4155,20 @@ def main() -> None:
         rhs1_np = None
         rhs_pair_np = None
 
-    # Linearized operator machinery about Maxwellians (optional; reused for both figures).
+    # Linearized operator machinery (optional).
+    #
+    # IMPORTANT: the correct background Maxwellians for linearization depend on the invariants of the
+    # particular IC. We therefore *build the equilibrium backgrounds per case* inside `run_case`
+    # (instead of reusing the reference equilibrium with only f[0,0,0] nonzero).
     do_linearized = (str(args.linearized).lower() == "on")
     lin_method = str(args.linearized_method)
-    L1_apply_np = None
-    J_apply_np = None
-    L1_apply_j = None
-    J_apply_j = None
-    L1_mat = None
-    J_mat = None
     expm_multiply = None
 
     if do_linearized:
         if lin_method == "tangent":
-            if backend == "jax":
-                jax, jnp = _maybe_import_jax("jax")
-                assert jax is not None and jnp is not None and rhs11_jit is not None and rhsab_jit is not None and rhsba_jit is not None
-                L1_apply_j = make_linearized_rhs_1sp_jax(rhs11_jit, fM1)
-                J_apply_j = make_linearized_rhs_2sp_jax(rhsab_jit, rhsba_jit, faM, fbM)
-            else:
-                L1_apply_np = make_linearized_rhs_1sp_numpy(T11, fM1, use_tt=use_tt, tt_tol=tt_tol, tt_rmax=tt_rmax)
-                J_apply_np = make_linearized_rhs_2sp_numpy(Tab, Tba, faM, fbM, use_tt=use_tt, tt_tol=tt_tol, tt_rmax=tt_rmax)
+            # Matrix-free tangent-linear evolution (recommended). The per-case background and the
+            # resulting linear operator are built inside `run_case`.
+            pass
         elif lin_method == "matrix":
             try:
                 from scipy.sparse.linalg import expm_multiply as _expm_multiply  # type: ignore
@@ -3692,35 +4180,6 @@ def main() -> None:
                 def expm_multiply(A, v, start: float, stop: float, num: int, endpoint: bool = True):
                     ts = np.linspace(start, stop, num, endpoint=endpoint)
                     return np.stack([expm(A * t) @ v for t in ts], axis=0)
-
-            if backend == "jax":
-                jax, jnp = _maybe_import_jax("jax")
-                assert jax is not None and jnp is not None and rhs11_jit is not None and rhsab_jit is not None and rhsba_jit is not None
-                vprint("[lin] building L1,J via jacfwd (matrix method) ...")
-                fM_flat = jnp.asarray(fM1.reshape(-1), dtype=jnp.float64)
-                faM_flat = jnp.asarray(faM.reshape(-1), dtype=jnp.float64)
-                fbM_flat = jnp.asarray(fbM.reshape(-1), dtype=jnp.float64)
-                N = p**3
-
-                def rhs_self_flat(x_flat):
-                    x = x_flat.reshape(p, p, p)
-                    y = rhs11_jit(x, x)
-                    return y.reshape(-1)
-
-                def rhs_pair_flat(y_flat):
-                    ya = y_flat[:N].reshape(p, p, p)
-                    yb = y_flat[N:].reshape(p, p, p)
-                    dya = rhsab_jit(ya, yb)
-                    dyb = rhsba_jit(yb, ya)
-                    return jnp.concatenate([dya.reshape(-1), dyb.reshape(-1)], axis=0)
-
-                L1_mat = np.array(jax.jacfwd(rhs_self_flat)(fM_flat))
-                y0_flat = jnp.concatenate([faM_flat, fbM_flat], axis=0)
-                J_mat = np.array(jax.jacfwd(rhs_pair_flat)(y0_flat))
-            else:
-                vprint("[lin] building L1,J via NumPy dense assembly (matrix method) ...")
-                L1_mat = linearized_matrix_1sp_fast(T11, fM1, use_tt=use_tt, tt_tol=tt_tol, tt_rmax=tt_rmax)
-                J_mat = linearized_matrix_2sp_fast(Tab, Tba, faM, fbM, use_tt=use_tt, tt_tol=tt_tol, tt_rmax=tt_rmax)
         else:
             raise ValueError(args.linearized_method)
 
@@ -3767,17 +4226,39 @@ def main() -> None:
         f_hist1_lin = None
         fa_hist_lin = None
         fb_hist_lin = None
+        fM1_eq_case = None
+        faM_eq_case = None
+        fbM_eq_case = None
         if do_linearized:
             vprint(f"[lin:{tag}] computing linearized histories (method={lin_method}) ...")
             t_lin0 = time.perf_counter()
 
+            # Build the *equilibrium* Maxwellians matching the conserved invariants at t=0. This ensures
+            # that the linearized evolution relaxes toward the correct Maxwellian and that the
+            # nullspace (collision invariants) does not produce an artificial plateau in the quadratic
+            # free energy.
+            inv10 = invariants_from_tensor(f0_case, sp1)
+            inva0 = invariants_from_tensor(fa0_case, spa)
+            invb0 = invariants_from_tensor(fb0_case, spb)
+            fM1_eq_case = build_maxwellian_tensor_from_invariants(nmax=nmax, sp=sp1, inv=inv10, xlim=10.0, nx=3001)
+            faM_eq_case, fbM_eq_case, u_eq, T_eq = build_common_equilibrium_maxwellians_2sp_from_invariants(
+                nmax=nmax, spa=spa, spb=spb, inva=inva0, invb=invb0, xlim=10.0, nx=3001
+            )
+            vprint(
+                f"[lin:{tag}] equilibrium backgrounds: 1sp T={_thermal_temperature_from_invariants(inv10, sp1):.4g}  "
+                f"2sp T_eq={T_eq:.4g}  u_eq=({u_eq[0]:.3g},{u_eq[1]:.3g},{u_eq[2]:.3g})"
+            )
+
             if lin_method == "tangent":
                 if backend == "jax":
                     jax, jnp = _maybe_import_jax("jax")
-                    assert jax is not None and jnp is not None and L1_apply_j is not None and J_apply_j is not None
-                    df0 = jnp.asarray(f0_case - fM1)
-                    dfa0 = jnp.asarray(fa0_case - faM)
-                    dfb0 = jnp.asarray(fb0_case - fbM)
+                    assert jax is not None and jnp is not None and rhs11_jit is not None and rhsab_jit is not None and rhsba_jit is not None
+                    assert fM1_eq_case is not None and faM_eq_case is not None and fbM_eq_case is not None
+                    L1_apply_j = make_linearized_rhs_1sp_jax(rhs11_jit, jnp.asarray(fM1_eq_case))
+                    J_apply_j = make_linearized_rhs_2sp_jax(rhsab_jit, rhsba_jit, jnp.asarray(faM_eq_case), jnp.asarray(fbM_eq_case))
+                    df0 = jnp.asarray(f0_case - fM1_eq_case)
+                    dfa0 = jnp.asarray(fa0_case - faM_eq_case)
+                    dfb0 = jnp.asarray(fb0_case - fbM_eq_case)
                     integrate_1sp_lin, integrate_2sp_lin = build_integrators_jax(lambda x: L1_apply_j(x), lambda xa, xb: J_apply_j(xa, xb), args.integrator)
                     integrate_1sp_lin = jax.jit(integrate_1sp_lin, static_argnums=(2,))
                     integrate_2sp_lin = jax.jit(integrate_2sp_lin, static_argnums=(3,))
@@ -3789,27 +4270,61 @@ def main() -> None:
                         dfa_hist_j, dfb_hist_j = integrate_2sp_lin(dfa0, dfb0, float(args.dt_2sp), steps_2)
                     jax.block_until_ready(df_hist1_j)
                     jax.block_until_ready(dfa_hist_j)
-                    f_hist1_lin = np.array(df_hist1_j) + fM1[None, ...]
-                    fa_hist_lin = np.array(dfa_hist_j) + faM[None, ...]
-                    fb_hist_lin = np.array(dfb_hist_j) + fbM[None, ...]
+                    f_hist1_lin = np.array(df_hist1_j) + fM1_eq_case[None, ...]
+                    fa_hist_lin = np.array(dfa_hist_j) + faM_eq_case[None, ...]
+                    fb_hist_lin = np.array(dfb_hist_j) + fbM_eq_case[None, ...]
                 else:
-                    assert L1_apply_np is not None and J_apply_np is not None
-                    df0 = f0_case - fM1
-                    dfa0 = fa0_case - faM
-                    dfb0 = fb0_case - fbM
+                    assert fM1_eq_case is not None and faM_eq_case is not None and fbM_eq_case is not None
+                    L1_apply_np = make_linearized_rhs_1sp_numpy(T11, fM1_eq_case, use_tt=use_tt, tt_tol=tt_tol, tt_rmax=tt_rmax)
+                    J_apply_np = make_linearized_rhs_2sp_numpy(Tab, Tba, faM_eq_case, fbM_eq_case, use_tt=use_tt, tt_tol=tt_tol, tt_rmax=tt_rmax)
+                    df0 = f0_case - fM1_eq_case
+                    dfa0 = fa0_case - faM_eq_case
+                    dfb0 = fb0_case - fbM_eq_case
                     df_hist1 = integrate_1sp_numpy(L1_apply_np, df0, float(args.dt_1sp), steps_1, args.integrator)
                     dfa_hist, dfb_hist = integrate_2sp_numpy(J_apply_np, dfa0, dfb0, float(args.dt_2sp), steps_2, args.integrator)
-                    f_hist1_lin = fM1[None, ...] + df_hist1
-                    fa_hist_lin = faM[None, ...] + dfa_hist
-                    fb_hist_lin = fbM[None, ...] + dfb_hist
+                    f_hist1_lin = fM1_eq_case[None, ...] + df_hist1
+                    fa_hist_lin = faM_eq_case[None, ...] + dfa_hist
+                    fb_hist_lin = fbM_eq_case[None, ...] + dfb_hist
             elif lin_method == "matrix":
-                assert L1_mat is not None and J_mat is not None and expm_multiply is not None
-                fM_vec = fM1.reshape(-1)
+                assert expm_multiply is not None
+                # Build dense matrices about the per-case equilibrium backgrounds.
+                assert fM1_eq_case is not None and faM_eq_case is not None and fbM_eq_case is not None
+                if backend == "jax":
+                    jax, jnp = _maybe_import_jax("jax")
+                    assert jax is not None and jnp is not None and rhs11_jit is not None and rhsab_jit is not None and rhsba_jit is not None
+                    vprint(f"[lin:{tag}] building dense matrices via jacfwd (may be slow) ...")
+                    fM_flat = jnp.asarray(fM1_eq_case.reshape(-1), dtype=jnp.float64)
+                    N = p**3
+                    faM_flat = jnp.asarray(faM_eq_case.reshape(-1), dtype=jnp.float64)
+                    fbM_flat = jnp.asarray(fbM_eq_case.reshape(-1), dtype=jnp.float64)
+
+                    def rhs_self_flat(x_flat):
+                        x = x_flat.reshape(p, p, p)
+                        y = rhs11_jit(x, x)
+                        return y.reshape(-1)
+
+                    def rhs_pair_flat(y_flat):
+                        ya = y_flat[:N].reshape(p, p, p)
+                        yb = y_flat[N:].reshape(p, p, p)
+                        dya = rhsab_jit(ya, yb)
+                        dyb = rhsba_jit(yb, ya)
+                        return jnp.concatenate([dya.reshape(-1), dyb.reshape(-1)], axis=0)
+
+                    L1_mat = np.array(jax.jacfwd(rhs_self_flat)(fM_flat))
+                    y0_flat = jnp.concatenate([faM_flat, fbM_flat], axis=0)
+                    J_mat = np.array(jax.jacfwd(rhs_pair_flat)(y0_flat))
+                else:
+                    vprint(f"[lin:{tag}] building dense matrices via NumPy assembly (may be slow) ...")
+                    L1_mat = linearized_matrix_1sp_fast(T11, fM1_eq_case, use_tt=use_tt, tt_tol=tt_tol, tt_rmax=tt_rmax)
+                    J_mat = linearized_matrix_2sp_fast(Tab, Tba, faM_eq_case, fbM_eq_case, use_tt=use_tt, tt_tol=tt_tol, tt_rmax=tt_rmax)
+
+                assert L1_mat is not None and J_mat is not None
+                fM_vec = fM1_eq_case.reshape(-1)
                 h0 = f0_case.reshape(-1) - fM_vec
                 Hlin = expm_multiply(L1_mat, h0, start=float(t1[0]), stop=float(t1[-1]), num=len(t1), endpoint=True)
                 f_hist1_lin = (fM_vec[None, :] + Hlin).reshape(len(t1), p, p, p)
-                y0 = np.concatenate([faM.reshape(-1), fbM.reshape(-1)], axis=0)
-                dy0 = np.concatenate([fa0_case.reshape(-1) - faM.reshape(-1), fb0_case.reshape(-1) - fbM.reshape(-1)], axis=0)
+                y0 = np.concatenate([faM_eq_case.reshape(-1), fbM_eq_case.reshape(-1)], axis=0)
+                dy0 = np.concatenate([fa0_case.reshape(-1) - faM_eq_case.reshape(-1), fb0_case.reshape(-1) - fbM_eq_case.reshape(-1)], axis=0)
                 Ylin = expm_multiply(J_mat, dy0, start=float(t2[0]), stop=float(t2[-1]), num=len(t2), endpoint=True)
                 Y = y0[None, :] + Ylin
                 N = p**3
@@ -3874,14 +4389,12 @@ def main() -> None:
         D2tot_ratio_lin = None
         if (f_hist1_lin is not None) and (fa_hist_lin is not None) and (fb_hist_lin is not None):
             # For linearized evolution, use a quadratic free-energy functional about the fixed Maxwellians.
-            F1l = np.array(
-                [linear_free_energy_grid_tensor_precomp(f_hist1_lin[i], fM1, sp1, grid) for i in range(len(t1))],
-                dtype=np.float64,
-            )
+            assert fM1_eq_case is not None and faM_eq_case is not None and fbM_eq_case is not None
+            F1l = np.array([linear_free_energy_grid_tensor_precomp(f_hist1_lin[i], fM1_eq_case, sp1, grid) for i in range(len(t1))], dtype=np.float64)
             F2l = np.array(
                 [
-                    linear_free_energy_grid_tensor_precomp(fa_hist_lin[i], faM, spa, grid)
-                    + linear_free_energy_grid_tensor_precomp(fb_hist_lin[i], fbM, spb, grid)
+                    linear_free_energy_grid_tensor_precomp(fa_hist_lin[i], faM_eq_case, spa, grid)
+                    + linear_free_energy_grid_tensor_precomp(fb_hist_lin[i], fbM_eq_case, spb, grid)
                     for i in range(len(t2))
                 ],
                 dtype=np.float64,
