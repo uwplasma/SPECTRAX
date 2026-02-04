@@ -1250,8 +1250,8 @@ def _poly_ic_tensor_from_coeffs(
       f(x,y,z) ∝ psi0(x)psi0(y)psi0(z) * (1 + a2x x^2 + a2y y^2 + a2z z^2 + a4x x^4 + a4y y^4 + a4z z^4)
 
     If the polynomial factor is positive for all (x,y,z), this distribution is
-    nonnegative everywhere at t=0. For the Fig2 defaults we choose parameters
-    that are empirically positive and verify via `_min_f_checks_tensor`.
+    nonnegative everywhere at t=0. The script verifies nonnegativity on diagnostic
+    grids via `_min_f_checks_tensor` for reporting/guardrails.
 
     We then scale the whole tensor so that coefficient f[0,0,0] equals f000_target
     (which is the density normalization used by this script).
@@ -1281,145 +1281,6 @@ def _poly_ic_tensor_from_coeffs(
         raise ValueError("constructed IC has invalid f000")
     f = (float(f000_target) / f000) * f
     return f
-
-
-def build_ic_fig2_2sp(
-    nmax: int, spa: Species, spb: Species, Teq: float, dT2: float, strength: float = 1.0
-) -> Tuple[ICPositivityInfo, ICPositivityInfo]:
-    """
-    Fig2 2-species IC: two nonnegative, strongly non-Maxwellian initial distributions
-    where the *temperature difference* is explicit and does not rely on representing
-    an extremely cold Maxwellian in a low-order Hermite truncation.
-
-    Construction:
-      - Species A: hotter than equilibrium by approximately +dT2, built from a positive
-        isotropic polynomial times the equilibrium Maxwellian (includes quartic content
-        for "far-from-Maxwellian" structure).
-      - Species B: close to equilibrium temperature but still non-Maxwellian (quartic
-        content). We attempt to tune its quadratic coefficient so that its temperature
-        remains ~Teq; if that fails under positivity constraints, we fall back to a
-        pure Maxwellian for B.
-    """
-    p = nmax + 1
-    f000a = 1.0 / (spa.vth**3)
-    f000b = 1.0 / (spb.vth**3)
-    s = float(strength)
-    base4 = (0.10 if nmax >= 4 else 0.0) * s
-
-    # Helper: build isotropic (a2,a4) and measure temperature.
-    def _build_iso(a2: float, a4: float, *, sp: Species, f000: float) -> Tuple[np.ndarray, float, float, float, float]:
-        f = _poly_ic_tensor_from_coeffs(
-            f000_target=f000,
-            a2x=a2,
-            a2y=a2,
-            a2z=a2,
-            a4x=a4,
-            a4y=a4,
-            a4z=a4,
-            nmax=nmax,
-        )
-        ms, mp = _min_f_checks_tensor(f, nmax=nmax, xlim=6.0, nx=161)
-        T = float(temperature_from_invariants(invariants_from_tensor(f, sp)))
-        return f, float(T), float(ms), float(mp), float(f[0, 0, 0])
-
-    # Species A: hot and far-from-Maxwellian (a4>0), tune a2>=0 to hit Teq+|dT2|.
-    Thot = float(Teq) + abs(float(dT2))
-    a4A = base4
-    if nmax < 2:
-        fa = np.zeros((p, p, p), dtype=np.float64); fa[0, 0, 0] = f000a
-        fb = np.zeros((p, p, p), dtype=np.float64); fb[0, 0, 0] = f000b
-        msa, mpa = _min_f_checks_tensor(fa, nmax=nmax, xlim=6.0, nx=161)
-        msb, mpb = _min_f_checks_tensor(fb, nmax=nmax, xlim=6.0, nx=161)
-        return (ICPositivityInfo(f=fa, gamma=1.0, min_slice=msa, min_plane=mpa), ICPositivityInfo(f=fb, gamma=1.0, min_slice=msb, min_plane=mpb))
-
-    def _tempA(a2: float) -> float:
-        _, T, _, _, _ = _build_iso(a2, a4A, sp=spa, f000=f000a)
-        return T
-
-    a2_lo = 0.0
-    a2_hi = 5.0
-    T_hi = _tempA(a2_hi)
-    for _ in range(12):
-        if T_hi >= Thot:
-            break
-        a2_hi *= 2.0
-        T_hi = _tempA(a2_hi)
-    if T_hi < Thot:
-        a2A = a2_hi
-    else:
-        a2A = a2_hi
-        for _ in range(40):
-            mid = 0.5 * (a2_lo + a2_hi)
-            if _tempA(mid) >= Thot:
-                a2A = mid
-                a2_hi = mid
-            else:
-                a2_lo = mid
-
-    fa, Ta, msa, mpa, _ = _build_iso(a2A, a4A, sp=spa, f000=f000a)
-
-    # Species B: far-from-Maxwellian but ~equilibrium temperature. Try to tune a2 (possibly negative).
-    # If tuning fails while staying nonnegative on diagnostic grids, fall back to Maxwellian.
-    fb = np.zeros((p, p, p), dtype=np.float64); fb[0, 0, 0] = f000b
-    Tb = float(temperature_from_invariants(invariants_from_tensor(fb, spb)))
-    msb, mpb = _min_f_checks_tensor(fb, nmax=nmax, xlim=6.0, nx=161)
-    a2B = 0.0
-    a4B = base4
-    for _attempt in range(6):
-        if a4B <= 0.0:
-            break
-
-        def _tempB(a2: float) -> Tuple[float, float, float, np.ndarray]:
-            f_, T_, ms_, mp_, _ = _build_iso(a2, a4B, sp=spb, f000=f000b)
-            return T_, ms_, mp_, f_
-
-        # Bracket a2 in [-a2max, a2max].
-        a2max = 6.0
-        T_lo, ms_lo, mp_lo, _ = _tempB(-a2max)
-        T_hi, ms_hi, mp_hi, _ = _tempB(+a2max)
-
-        # Require positivity throughout the bracket endpoints.
-        if (ms_lo < -1e-12) or (mp_lo < -1e-12) or (ms_hi < -1e-12) or (mp_hi < -1e-12):
-            a4B *= 0.5
-            continue
-
-        # If Teq not within [T_lo,T_hi], reduce a4B and retry.
-        if not (min(T_lo, T_hi) <= float(Teq) <= max(T_lo, T_hi)):
-            a4B *= 0.5
-            continue
-
-        lo = -a2max
-        hi = +a2max
-        a2B = 0.0
-        fb_candidate = fb
-        for _ in range(50):
-            mid = 0.5 * (lo + hi)
-            T_mid, ms_mid, mp_mid, f_mid = _tempB(mid)
-            if (ms_mid < -1e-12) or (mp_mid < -1e-12):
-                # If this mid violates positivity, shrink toward 0.
-                if mid < 0:
-                    lo = mid
-                else:
-                    hi = mid
-                continue
-            fb_candidate = f_mid
-            a2B = mid
-            if T_mid >= float(Teq):
-                hi = mid
-            else:
-                lo = mid
-            if abs(T_mid - float(Teq)) < 5e-6:
-                break
-
-        fb = fb_candidate
-        Tb = float(temperature_from_invariants(invariants_from_tensor(fb, spb)))
-        msb, mpb = _min_f_checks_tensor(fb, nmax=nmax, xlim=6.0, nx=161)
-        break
-
-    return (
-        ICPositivityInfo(f=fa, gamma=1.0, min_slice=msa, min_plane=mpa),
-        ICPositivityInfo(f=fb, gamma=1.0, min_slice=msb, min_plane=mpb),
-    )
 
 
 # ----------------------------
@@ -2675,107 +2536,6 @@ def make_fig1_panel(
     plt.close(fig)
 
 
-def make_fig2_ic_panel(
-    *,
-    outprefix: str,
-    nmax: int,
-    sp1: Species,
-    spa: Species,
-    spb: Species,
-    f0_1sp: np.ndarray,
-    fa0: np.ndarray,
-    fb0: np.ndarray,
-) -> None:
-    """
-    Fig2 (IC diagnostic only): visualize *initial* far-from-Maxwellian distributions at t=0.
-
-    This is intended to make it visually obvious that the initial state uses
-    higher Hermite modes (up to nmax=4 by default) and deviates strongly from a
-    Maxwellian.
-    """
-    import matplotlib.pyplot as plt
-
-    plt.rcParams.update(
-        {
-            "font.size": 8,
-            "axes.labelsize": 8,
-            "axes.titlesize": 8,
-            "legend.fontsize": 7,
-            "xtick.labelsize": 7,
-            "ytick.labelsize": 7,
-            "lines.linewidth": 1.35,
-            "axes.linewidth": 0.8,
-            "xtick.major.size": 3.0,
-            "ytick.major.size": 3.0,
-            "xtick.major.width": 0.8,
-            "ytick.major.width": 0.8,
-            "xtick.direction": "in",
-            "ytick.direction": "in",
-        }
-    )
-
-    def _tidy(ax):
-        ax.tick_params(top=True, right=True)
-
-    fig = plt.figure(figsize=(4.6, 5.2), dpi=300)
-    gs = fig.add_gridspec(2, 2, left=0.07, right=0.995, bottom=0.05, top=0.95, wspace=0.25, hspace=0.25)
-
-    xgrid = np.linspace(-4.0, 4.0, 900)
-
-    # Maxwellians (only 000 coefficient)
-    p = nmax + 1
-    fM1 = np.zeros((p, p, p), dtype=np.float64); fM1[0, 0, 0] = float(f0_1sp[0, 0, 0])
-    faM = np.zeros((p, p, p), dtype=np.float64); faM[0, 0, 0] = float(fa0[0, 0, 0])
-    fbM = np.zeros((p, p, p), dtype=np.float64); fbM[0, 0, 0] = float(fb0[0, 0, 0])
-
-    # (a) 1sp slice
-    axa = fig.add_subplot(gs[0, 0]); _tidy(axa)
-    s0 = reconstruct_slice_vx_tensor(f0_1sp, nmax=nmax, xgrid=xgrid)
-    sM = reconstruct_slice_vx_tensor(fM1, nmax=nmax, xgrid=xgrid)
-    axa.plot(xgrid, s0, label="IC")
-    axa.plot(xgrid, sM, ls=":", color="k", alpha=0.8, label="Maxwellian")
-    axa.set_title("(a) 1sp IC (strongly non-Maxw.)")
-    axa.set_xlabel(r"$v_x/v_{th}$")
-    axa.set_ylabel(r"$f(v_x,0,0)$")
-    axa.legend(frameon=False, loc="upper left", borderpad=0.2, labelspacing=0.22)
-
-    # (b) 1sp relative deviation
-    axb = fig.add_subplot(gs[0, 1]); _tidy(axb)
-    denom = np.maximum(np.abs(sM), 1e-300)
-    axb.plot(xgrid, (s0 - sM) / denom, color="C1")
-    axb.axhline(0.0, color="k", lw=0.8, alpha=0.3)
-    axb.set_title("(b) 1sp relative deviation")
-    axb.set_xlabel(r"$v_x/v_{th}$")
-    axb.set_ylabel(r"$(f-M)/|M|$")
-
-    # (c) 2sp species A slice
-    axc = fig.add_subplot(gs[1, 0]); _tidy(axc)
-    sa0 = reconstruct_slice_vx_tensor(fa0, nmax=nmax, xgrid=xgrid)
-    saM = reconstruct_slice_vx_tensor(faM, nmax=nmax, xgrid=xgrid)
-    axc.plot(xgrid, sa0, label="A IC")
-    axc.plot(xgrid, saM, ls=":", color="k", alpha=0.8, label="A Maxwellian")
-    axc.set_title("(c) 2sp IC: species A")
-    axc.set_xlabel(r"$v_x/v_{th,a}$")
-    axc.set_ylabel(r"$f_a(v_x,0,0)$")
-    axc.legend(frameon=False, loc="upper left", borderpad=0.2, labelspacing=0.22)
-
-    # (d) 2sp species B slice
-    axd = fig.add_subplot(gs[1, 1]); _tidy(axd)
-    sb0 = reconstruct_slice_vx_tensor(fb0, nmax=nmax, xgrid=xgrid)
-    sbM = reconstruct_slice_vx_tensor(fbM, nmax=nmax, xgrid=xgrid)
-    axd.plot(xgrid, sb0, label="B IC")
-    axd.plot(xgrid, sbM, ls=":", color="k", alpha=0.8, label="B Maxwellian")
-    axd.set_title("(d) 2sp IC: species B")
-    axd.set_xlabel(r"$v_x/v_{th,b}$")
-    axd.set_ylabel(r"$f_b(v_x,0,0)$")
-    axd.legend(frameon=False, loc="upper left", borderpad=0.2, labelspacing=0.22)
-
-    base = outprefix
-    fig.savefig(base + ".png", dpi=450, bbox_inches="tight")
-    fig.savefig(base + ".pdf", bbox_inches="tight")
-    plt.close(fig)
-
-
 # ----------------------------
 # Linearization (NumPy, fast machinery only)
 # ----------------------------
@@ -3897,7 +3657,7 @@ def run_tests(args) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Standalone fast SOE→MPO/TT Landau-Hermite (JAX-first): Fig1 + Fig2 panels.")
+    ap = argparse.ArgumentParser(description="Standalone fast SOE→MPO/TT Landau-Hermite (JAX-first): Fig1 panel.")
     ap.add_argument("--backend", choices=["jax", "numpy"], default="jax")
     ap.add_argument("--nmax", type=int, default=4)
     ap.add_argument("--Q", type=int, default=8)
@@ -3918,16 +3678,13 @@ def main() -> None:
     ap.add_argument("--tmax_2sp", type=float, default=8.0)
     ap.add_argument("--steps_1sp", type=int, default=None)
     ap.add_argument("--steps_2sp", type=int, default=None)
-    ap.add_argument("--fig1_ic", choices=["prl_m2", "twostream"], default="twostream", help="Fig1 IC family for the 1-species case.")
+    ap.add_argument("--fig1_ic", choices=["poly4", "twostream", "prl_m2"], default="poly4", help="Fig1 IC family for the 1-species case.")
     ap.add_argument("--no_enforce_nonneg_ic", action="store_true", help="Disable IC nonnegativity enforcement on diagnostic grids (not recommended at low nmax).")
-    ap.add_argument("--amp1", type=float, default=0.95, help="Fig1 1sp control: for prl_m2 it's the 2nd-moment anisotropy amplitude; for twostream it's the stream separation u in vx/vth.")
+    ap.add_argument("--amp1", type=float, default=0.95, help="Fig1 1sp control: for prl_m2 it's the 2nd-moment anisotropy amplitude; for twostream it's the stream separation u in vx/vth; for poly4 it's an anisotropy knob.")
     ap.add_argument("--dT2", type=float, default=0.85, help="Target temperature excess for the hot species in 2sp ICs (positivity-safe).")
     ap.add_argument("--outprefix_fig1", type=str, default="Fig1_panel")
-    ap.add_argument("--outprefix_fig2", type=str, default="Fig2_panel")
-    ap.add_argument("--outprefix", type=str, default=None, help="(compat) Alias for --outprefix_fig1; if --outprefix_fig2 is default, set it to OUTPREFIX+'_Fig2'.")
+    ap.add_argument("--outprefix", type=str, default=None, help="(compat) Alias for --outprefix_fig1.")
     ap.add_argument("--skip_fig1", action="store_true")
-    ap.add_argument("--skip_fig2", action="store_true")
-    ap.add_argument("--fig2_strength", type=float, default=3.0, help="Scales the positive polynomial distortion used for the Fig2 initial condition (larger => farther from Maxwellian).")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--entropy_nx", type=int, default=22)
     ap.add_argument("--entropy_xlim", type=float, default=5.0)
@@ -3969,8 +3726,6 @@ def main() -> None:
 
     if args.outprefix is not None:
         args.outprefix_fig1 = str(args.outprefix)
-        if str(args.outprefix_fig2) == "Fig2_panel":
-            args.outprefix_fig2 = f"{args.outprefix}_Fig2"
 
     def vprint(*a, **k):
         if not quiet:
@@ -3992,7 +3747,7 @@ def main() -> None:
     print("=" * 100, flush=True)
     print(f"[cfg] backend={backend}  nmax={nmax} (p={p})  Q={args.Q} maxK={args.maxK} integrator={args.integrator}", flush=True)
     print(f"[cfg] linearized={args.linearized}  linearized_method={args.linearized_method}", flush=True)
-    print(f"[cfg] fig1_out={args.outprefix_fig1}  fig2_out={args.outprefix_fig2}", flush=True)
+    print(f"[cfg] fig1_out={args.outprefix_fig1}", flush=True)
     print(f"[cfg] 1sp: dt={args.dt_1sp} tmax={args.tmax_1sp} fig1_ic={args.fig1_ic} amp/u={args.amp1}", flush=True)
     print(f"[cfg] 2sp: dt={args.dt_2sp} tmax={args.tmax_2sp} dT_hot={args.dT2}", flush=True)
 
@@ -4040,10 +3795,17 @@ def main() -> None:
             f"[IC/Fig1] 1sp twostream: u={float(args.amp1):.3g} gamma={ic_tw.gamma:.3g}  min(slice,plane)=({ic_tw.min_slice:.3e},{ic_tw.min_plane:.3e})",
             flush=True,
         )
-    else:
+    elif str(args.fig1_ic) == "prl_m2":
         f0_1sp = build_ic_fig1_1sp(nmax=nmax, sp=sp1, amp1=float(args.amp1))
         ms1, mp1 = _min_f_checks_tensor(f0_1sp, nmax=nmax, xlim=6.0, nx=161)
         print(f"[IC/Fig1] 1sp prl_m2: amp={float(args.amp1):.3g}  min(slice,plane)=({ms1:.3e},{mp1:.3e})", flush=True)
+    else:
+        ic_poly = build_ic_fig1_1sp_poly4(nmax=nmax, sp=sp1, amp1=float(args.amp1))
+        f0_1sp = ic_poly.f
+        print(
+            f"[IC/Fig1] 1sp poly4: amp={float(args.amp1):.3g}  min(slice,plane)=({ic_poly.min_slice:.3e},{ic_poly.min_plane:.3e})",
+            flush=True,
+        )
 
     fa0, fb0 = build_ic_fig1_2sp(nmax=nmax, spa=spa, spb=spb, Teq=Teq, dT2=float(args.dT2))
     msa0, mpa0 = _min_f_checks_tensor(fa0, nmax=nmax, xlim=6.0, nx=161)
@@ -4053,29 +3815,6 @@ def main() -> None:
         Ta0 = temperature_from_invariants(invariants_from_tensor(fa0, spa))
         Tb0 = temperature_from_invariants(invariants_from_tensor(fb0, spb))
         print(f"[IC/Fig1] 2sp temps: Ta={Ta0:.4g}  Tb={Tb0:.4g}  dT={Ta0-Tb0:.4g}", flush=True)
-
-    # Fig2 ICs: strongly non-Maxwellian but (diagnostically) nonnegative at t=0.
-    f0_1sp_fig2 = None
-    fa0_fig2 = None
-    fb0_fig2 = None
-    if not bool(args.skip_fig2):
-        if nmax < 4:
-            print("[warn] Fig2 IC uses higher modes; consider running with --nmax 4.", flush=True)
-        strength = float(getattr(args, "fig2_strength", 1.0))
-        ic1 = build_ic_fig2_1sp(nmax=nmax, sp=sp1, amp1=float(args.amp1), strength=strength)
-        ica, icb = build_ic_fig2_2sp(nmax=nmax, spa=spa, spb=spb, Teq=Teq, dT2=float(args.dT2), strength=strength)
-        f0_1sp_fig2 = ic1.f
-        fa0_fig2 = ica.f
-        fb0_fig2 = icb.f
-        print(f"[IC/Fig2] strength={strength:.3g}  1sp min(slice,plane)=({ic1.min_slice:.3e},{ic1.min_plane:.3e})", flush=True)
-        print(f"[IC/Fig2] strength={strength:.3g}   2sp A min(slice,plane)=({ica.min_slice:.3e},{ica.min_plane:.3e})", flush=True)
-        print(f"[IC/Fig2] strength={strength:.3g}   2sp B min(slice,plane)=({icb.min_slice:.3e},{icb.min_plane:.3e})", flush=True)
-        if nmax >= 2:
-            Ta2 = temperature_from_invariants(invariants_from_tensor(fa0_fig2, spa))
-            Tb2 = temperature_from_invariants(invariants_from_tensor(fb0_fig2, spb))
-            print(f"[IC/Fig2] 2sp temps: Ta={Ta2:.4g}  Tb={Tb2:.4g}  dT={Ta2-Tb2:.4g}", flush=True)
-        if (ic1.min_slice < -1e-14) or (ic1.min_plane < -1e-14) or (ica.min_plane < -1e-14) or (icb.min_plane < -1e-14):
-            print("[warn] Fig2 IC is negative on the diagnostic grid; reduce --fig2_strength or increase nmax.", flush=True)
 
     # Fixed-point checks (Maxwellians)
     fM1 = np.zeros_like(f0_1sp); fM1[0, 0, 0] = f0_1sp[0, 0, 0]
@@ -4101,11 +3840,11 @@ def main() -> None:
     if (relM1 > 1e-10 or relM2 > 1e-10) and int(args.Q) <= 10:
         print("[hint] For larger nmax, increase SOE quadrature nodes: try --Q 16 or --Q 24 (and keep maxK sufficiently large).", flush=True)
 
-    if bool(args.skip_fig1) and bool(args.skip_fig2):
-        print("[ok] nothing to do: both --skip_fig1 and --skip_fig2 are set.", flush=True)
+    if bool(args.skip_fig1):
+        print("[ok] nothing to do: --skip_fig1 is set.", flush=True)
         return
 
-    # Time grids (shared by Fig1 + Fig2)
+    # Time grids
     if args.steps_1sp is None:
         steps_1 = int(round(float(args.tmax_1sp) / float(args.dt_1sp)))
     else:
@@ -4420,20 +4159,6 @@ def main() -> None:
             slice_dev2a_lin = slice_deviation_timeseries(fa_hist_lin, nmax=nmax, xgrid=xgrid)
             slice_dev2b_lin = slice_deviation_timeseries(fb_hist_lin, nmax=nmax, xgrid=xgrid)
 
-        # Fig2: positivity checks on diagnostic grids
-        if tag.lower().startswith("fig2"):
-            x = np.linspace(-6.0, 6.0, 241)
-            mins_slice = [float(np.min(reconstruct_slice_vx_tensor(f_hist1[i], nmax=nmax, xgrid=x))) for i in range(len(t1))]
-            idxs2 = np.unique(np.round(np.linspace(0, len(t1) - 1, 3)).astype(int))
-            mins_plane = []
-            for i in idxs2:
-                xy = reconstruct_plane_vx_vy_tensor(f_hist1[i], nmax=nmax, xgrid=np.linspace(-6.0, 6.0, 81), ygrid=np.linspace(-6.0, 6.0, 81))
-                mins_plane.append(float(np.min(xy)))
-            print(f"[pos:{tag}] min f(vx,0,0) over all steps: {min(mins_slice):.3e}", flush=True)
-            print(f"[pos:{tag}] min f(vx,vy,0) over {len(idxs2)} snapshots: {min(mins_plane):.3e}", flush=True)
-            if (min(mins_slice) < -1e-12) or (min(mins_plane) < -1e-12):
-                print("[warn] f became negative on the diagnostic grids; consider reducing --fig2_strength or increasing nmax.", flush=True)
-
         # Convergence diagnostics: entropy at end and RHS norm at end.
         A_end = float(anisotropy_measure_from_tensor(f_hist1[-1]))
         A0 = float(anisotropy_measure_from_tensor(f_hist1[0]))
@@ -4549,13 +4274,7 @@ def main() -> None:
         )
         print(f"[ok] wrote: {outprefix}.png and {outprefix}.pdf", flush=True)
 
-    did_bench = False
-    if not bool(args.skip_fig1):
-        run_case(outprefix=str(args.outprefix_fig1), tag="Fig1", f0_case=f0_1sp, fa0_case=fa0, fb0_case=fb0, do_bench=True)
-        did_bench = True
-    if not bool(args.skip_fig2):
-        assert f0_1sp_fig2 is not None and fa0_fig2 is not None and fb0_fig2 is not None
-        run_case(outprefix=str(args.outprefix_fig2), tag="Fig2", f0_case=f0_1sp_fig2, fa0_case=fa0_fig2, fb0_case=fb0_fig2, do_bench=(not did_bench))
+    run_case(outprefix=str(args.outprefix_fig1), tag="Fig1", f0_case=f0_1sp, fa0_case=fa0, fb0_case=fb0, do_bench=True)
 
 
 if __name__ == "__main__":
