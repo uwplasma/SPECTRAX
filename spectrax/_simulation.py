@@ -1,21 +1,12 @@
 import jax.numpy as jnp
-from jax import jit, config, vmap
+from jax import jit, config
 config.update("jax_enable_x64", True)
-from jax.debug import print as jprint
 from functools import partial
 from diffrax import (diffeqsolve, Tsit5, Dopri8, ODETerm,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
 from ._diagnostics import diagnostics
-
-# Parallelize the simulation using JAX
-from jax.sharding import PartitionSpec as P
-from jax.experimental.shard_map import shard_map
-from jax import devices, make_mesh, NamedSharding, device_put
-mesh = make_mesh((len(devices()),), ("batch"))
-spec = P("batch")
-sharding = NamedSharding(mesh, spec)
 
 __all__ = ["cross_product", "ode_system", "simulation"]
 
@@ -96,6 +87,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     Ck = Ck_Fk[:total_Ck_size].reshape(Nn * Nm * Np * Ns, Ny, Nx, Nz)
     Fk = Ck_Fk[total_Ck_size:].reshape(6, Ny, Nx, Nz)
 
+
     # Build the 2/3 mask once per call (JIT will constant-fold it since Nx/Ny/Nz are static)
     mask23 = _twothirds_mask(Ny, Nx, Nz)
 
@@ -114,10 +106,12 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
 
     dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
     dy_dt  = jnp.concatenate([dCk_s_dt.reshape(-1), dFk_dt.reshape(-1)])
+
     return dy_dt
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step'])
-def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True):
+def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
+               timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
