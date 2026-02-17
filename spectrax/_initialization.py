@@ -58,7 +58,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "Omega_cs": lambda p: jnp.array([1.0, 1.0 / p["mi_me"]]),
         "nu": 3.0,
         "D": 0.0,
-        "t_max": 0.3,
+        "t_max": 50.0,
         "nx": 1,
         "ny": 0,
         "nz": 0,
@@ -172,8 +172,8 @@ def load_parameters(input_file):
     input_parameters = parameters['input_parameters']
     solver_parameters = parameters['solver_parameters']
 
-    # NEW: whether to use adaptive time-stepping or constant dt
-    # Default is True to preserve the current behavior.
+    # Whether to use adaptive time-stepping or constant dt.
+    # Default is True.
     adaptive_time_step = solver_parameters.get("adaptive_time_step", True)
     solver_parameters["adaptive_time_step"] = adaptive_time_step
 
