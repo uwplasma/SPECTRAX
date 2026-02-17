@@ -1,8 +1,7 @@
 import sys
 import os
+import numpy as np
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-number_of_processors_to_use = 1 # Parallelization, this should divide total resolution
-os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
 from jax import block_until_ready, config
 config.update("jax_enable_x64", True)
@@ -75,10 +74,13 @@ print('Starting simulation...')
 start_time = time()
 output = block_until_ready(simulation(input_parameters, **solver_parameters))
 print(f"Runtime: {time() - start_time} seconds")
+exit()
 
 # print('Plotting results...')
 # plot(output)
 
+print('Saving results...')
+jnp.savez('/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S17/output_orszag.npz', **output)
 
 # Results.
 alpha_s = input_parameters["alpha_s"]
@@ -218,9 +220,6 @@ plt.show()
 
 # # Display the animation
 # plt.show()
-
-print('Saving results...')
-jnp.savez('/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S16/output_orszag.npz', **output)
 
 
 
