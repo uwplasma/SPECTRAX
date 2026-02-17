@@ -53,7 +53,7 @@
 
 ##  Overview
 
-**SPECTRAX** is an open-source spectral kinetic plasma solver written in Python with the [JAX](https://github.com/jax-ml/jax) ecosystem. It solves the collisionless Vlasov–Maxwell equations by evolving the Hermite–Fourier coefficients of the particle distribution function and the electromagnetic fields. The approach builds on the *SpectralPlasmaSolver* (SPS) algorithm developed at Los Alamos National Laboratory and described by Vencels et al. (2016) and Roytershteyn & Delzanno (2018), where the particle distribution is expanded in Hermite functions in velocity space and Fourier modes in configuration space. By performing a Hermite expansion in velocity space, the method naturally couples fluid and kinetic physics—the lowest‐order Hermite coefficients correspond to fluid moments and higher modes capture kinetic corrections.
+**SPECTRAX** is an open-source spectral kinetic plasma solver written in Python with the [JAX](https://github.com/jax-ml/jax) ecosystem. It solves the collisionless Vlasov–Maxwell equations by evolving the Hermite–Fourier coefficients of the particle distribution function and the electromagnetic fields. The approach builds on the *SpectralPlasmaSolver* (SPS) algorithm developed at Los Alamos National Laboratory and described in [Delzanno (2025)](https://www.sciencedirect.com/science/article/pii/S0021999115004738), [Vencels et al. (2016)](https://iopscience.iop.org/article/10.1088/1742-6596/719/1/012022) and [Roytershteyn & Delzanno (2018)](https://www.frontiersin.org/journals/astronomy-and-space-sciences/articles/10.3389/fspas.2018.00027/full), where the one particle distribution is expanded in Hermite functions in velocity space and Fourier modes in configuration space. By performing a Hermite expansion in velocity space, the method naturally couples fluid and kinetic physics—the lowest‐order Hermite coefficients correspond to fluid moments and higher modes capture kinetic corrections.
 
 SPECTRAX re‑implements this algorithm in a JAX framework. It uses just‑in‑time compilation to run efficiently on CPUs, GPUs or TPUs, adopts state‑of‑the‑art ODE solvers from the [Diffrax](https://github.com/patrick-kidger/diffrax) library, and includes utilities for diagnostics and plotting. The code supports multi‑species plasmas and arbitrary spatial dimensionality (1D to 3D) and can serve as a test bed for studying kinetic instabilities, turbulence, and the transition between fluid and kinetic regimes.
 
@@ -62,24 +62,24 @@ SPECTRAX re‑implements this algorithm in a JAX framework. It uses just‑in‑
 
 ##  Mathematical Method
 
-The Hermite–Fourier spectral method replaces the Vlasov equation in the 6-dimensional phase-space with a hierarchy of coupled ordinary differential equations (ODEs) for the Hermite–Fourier coefficients. In the SPS formulation the velocity part of the distribution function is represented by Hermite functions while the spatial dependence is captured by Fourier modes. The expansion is truncated for closure. The resulting system of ODEs is integrated in time using solvers from the [Diffrax](https://github.com/patrick-kidger/diffrax) library. Diffrax's implementation of the Dormand-Prince’s 8/7 method, `Dopri8`, proved to be notoriously fast and stable, and is set as the default solver.
+The Hermite–Fourier spectral method replaces the Vlasov equation in the 6-dimensional phase-space with a hierarchy of coupled ordinary differential equations (ODEs) for the Hermite–Fourier moments of the one-particle probability density function and the electric and magnetic fields. The Hermite-Fourier expansion is truncated for closure and a hypercollisional operator is introduced in velocity space to suppress recurrence. The resulting system of ODEs is integrated in time using solvers from the [Diffrax](https://github.com/patrick-kidger/diffrax) library. Diffrax's implementation of the Dormand-Prince’s 8/7 method, `Dopri8`, proved to be notoriously fast and stable, and is set as the default solver.
 
 ---
 
 ##  Features
 
-* **JAX‑based spectral solver** – all core operations are implemented in JAX and compiled with `jit`, enabling execution on CPUs, GPUs or TPUs.
+* **JAX‑based spectral solver** – all core operations are implemented in JAX and compiled with `jit`, enabling efficient execution on CPUs, GPUs, or TPUs.
 
 * **Efficient time integration** – SPECTRAX uses ODE solvers from the Diffrax library (e.g., `Dopri5`, `Dopri8`, `Tsit5`; a Diffrax-based, custom-made implicit midpoint solver is also available as `ImplicitMidpoint`) to advance the Hermite–Fourier coefficients in time. The `simulation` function assembles the right‑hand‑side, applies a 2⁄3 de‑aliasing mask on Fourier modes in the nonlinear term, and integrates the system until `t_max`, returning the time‑evolved coefficients.
 
-* **Multi‑species and multi‑dimensional** – the code supports multiple particle species with distinct mass ratios, temperatures and drift velocities. Spatial dimensions are controlled via `Nx`, `Ny`, `Nz`, and velocity Hermite orders via `Nn`, `Nm`, `Np`.
+* **Multi‑species and multi‑dimensional** – the code supports multiple particle species with distinct mass ratios, temperatures and drift velocities. Resolution in spatial dimensions is controlled via `Nx`, `Ny`, `Nz`, and velocity Hermite orders via `Nn`, `Nm`, `Np`.
 
 * **Diagnostics** – after each simulation the `diagnostics` function computes the Debye length, normalized wavenumber, kinetic energies of each species, electromagnetic energy and total energy and stores them in the output dictionary.
 
 * **Plotting utilities** – the `plot` function produces a multi‑panel figure showing energy evolution,
-relative energy error, density fluctuations and phase‑space distributions for each species. It reconstructs the distribution function by performing an inverse Fourier transform followed by an inverse Hermite transform. The phase‑space reconstruction uses the `inverse_HF_transform` function, which evaluates Hermite polynomials and sums over all modes.
+relative energy error, density fluctuations and phase‑space distributions for each species. It reconstructs the distribution function by performing an inverse Fourier transform followed by an inverse Hermite transform. The phase‑space reconstruction uses the `inverse_HF_transform` function, which evaluates Hermite polynomials and sums over all modes. The phase-space plots assume a 1D simulation.
 
-* **Flexible initialization** – initial conditions may be provided through simple TOML files or directly in Python. The `load_parameters` function reads a TOML file and merges it with sensible defaults that initialize a two‑stream instability. Users can also construct the spectral coefficients manually, as shown in the example scripts.
+* **Flexible initialization** – simulation parameters may be provided through simple TOML files or directly in Python. The `load_parameters` function reads a TOML file and merges it with sensible defaults that initialize a two‑stream instability. Users can also initialize their own spectral coefficients, as shown in the example scripts.
 
 * **Open source and extensible** – SPECTRAX is released under the MIT License. Its modular structure
 allows researchers to experiment with new closures, collision operators or boundary conditions.
@@ -103,9 +103,11 @@ allows researchers to experiment with new closures, collision operators or bound
     │   └── file3.py
     └── tests
         └── test1.py
-``` -->
+``` 
 
 ---
+-->
+
 ##  Getting Started
 
 ###  Prerequisites
@@ -158,12 +160,16 @@ To run it with different input parameters, us a TOML file like those in the `Exa
 spectrax example_input.toml
 ```
 
-Other examples written in Python scripts, like those in the `Examples` directory, can be run from the terminal as follows:
+Other examples written in Python scripts, like those in the `Examples` directory, can be executed from the terminal as follows:
 
 ```sh
 python example_script.py
 ```
 
+
+The `simulation` function returns a dictionary containing the evolved Hermite coefficients `Ck`, electromagnetic coefficients `Fk`, time array, the input parameters and diagnostic quantities.
+
+<!--
 #### Running from Python
 
 You can import SPECTRAX in your own scripts. A typical workflow is:
@@ -180,8 +186,7 @@ output = simulation(input_params, **solver_params)
 
 plot(output)
 ```
-
-The `simulation` function returns a dictionary containing the evolved Hermite coefficients `Ck`, electromagnetic coefficients `Fk`, time array, the input parameters and diagnostic quantities (10).
+-->
 
 
 
@@ -203,18 +208,18 @@ most important keys. Keys absent from the file fall back to sensible defaults sp
 | `Lx, Ly, Lz` | Domain lengths in the spatial directions (periodic boundary condition). |
 | `mi_me` | Ion‑to‑electron mass ratio. |
 | `Ti_Te` | Ion‑to‑electron temperature ratio. |
-| `qs` | Array of species charges (electron negative). |
-| `alpha_s` | Thermal scales (inverse thermal velocities) for each species. |
-| `u_s` | Drift velocities for each species (packed as `[u_x,u_y,u_z]` ). |
+| `qs` | Array of species charges. |
+| `alpha_s` | Thermal scales for each species for Hermite basis. |
+| `u_s` | Drift velocities for each species for Hermite basis (packed as `[u_x,u_y,u_z]` ). |
 | `Omega_cs` | Cyclotron frequencies for each species. |
-| `nu` | Artificial collision frequency to damp recurrence. |
-| `D` | Hyper‑diffusion coefficient (stabilization). |
+| `nu` | Hyper-collision frequency to damp recurrence. |
+| `D` | Hyper‑diffusion coefficient. |
 | `t_max` | Final simulation time. |
-| `nx, ny, nz` | Mode numbers used to seed sinusoidal perturbations. |
+| `nx, ny, nz` | Mode numbers used to seed sinusoidal perturbations (see examples). |
 | `dn1, dn2, dE` | Amplitudes of initial density or field perturbations (see examples). |
 | `ode_tolerance` | Relative/absolute tolerance for adaptive solvers. |
 | `Nx, Ny, Nz` | Number of retained Fourier modes per spatial dimension. |
-| `Nn, Nm, Np` | Number of Hermite modes per velocity dimension (x, y, z). |
+| `Nn, Nm, Np` | Number of Hermite modes per velocity dimension. |
 | `Ns` | Number of species (two by default). |
 | `timesteps` | Number of solution snapshots to store between `t=0` and `t_max`. |
 | `dt` | Initial step size provided to the ODE solver. |
@@ -222,7 +227,7 @@ most important keys. Keys absent from the file fall back to sensible defaults sp
 | `adaptive_time_step` | Timestep adaptability (`true` by default). |
 
 Many of these parameters can be arrays; for example `alpha_s` must contain three values per species (one
-for each velocity dimension) and can be used to represent anisotropic plasmas. (11)
+for each velocity dimension) and can be used to represent anisotropic plasmas.
 
 ---
 
@@ -295,3 +300,8 @@ This project is protected under the MIT License. For more details, refer to the 
 - We acknowledge the help of the whole [UWPlasma](https://rogerio.physics.wisc.edu/) plasma group.
 
 ---
+
+
+
+
+
