@@ -14,7 +14,7 @@ from orthax.hermite import hermval
 from jax import jit, vmap
 from functools import partial
 
-__all__ = ['generate_Hermite_basis', 'generate_Hermite_term_vmap', 'inverse_HF_transform']
+__all__ = ["inverse_HF_transform"]
 
 # Generate Hermite polynomial values for all orders from 0 to N-1
 def generate_Hermite_basis(N, x):
