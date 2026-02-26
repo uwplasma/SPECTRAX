@@ -1,3 +1,5 @@
+"""Simulation parameter initialization and TOML configuration loading."""
+
 import jax.numpy as jnp
 from jax import jit
 from functools import partial

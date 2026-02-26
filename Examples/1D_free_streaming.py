@@ -1,3 +1,9 @@
+"""Example: 1D free streaming.
+
+Compares the simulated density perturbation against the analytic free-streaming
+solution for a sinusoidal perturbation in 1D.
+"""
+
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -23,7 +29,7 @@ dn = input_parameters["dn"]
 Nx = solver_parameters["Nx"]
 Nn = solver_parameters["Nn"]
 
-# Initialize distribution function as a two-stream instability
+# Initialize a small sinusoidal density perturbation in Hermite–Fourier space.
 Fk_0    = jnp.zeros((6, 1, Nx, 1), dtype=jnp.complex128)
 input_parameters["Fk_0"] = Fk_0
 
@@ -68,7 +74,7 @@ axes.plot(x, n_exact[0], linestyle=':', color='black', label=r"$\delta n_{exact}
 axes.plot(x, n_exact[200], linestyle='--', color='black', label=r"$\delta n_{exact}$, $t\omega_{pe}=2$")
 axes.plot(x, n_exact[500], linestyle='-.', color='black', label=r"$\delta n_{exact}$, $t\omega_{pe}=5$")
 axes.set_xlabel(r"$x/d_e$", fontsize=18)
-axes.set_ylabel("$\delta n/n_0$", fontsize=18)
+axes.set_ylabel(r"$\delta n/n_0$", fontsize=18)
 axes.legend(fontsize=18).set_draggable(True)
 axes.set_title(rf'$N_x = {Nx}$, $N_n = {Nn}$, $\nu = {nu}$', fontsize=18)
 # axins = axes.inset_axes([0.1, 0.1, 0.4, 0.3])
@@ -88,7 +94,7 @@ axes.plot(x, n[0], label=r"$\delta n_{SPEC}$, $t\omega_{pe}=0$")
 axes.plot(x, n[243], linestyle='--', label=r"$\delta n_{SPEC}$, $t\omega_{pe}=24.3$")
 axes.plot(x, n[245], linestyle=':', label=r"$\delta n_{SPEC}$, $t\omega_{pe}=24.5$")
 axes.set_xlabel(r"$x/d_e$", fontsize=18)
-axes.set_ylabel("$\delta n/n_0$", fontsize=18)
+axes.set_ylabel(r"$\delta n/n_0$", fontsize=18)
 axes.legend(fontsize=18).set_draggable(True)
 axes.set_title(rf'$N_x = {Nx}$, $N_n = {Nn}$, $\nu = {nu}$, ' + r'$T\omega_{pe}=24.5$', fontsize=18)
 plt.show()
@@ -113,4 +119,3 @@ plt.ylabel(r'$t\omega_{pe}$', fontsize=18)
 plt.title(rf'$N_x = {Nx}$, $N_n = {Nn}$, $\nu = {nu}$', fontsize=18)
 # plt.legend()
 plt.show()
-

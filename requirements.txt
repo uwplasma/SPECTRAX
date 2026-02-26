@@ -1,4 +1,6 @@
 jax
-matplotlib
-orthax
+jaxlib
+jax_tqdm
 diffrax
+orthax
+matplotlib

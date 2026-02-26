@@ -1,3 +1,10 @@
+"""Hermite–Fourier model operators for the Vlasov–Maxwell system.
+
+This module contains the spectral Ampère–Maxwell current operator
+(:func:`plasma_current`) and the right-hand side of the Hermite–Fourier moment
+equations (:func:`Hermite_Fourier_system`).
+"""
+
 import jax.numpy as jnp
 from jax import vmap, jit
 from functools import partial
@@ -67,7 +74,11 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     return jnp.sum(J_species, axis=1)
 
 def _pad_hermite_axes(Ck):
-    # pad +1 on both sides for n,m,p only
+    """Pad Hermite axes (p, m, n) by one cell on both sides.
+
+    This padding enables safe slicing for the zero-padded shift operator used in
+    :func:`shift_multi`.
+    """
     return jnp.pad(
         Ck,
         ((0,0), (1,1), (1,1), (1,1), (0,0), (0,0), (0,0))
