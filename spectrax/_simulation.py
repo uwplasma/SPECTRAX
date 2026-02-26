@@ -1,3 +1,5 @@
+"""Time integration driver for the spectral Vlasov–Maxwell system."""
+
 import jax.numpy as jnp
 from jax import jit, config
 config.update("jax_enable_x64", True)

@@ -1,3 +1,9 @@
+"""Convenience plotting for SPECTRAX 1D runs.
+
+This module is intentionally lightweight and expects the dictionary returned by
+``spectrax.simulation.simulation`` (or ``spectrax.__main__``) as input.
+"""
+
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from ._inverse_transform import inverse_HF_transform
@@ -6,6 +12,15 @@ from matplotlib.animation import FuncAnimation
 __all__ = ['plot']
 
 def plot(output):
+    """Plot common diagnostics from a completed simulation output.
+
+    Parameters
+    ----------
+    output : dict
+        Simulation output dictionary containing keys like ``time``, ``Ck``,
+        ``Fk``, energies computed by :func:`spectrax._diagnostics.diagnostics`,
+        and basic grid parameters.
+    """
     time = output["time"]; k_norm = output["k_norm"]
     u_s = output["u_s"]; alpha_s = output["alpha_s"]; nu = output["nu"]
     Lx = output["Lx"]; Ly = output["Ly"]; Lz = output["Lz"]
@@ -40,12 +55,12 @@ def plot(output):
     
     # Plot electron density fluctuation vs t.
     dnk1 = jnp.abs(output["dCk"][:, 0, int((Ny-1) / 2) + ny, int((Nx-1) / 2) + nx, int((Nz-1) / 2) + nz].imag) * alpha_s[0] * alpha_s[1] * alpha_s[2]
-    axes[1, 1].plot(time, dnk1, label='$|\delta n^{S1}_{k}|$', linestyle='-', linewidth=2.0)
+    axes[1, 1].plot(time, dnk1, label=r'$|\delta n^{S1}_{k}|$', linestyle='-', linewidth=2.0)
     axes[1, 1].set(title='Species 1 density fluctuation', ylabel=r'$log(|\delta n^{s1}_{k}|)$', xlabel=r'$t\omega_{pe}$', yscale="log")#, ylim=[1e-20, None])
     
     # Plot ion density fluctuation vs t.
     dnk2 = jnp.abs(output["dCk"][:, Nn * Nm * Np, int((Ny-1) / 2) + ny, int((Nx-1) / 2) + nx, int((Nz-1) / 2) + nz].imag) * alpha_s[3] * alpha_s[4] * alpha_s[5]
-    axes[1, 2].plot(time, dnk2, label='$|\delta n^{s2}_{k}|$', linestyle='-', linewidth=2.0)
+    axes[1, 2].plot(time, dnk2, label=r'$|\delta n^{s2}_{k}|$', linestyle='-', linewidth=2.0)
     axes[1, 2].set(title='Species 2 density fluctuation', ylabel=r'$log(|\delta n^{s2}_{k}|)$', xlabel=r'$t\omega_{pe}$', yscale="log")#, ylim=[1e-20, None])
     
     # Electron Phase space plot
