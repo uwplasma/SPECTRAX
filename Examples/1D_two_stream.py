@@ -1,3 +1,9 @@
+"""Example: 1D two-stream instability.
+
+Loads parameters from ``input_1D_two_stream.toml``, builds the standard two-stream
+initial conditions in Fourier/Hermite space, runs the solver, and plots results.
+"""
+
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
