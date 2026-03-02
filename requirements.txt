@@ -4,3 +4,4 @@ jax_tqdm
 diffrax
 orthax
 matplotlib
+pandas

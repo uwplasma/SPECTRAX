@@ -15,7 +15,6 @@ config.update("jax_enable_x64", True)
 from spectrax import simulation, load_parameters, plot
 
 # Read from input.toml
-# input_parameters, solver_parameters = load_parameters('input_1D_two_stream.toml')
 toml_file = os.path.join(os.path.dirname(__file__), 'input_1D_two_stream.toml')
 input_parameters, solver_parameters = load_parameters(toml_file)
 
