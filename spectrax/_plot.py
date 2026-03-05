@@ -12,7 +12,7 @@ from matplotlib.animation import FuncAnimation
 __all__ = ['plot']
 
 def plot(output):
-    """Plot common diagnostics from a completed simulation output.
+    """Plot common diagnostics from a completed simulation output assuming two species in a 1D setup.
 
     Parameters
     ----------
