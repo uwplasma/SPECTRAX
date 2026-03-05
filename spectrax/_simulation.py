@@ -2,6 +2,7 @@
 
 import jax.numpy as jnp
 from jax import jit, config
+config.update("jax_enable_x64", True)
 from functools import partial
 from diffrax import (diffeqsolve, Dopri8, ODETerm,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
