@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax import jit, config
 config.update("jax_enable_x64", True)
 from functools import partial
-from diffrax import (diffeqsolve, Tsit5, Dopri8, ODETerm,
+from diffrax import (diffeqsolve, Dopri8, ODETerm,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
@@ -60,7 +60,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     Parameters
     ----------
     Nx, Ny, Nz : int
-        Number of retained Fourier modes per spatial dimension.
+        Number of Fourier modes per spatial dimension.
     Nn, Nm, Np : int
         Number of Hermite modes per velocity-space dimension.
     Ns : int
@@ -100,7 +100,6 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
                                       Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23=mask23)
 
-    # nabla = jnp.array([kx_grid / Lx, ky_grid / Ly, kz_grid / Lz])
     dBk_dt = -1j * cross_product(nabla, Fk[:3])
     
     current = plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns)
@@ -152,9 +151,11 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     time = jnp.linspace(0, parameters["t_max"], timesteps)
     
     # Arguments for the ODE system.
-    args = (Nx, Ny, Nz, Nn, Nm, Np, Ns, parameters["qs"], parameters["nu"], parameters["D"], parameters["Omega_cs"], parameters["alpha_s"],
-            parameters["u_s"], parameters["Lx"], parameters["Ly"], parameters["Lz"],
-            parameters["kx_grid"], parameters["ky_grid"], parameters["kz_grid"], parameters["k2_grid"], parameters["nabla"], parameters["collision_matrix"], 
+    args = (Nx, Ny, Nz, Nn, Nm, Np, Ns, parameters["qs"], parameters["nu"], parameters["D"],
+            parameters["Omega_cs"], parameters["alpha_s"], parameters["u_s"], 
+            parameters["Lx"], parameters["Ly"], parameters["Lz"],
+            parameters["kx_grid"], parameters["ky_grid"], parameters["kz_grid"], 
+            parameters["k2_grid"], parameters["nabla"], parameters["collision_matrix"], 
             parameters["sqrt_n_plus"], parameters["sqrt_n_minus"],
             parameters["sqrt_m_plus"], parameters["sqrt_m_minus"],
             parameters["sqrt_p_plus"], parameters["sqrt_p_minus"])
