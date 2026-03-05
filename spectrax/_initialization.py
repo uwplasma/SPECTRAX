@@ -27,7 +27,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         Optional dictionary of parameter overrides. Any key present here replaces
         the corresponding default before derived quantities are computed.
     Nx, Ny, Nz : int, optional
-        Number of Fourier modes retained along each spatial direction.
+        Number of Fourier modes along each spatial direction.
     Nn, Nm, Np : int, optional
         Number of Hermite modes along each velocity-space axis.
     Ns : int, optional
