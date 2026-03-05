@@ -1,7 +1,6 @@
 """Initialization of Hermite–Fourier coefficients for Maxwellian equilibria."""
 
 import jax
-jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax import jit
 from jax.numpy.fft import fftn, fftshift
