@@ -6,7 +6,6 @@ Hermite–Fourier coefficients. The implementation is written for JAX and uses
 """
 
 import jax
-jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.numpy.fft import ifftn, ifftshift
 from jax.scipy.special import factorial
