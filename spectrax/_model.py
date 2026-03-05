@@ -6,10 +6,8 @@ equations (:func:`Hermite_Fourier_system`).
 """
 
 import jax.numpy as jnp
-from jax import vmap, jit
+from jax import jit
 from functools import partial
-from jax.lax import dynamic_slice
-from jax.scipy.signal import convolve
 
 __all__ = ['plasma_current', 'Hermite_Fourier_system']
 
@@ -24,11 +22,11 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     qs : jnp.ndarray, shape (Ns,)
         Charges of the species.
     alpha_s : jnp.ndarray, shape (3 * Ns,)
-        Scaling factors for each species.
+        Velocity scaling factors for each species.
     u_s : jnp.ndarray, shape (3 * Ns,)
-        Velocity components for each species, packed like alpha_s.
+        Velocity shift for each species.
     Ck : jnp.ndarray, shape (Ns * Np * Nm * Nn, Ny, Nx, Nz)
-        Fourier-space Hermite coefficients for all species stacked along the first axis.
+        Hermite-Fourier coefficients for all species stacked along the first axis.
     Nn, Nm, Np : int
         Number of Hermite modes in x, y, and z respectively.
     Ns : int
@@ -108,9 +106,9 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
     Parameters
     ----------
     Ck : jnp.ndarray
-        Spectral Hermite coefficients with shape `(Ns * Np * Nm * Nn, Ny, Nx, Nz)`.
+        Hermite-Fourier coefficients with shape `(Ns * Np * Nm * Nn, Ny, Nx, Nz)`.
     C : jnp.ndarray
-        Configuration-space coefficients, typically the inverse FFT of `Ck`, with
+        Configuration-space Hermite coefficients (i.e., inverse FFT of `Ck`), with
         shape `(Ns * Np * Nm * Nn, Ny, Nx, Nz)`. The array is reshaped internally
         to separate the species and Hermite indices.
     F : jnp.ndarray
