@@ -14,7 +14,7 @@ __all__ = ['compute_C_nmp']
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
 def compute_C_nmp(Us_grid, alpha_s, u_s, Nn, Nm, Np, Ns):
     """
-    Build the Hermite-Fourier coefficients for a drifting Maxwellian reference state.
+    Build the Hermite-Fourier coefficients for a drifting Maxwellian distribution function.
 
     Parameters
     ----------

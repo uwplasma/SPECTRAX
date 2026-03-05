@@ -1,6 +1,6 @@
 """Inverse Hermite–Fourier transform utilities.
 
-This module reconstructs the real-space distribution function ``f(x, v)`` from
+This module reconstructs the phase-space distribution function ``f(x, v)`` from
 Hermite–Fourier coefficients. The implementation is written for JAX and uses
 `orthax.hermite.hermval` to evaluate Hermite polynomials efficiently.
 """
@@ -101,7 +101,7 @@ def inverse_HF_transform(Ck, Nn, Nm, Np, xi_x, xi_y, xi_z):
     Parameters
     ----------
     Ck : jnp.ndarray
-        Fourier-space Hermite coefficients for (one or more) species/moments.
+        Hermite-Fourier coefficients for (one or more) species/moments.
         The inverse FFT is applied along the last three axes.
     Nn, Nm, Np : int
         Number of Hermite modes retained along each velocity-space axis.
@@ -112,7 +112,7 @@ def inverse_HF_transform(Ck, Nn, Nm, Np, xi_x, xi_y, xi_z):
     Returns
     -------
     jnp.ndarray
-        The reconstructed distribution function evaluated on ``(x, xi_x, xi_y, xi_z)``.
+        The reconstructed distribution function evaluated on ``(t, x, y, z, xi_x, xi_y, xi_z)``.
     """
     C = ifftn(ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1)).real
 
