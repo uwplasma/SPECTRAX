@@ -32,3 +32,9 @@ autoapi_dirs = ['../spectrax']
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'piccolo_theme'
+
+html_theme_options = {
+    "source_url": "https://github.com/uwplasma/SPECTRAX",
+    "source_icon": "github",
+    "banner_text": "SPECTRAX documentation",
+}
