@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'JAX-in-Cell'
+project = 'SPECTRAX'
 copyright = '2025, UWPlasma'
 author = 'UWPlasma'
 
