@@ -31,6 +31,7 @@ autoapi_dirs = ['../spectrax']
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
+html_short_title = "SPECTRAX"
 html_theme = 'piccolo_theme'
 
 html_theme_options = {
