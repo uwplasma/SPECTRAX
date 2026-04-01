@@ -1,13 +1,22 @@
+"""Hermite–Disontinuous_Galerkin model operators for the Vlasov–Maxwell system.
+
+This module contains the right-hand side of the Hermite–DG moment
+equations (:func:`Hermite_DG_system`).
+"""
+
 import jax.numpy as jnp
 from jax import vmap, jit, debug
 from functools import partial
-from jax.lax import dynamic_slice, cond
-from jax.scipy.signal import convolve
+from jax.lax import cond
 
 __all__ = ['Hermite_DG_system']
 
 def _pad_hermite_axes(Ck):
-    # pad +1 on both sides for n,m,p only
+    """Pad Hermite axes (p, m, n) by one cell on both sides.
+
+    This padding enables safe slicing for the zero-padded shift operator used in
+    :func:`shift_multi`.
+    """
     return jnp.pad(
         Ck,
         ((0,0), (1,1), (1,1), (1,1), (0,0), (0,0), (0,0), (0,0))
@@ -50,13 +59,56 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
                         inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, tripple_product, Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
                            Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np, Ns):
     """
-    Computes the time derivative of a single Hermite-DG coefficient Ck[n, m, p] for species s
-    in a Vlasov-Maxwell spectral solver using a Hermite velocity, Galerkin space decomposition
+    Evaluate the right-hand side of the coupled Hermite-DG moment equations.
+
+    Parameters
+    ----------
+    Ck : jnp.ndarray
+        Hermite-DG coefficients with shape `(Ns * Np * Nm * Nn, Ny, Nx, Nz, Nl)`.
+    Fk : jnp.ndarray
+        DG coefficient-space electromagnetic fields with shape `(6, Ny, Nx, Nz, Nl)` ordered
+        as `(Ex, Ey, Ez, Bx, By, Bz)`.
+    col : jnp.ndarray
+        Precomputed collision coefficients.
+    sqrt_* : jnp.ndarray
+        Square-root ladder coefficients for the Hermite recurrences along each axis.
+    basis_idx : jnp.ndarray
+        Index array of each direction's mode for each basis index
+    inner_* : jnp.ndarray
+        Array of basis function evaluations at element boundary for each direction and basis index. 
+        m="minus": using value approaching element boundary from below.
+        p="plus": using value from above.
+    di_inner_product : jnp.ndarray
+        Array of inner products between one basis element and the derivative in one of the directions of another basis element.
+    tripple_product : jnp.ndarray
+        Array of integrals of three multiplied basis elements.
+    A* : jnp.ndarray
+        Velocity-space Hermite-coefficient matrix for coefficient time derivative. (x,y,z) = derivative in (x,y,z) direction. 
+        (p,m) = matrix decomposition into positive and negative eigenvalue parts, respectively, for upwinding scheme.
+    R_* : jnp.ndarray
+        EM-field derivative coupling matrix (through curl E / curl B). 
+        (p,m) = matrix decomposition into positive and negative eigenvalue parts, respectively.
+    Lx, Ly, Lz : float
+        Domain lengths in each spatial direction.
+    nu : float
+        Collision frequency.
+    D : float
+        Hyper-diffusion coefficient.
+    alpha_s, u_s : jnp.ndarray
+        Thermal scaling parameters and drift velocities per species.
+    ms : jnp.ndarray
+        Species masses.
+    qs : jnp.ndarray
+        Species charges.
+    Omega_ce : jnp.ndarray
+        Electron cyclotron frequency.
+    Nn, Nm, Np, Ns : int
+        Number of Hermite modes and species.
 
     Returns
     -------
-    dCk_s_dt : jax.Array, shape (Ny, Nx, Nz, Nl)
-        Time derivative of the Hermite-Galerkin coefficient Ck[p, m, n] for species s.
+    jnp.ndarray
+        Flattened Time derivative array `(dCk/dt, dFk/dt)` with length `(Ns * Np * Nm * Nn + 6) * Ny * Nx * Nz * Nl)`.
     """
 
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-4:])

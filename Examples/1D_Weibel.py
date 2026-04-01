@@ -267,4 +267,4 @@ anim.save("f_Weibel.gif", writer=PillowWriter(fps=10))
 plt.show()
 
 # print('Saving results...')
-# jnp.savez('output_landau-damping.npz', **output)
+# jnp.savez('output_Weibel.npz', **output)

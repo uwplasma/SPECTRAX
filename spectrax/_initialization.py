@@ -1,3 +1,5 @@
+"""Simulation parameter initialization and TOML configuration loading."""
+
 import jax.numpy as jnp
 from jax import jit, vmap, lax
 from functools import partial
@@ -15,27 +17,38 @@ __all__ = ["load_parameters", "initialize_simulation_parameters", "construct_idx
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz','Nn', 'Nm', 'Np', 'Ns', 'N_DG', 'dims', 'timesteps'])
 def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, N_DG=2, dims=1, timesteps=500, dt=0.01):
     """
-    Initialize the simulation parameters for a Vlasov solver with Hermite polynomials, 
-    combining user-provided values with predefined defaults. This function 
-    ensures all required parameters are set and automatically calculates 
-    derived parameters based on the inputs.
+    Assemble the parameter dictionary used to run a Hermite-DG Vlasov-Maxwell
+    simulation, starting from library defaults and overriding them with user input.
+    The defaults include a two-stream perturbation and
+    helper tables required by the RHS evaluation. Derived quantities are evaluated
+    after merging with any user-provided overrides so that dependent fields remain
+    consistent.
 
-    The function uses lambda functions to define derived parameters that 
-    depend on other parameters. These lambda functions are evaluated after 
-    merging user-provided parameters with the defaults, ensuring derived 
-    parameters are consistent with any overrides.
-
-    Parameters:
+    Parameters
     ----------
-    user_parameters : dict
-        Dictionary containing user-specified parameters. Any parameter not provided
-        will default to predefined values.
+    user_parameters : Mapping, optional
+        Optional dictionary of parameter overrides. Any key present here replaces
+        the corresponding default before derived quantities are computed.
+    Nx, Ny, Nz : int, optional
+        Number of Fourier modes along each spatial direction.
+    Nn, Nm, Np : int, optional
+        Number of Hermite modes along each velocity-space axis.
+    Ns : int, optional
+        Number of particle species represented in the simulation.
+    N_DG : int, optional
+        Number of DG element basis function modes in each direction.
+    dims : int, optional
+        Dimensionality (in real space) of the simulation. Number of dimensions in which more than one basis modes are to be used.
+    timesteps : int, optional
+        Number of time samples to store in the solution.
+    dt : float, optional
+        Initial guess for the integrator time step.
 
-    Returns:
+    Returns
     -------
-    parameters : dict
-        Dictionary containing all simulation parameters, with user-provided values
-        overriding defaults.
+    dict
+        Dictionary containing the merged parameters, derived helper arrays, and
+        initial spectral-DG coefficients such as `Ck_0` and `Fk_0`.
     """
     # Define all default parameters in a single dictionary
     default_parameters = {
@@ -53,7 +66,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "Omega_ce": 1.0,
         "nu": 3.0,
         "D": 0.0,
-        "t_max": 0.3,
+        "t_max": 50.0,
         "nx": 1,
         "ny": 0,
         "nz": 0,
@@ -279,21 +292,27 @@ def legT(f, basis_idx, N_DG, Lx, Nx, Ly=1, Ny=1, Lz=1, Nz=1): # Transform initia
 
 def load_parameters(input_file):
     """
-    Load parameters from a TOML file.
+    Load simulation input parameters and solver configuration from a TOML file.
 
-    Parameters:
+    Parameters
     ----------
-    input_file : str
+    input_file : str or pathlib.Path
         Path to the TOML file containing simulation parameters.
 
-    Returns:
+    Returns
     -------
-    parameters : dict
-        Dictionary containing simulation parameters.
+    tuple[dict, dict]
+        A pair `(input_parameters, solver_parameters)` where `solver_parameters`
+        includes an instantiated Diffrax solver ready for `diffeqsolve`.
     """
     parameters = tomllib.load(open(input_file, "rb"))
     input_parameters = parameters['input_parameters']
     solver_parameters = parameters['solver_parameters']
+
+    # Whether to use adaptive time-stepping or constant dt.
+    # Default is True.
+    adaptive_time_step = solver_parameters.get("adaptive_time_step", True)
+    solver_parameters["adaptive_time_step"] = adaptive_time_step
 
 
     def get_solver_class(name: str):
@@ -301,6 +320,6 @@ def load_parameters(input_file):
             if issubclass(cls, diffrax.AbstractSolver) and cls is not diffrax.AbstractSolver and cls_name == name: return cls()
             elif name == "ImplicitMidpoint": return ImplicitMidpoint(rtol=input_parameters["ode_tolerance"], atol=input_parameters["ode_tolerance"])
         raise ValueError(f"Solver '{name}' is not supported. Choose from Diffrax solvers.")
-    solver_parameters["solver"] = get_solver_class(solver_parameters.get("solver", "Tsit5"))
+    solver_parameters["solver"] = get_solver_class(solver_parameters.get("solver", "Dopri8"))
     
     return input_parameters, solver_parameters

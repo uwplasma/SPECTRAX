@@ -1,18 +1,20 @@
+"""Example: 1D Landau damping.
+
+Runs a 1D Landau damping setup defined in ``input_1D_landau_damping.toml`` and
+plots standard diagnostics via ``spectrax.plot``.
+"""
+
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-number_of_processors_to_use = 1 # Parallelization, this should divide total resolution
-os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
 import jax.numpy as jnp
 from jax import block_until_ready
 from spectrax import simulation, load_parameters, plot, construct_idx_array
 from scipy.special import eval_legendre, roots_legendre, eval_hermite
 from matplotlib.animation import FuncAnimation, PillowWriter
-# import pandas as pd
 
 # Read from input.toml
-# input_parameters, solver_parameters = load_parameters('input_1D_landau_damping.toml')
 toml_file = os.path.join(os.path.dirname(__file__), 'input_1D_landau_damping.toml')
 input_parameters, solver_parameters = load_parameters(toml_file)
 

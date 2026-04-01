@@ -12,11 +12,11 @@ t_max = 50.0
 nx = 1
 ny = 0
 nz = 0
-dn1 = 0.01
+dn1 = 0.001
 ode_tolerance = 1e-8
 
 [solver_parameters]
-Nx=33
+Nx=3
 Ny=1
 Nz=1
 Nn=40

@@ -3,7 +3,7 @@
 </p>
 <!-- <p align="center"><h3 align="center">SPECTRAX</h1></p> -->
 <p align="center">
-	<em><code>❯ spectrax: Hermite-Fourier Vlasov equation solver in JAX to simulate plasmas</code></em>
+	<em><code>❯ SPECTRAX: Hermite-Fourier Vlasov-Maxwell solver in JAX for plasma physics simulations</code></em>
 </p>
 <p align="center">
 	<img src="https://img.shields.io/github/license/uwplasma/SPECTRAX?style=default&logo=opensourceinitiative&logoColor=white&color=0080ff" alt="license">
@@ -30,55 +30,60 @@
 
 ##  Table of Contents
 
-- [ Overview](#-overview)
-- [ Features](#-features)
-- [ Project Structure](#-project-structure)
-  - [ Project Index](#-project-index)
-- [ Getting Started](#-getting-started)
-  - [ Prerequisites](#-prerequisites)
-  - [ Installation](#-installation)
-  - [ Usage](#-usage)
-  - [ Testing](#-testing)
-- [ Project Roadmap](#-project-roadmap)
-- [ Contributing](#-contributing)
-- [ License](#-license)
-- [ Acknowledgments](#-acknowledgments)
+- [Table of Contents](#table-of-contents)
+- [Overview](#overview)
+- [Mathematical Method](#mathematical-method)
+- [Features](#features)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Usage](#usage)
+    - [Command‑line Interface](#commandline-interface)
+  - [Testing](#testing)
+- [Input File Format](#input-file-format)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
 
 ---
 
 ##  Overview
 
-SPECTRAX is an open-source project in Python that uses JAX to speedup simulations, leading to a simple to use, fast and concise code. It can be imported in a Python script using the **spectrax** package, or run directly in the command line as `spectrax`. To install it, use
+**SPECTRAX** is an open-source spectral kinetic plasma solver written in Python with the [JAX](https://github.com/jax-ml/jax) ecosystem. It solves the collisionless Vlasov–Maxwell equations by evolving the Hermite–Fourier coefficients of the particle distribution function and the electromagnetic fields. This approach was previously implemented in *SpectralPlasmaSolver* (SPS), developed at Los Alamos National Laboratory, and described in [Delzanno (2025)](https://www.sciencedirect.com/science/article/pii/S0021999115004738), [Vencels et al. (2016)](https://iopscience.iop.org/article/10.1088/1742-6596/719/1/012022) and [Roytershteyn & Delzanno (2018)](https://www.frontiersin.org/journals/astronomy-and-space-sciences/articles/10.3389/fspas.2018.00027/full), where the one particle distribution is expanded in asymmetrically weighted (AW) Hermite functions in velocity space and Fourier modes in configuration space. By performing an AW Hermite expansion in velocity space, the method naturally couples fluid and kinetic physics: the lowest‐order Hermite coefficients correspond to fluid moments and higher modes capture kinetic corrections.
 
-   ```sh
-   pip install spectrax
-   ```
+SPECTRAX implements a Hermite–Fourier spectral approach for Vlasov–Maxwell simulations in a JAX framework. It uses just‑in‑time compilation to run efficiently on CPUs and GPUs, adopts state‑of‑the‑art ODE solvers from the [Diffrax](https://github.com/patrick-kidger/diffrax) library, and includes utilities for diagnostics and plotting. The code supports multi‑species plasmas and arbitrary spatial dimensionality (1D to 3D) and can serve as a test bed for studying kinetic instabilities, turbulence, and the transition between fluid and kinetic regimes.
 
-Alternatively, you can install the Python dependencies `jax`, `jax_tqdm` and `matplotlib`, and run the [example script](example_script.py) in the repository after downloading it as
 
-   ```sh
-   git clone https://github.com/uwplasma/SPECTRAX
-   python example_script.py
-   ```
+---
 
-This allows SPECTRAX to be run without any installation.
+##  Mathematical Method
 
-The project can be downloaded in its [GitHub repository](https://github.com/uwplasma/SPECTRAX)
-</code>
+The Hermite–Fourier spectral method replaces the Vlasov equation in the 6-dimensional phase-space with a hierarchy of coupled ordinary differential equations (ODEs) for the Hermite–Fourier moments of the one-particle probability density function and the electric and magnetic fields. The Hermite-Fourier expansion is truncated for closure and a hypercollisional operator is introduced in velocity space to suppress recurrence. The resulting system of ODEs is integrated in time using solvers from the [Diffrax](https://github.com/patrick-kidger/diffrax) library. Diffrax's implementation of the Dormand-Prince’s 8/7 method, `Dopri8`, proved to be notoriously fast and stable, and is set as the default solver.
 
 ---
 
 ##  Features
 
-SPECTRAX can run in CPUs, GPUs and TPUs, has autodifferentiation and just-in-time compilation capabilities, is based on rigorous testing, uses CI/CD via GitHub actions and has detailed documentation.
+* **JAX‑based spectral solver** – all core operations are implemented in JAX and compiled with `jit`, enabling efficient execution on CPUs and GPUs.
 
-Currently, it evolves particles using the non-relativisic Lorentz force $\mathbf F = q (\mathbf E + \mathbf v \times \mathbf B)$, and evolves the electric $\mathbf E$ and magnetic $\mathbf B$ field using Maxwell's equations.
+* **Efficient time integration** – SPECTRAX uses ODE solvers from the Diffrax library (e.g., `Dopri5`, `Dopri8`, `Tsit5`; a Diffrax-based, custom-made implicit midpoint solver is also available as `ImplicitMidpoint`) to advance the Hermite–Fourier coefficients in time. The `simulation` function assembles the right‑hand‑side, applies a 2⁄3 de‑aliasing mask on Fourier modes in the nonlinear term, and integrates the system until `t_max`, returning the time‑evolved coefficients.
 
-Plenty of examples are provided in the `examples` folder, and the documentation can be found in [Read the Docs](https://spectrax.readthedocs.io/).
+* **Multi‑species and multi‑dimensional** – the code supports multiple particle species with distinct mass ratios, temperatures and drift velocities. Resolution in spatial dimensions is controlled via `Nx`, `Ny`, `Nz`, and velocity Hermite orders via `Nn`, `Nm`, `Np`.
+
+* **Diagnostics** – after each simulation the `diagnostics` function computes the Debye length, kinetic energies of each species, electromagnetic energy and total energy and stores them in the output dictionary.
+
+* **Plotting utilities** – the `plot` function produces a multi‑panel figure showing energy evolution,
+relative energy error, density fluctuations and phase‑space distributions for each species. It reconstructs the distribution function by performing an inverse Fourier transform followed by an inverse Hermite transform. The phase‑space reconstruction uses the `inverse_HF_transform` function, which evaluates Hermite polynomials and sums over all modes. The phase-space plots assume a 1D simulation.
+
+* **Flexible initialization** – simulation parameters may be provided through simple TOML files or directly in Python. The `load_parameters` function reads a TOML file and merges it with sensible defaults that initialize a two‑stream instability. Users can also initialize their own spectral coefficients, as shown in the example scripts.
+
+* **Open source and extensible** – SPECTRAX is released under the MIT License. Its modular structure
+allows researchers to experiment with new closures, collision operators or boundary conditions.
 
 ---
 
-##  Project Structure
+
+<!-- ##  Project Structure
 
 ```sh
 └── SPECTRAX/
@@ -94,9 +99,11 @@ Plenty of examples are provided in the `examples` folder, and the documentation 
     │   └── file3.py
     └── tests
         └── test1.py
-```
+``` 
 
 ---
+-->
+
 ##  Getting Started
 
 ###  Prerequisites
@@ -105,62 +112,59 @@ Plenty of examples are provided in the `examples` folder, and the documentation 
 
 Besides Python, SPECTRAX has minimum requirements. These are stated in [requirements.txt](requirements.txt), and consist of the Python libraries `jax`, `jax_tqdm` and `matplotlib`.
 
-###  Installation
+### Installation
 
-Install SPECTRAX using one of the following methods:
+SPECTRAX is a standard Python package that may be installed from a local checkout. The project depends
+on `jax`, `jaxlib`, `jax_tqdm`, `diffrax`, `orthax`, and `matplotlib`.
 
-**Using PyPi:**
+1. Clone this repository:
 
-1. Install SPECTRAX from anywhere in the terminal:
 ```sh
-pip install spectrax
-```
-
-**Build from source:**
-
-1. Clone the SPECTRAX repository:
-```sh
-git clone https://github.com/uwplasma/SPECTRAX
-```
-
-2. Navigate to the project directory:
-```sh
+git clone https://github.com/uwplasma/SPECTRAX.git
 cd SPECTRAX
 ```
 
-3. Install the project dependencies:
+2. (Optional) create a virtual environment and activate it.
+
+3. Install the package in editable mode:
 
 ```sh
-pip install -r /path/to/requirements.txt
-```
-
-4. Install SPECTRAX:
-
-```sh
+pip install -r requirements.txt
 pip install -e .
 ```
 
+JAX will automatically select the available hardware (CPU or GPU). For GPU support you may need the
+appropriate CUDA-enabled version of `jaxlib`; consult the [JAX installation guide](https://docs.jax.dev/en/latest/installation.html).
+
+---
+
 ###  Usage
-To run a simple case of SPECTRAX, you can simply call `spectrax` from the terminal
+
+SPECTRAX can be used either via a command‑line interface or directly as a Python module.
+
+#### Command‑line Interface
+
+After installation, the `spectrax` CLI entry point is available. You can run an instance of the 1D two-stream instability by simply calling `spectrax` from the terminal.
+
 ```sh
 spectrax
 ```
 
-This runs SPECTRAX using standard input parameters of the two stream instability. To change input parameters, use a TOML file similar to the [example input](example_input.toml) present in the repository as
+To run it with different input parameters, us a TOML file like those in the `Examples` directory.
 
 ```sh
 spectrax example_input.toml
 ```
 
-Additionally, it can be run inside a script, as shown in the [example script](example_script.py) file
+Other examples written in Python scripts, like those in the `Examples` directory, can be executed from the terminal as follows:
+
 ```sh
 python example_script.py
 ```
 
-There, you can find most of the input parameters needed to run many test cases, as well as resolution parameters.
-The `spectrax` package has a single function `simulation()` that takes as arguments a dictionary input_parameters, the number of grid points, number of pseudoelectrons, total number of time steps, and the field solver to use.
 
-In the [example script](example_script.py) file we write as inline comments the meaning of each input parameter.
+The `simulation` function returns a dictionary containing the evolved Hermite coefficients `Ck`, electromagnetic coefficients `Fk`, time array, the input parameters and diagnostic quantities.
+
 
 ###  Testing
 Run the test suite using the following command:
@@ -169,13 +173,40 @@ pytest .
 ```
 
 ---
-##  Project Roadmap
 
-- [X] **`Task 1`**: <strike>Task 1.</strike>
-- [ ] **`Task 2`**: Task 2.
-- [ ] **`Task 3`**: Task 3.
+## Input File Format
+
+Input files are written in TOML and define both physical and solver parameters. Below is a summary of the
+most important keys. Keys absent from the file fall back to sensible defaults specified in the code.
+
+| Parameter | Description |
+|---|---|
+| `Lx, Ly, Lz` | Domain lengths in the spatial directions (periodic boundary condition). |
+| `mi_me` | Ion‑to‑electron mass ratio. |
+| `Ti_Te` | Ion‑to‑electron temperature ratio. |
+| `qs` | Array of species charges. |
+| `alpha_s` | Thermal scales for each species for Hermite basis. |
+| `u_s` | Drift velocities for each species for Hermite basis (packed as `[u_x,u_y,u_z]` ). |
+| `Omega_cs` | Cyclotron frequencies for each species. |
+| `nu` | Hyper-collision frequency to damp recurrence. |
+| `D` | Hyper‑diffusion coefficient. |
+| `t_max` | Final simulation time. |
+| `nx, ny, nz` | Mode numbers used to seed sinusoidal perturbations (see examples). |
+| `dn1, dn2` | Amplitudes of initial density perturbations (see examples). |
+| `ode_tolerance` | Relative/absolute tolerance for adaptive solvers. |
+| `Nx, Ny, Nz` | Number of retained Fourier modes per spatial dimension. |
+| `Nn, Nm, Np` | Number of Hermite modes per velocity dimension. |
+| `Ns` | Number of species (two by default). |
+| `timesteps` | Number of solution snapshots to store between `t=0` and `t_max`. |
+| `dt` | Initial step size provided to the ODE solver. |
+| `solver` | Name of Diffrax solver (e.g., `Tsit5`, `Dopri5`, `Dopri8`, `ImplicitMidpoint`). |
+| `adaptive_time_step` | Timestep adaptability (`true` by default). |
+
+Many of these parameters can be arrays; for example `alpha_s` must contain three values per species (one
+for each velocity dimension) and can be used to represent anisotropic plasmas.
 
 ---
+
 
 ##  Contributing
 
@@ -231,3 +262,8 @@ This project is protected under the MIT License. For more details, refer to the 
 - We acknowledge the help of the whole [UWPlasma](https://rogerio.physics.wisc.edu/) plasma group.
 
 ---
+
+
+
+
+

@@ -1,19 +1,22 @@
+"""Example: 1D two-stream instability.
+
+Loads parameters from ``input_1D_two_stream.toml``, builds the standard two-stream
+initial conditions in Fourier/Hermite space, runs the solver, and plots results.
+"""
+
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-number_of_processors_to_use = 1 # Parallelization, this should divide total resolution
-os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
 import jax
 import jax.numpy as jnp
 from jax import block_until_ready, config
 config.update("jax_enable_x64", True)
-from spectrax import simulation, load_parameters, legT
+from spectrax import simulation, load_parameters, construct_idx_array, legT
 from scipy.special import eval_hermite
 from matplotlib.animation import FuncAnimation, PillowWriter
 
 # Read from input.toml
-# input_parameters, solver_parameters = load_parameters('input_1D_two_stream.toml')
 toml_file = os.path.join(os.path.dirname(__file__), 'input_1D_two_stream.toml')
 input_parameters, solver_parameters = load_parameters(toml_file)
 
@@ -33,14 +36,15 @@ N_DG = solver_parameters["N_DG"]
 dims = solver_parameters["dims"]
 
 # Initialize distribution function as a two-stream instability
+basis_idx = construct_idx_array(dims, N_DG)
 values  = (dn1 + dn2) * Lx / (4 * jnp.pi * nx * Omega_ce) # Initial perturbation is then 2 * values * cos(2\pi*x/L)
 F0 = lambda x, y, z: jnp.concatenate([jnp.array([2 * values * jnp.cos(2*jnp.pi*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
-input_parameters["Fk_0"] = legT(F0, N_DG)
+input_parameters["Fk_0"] = legT(F0, basis_idx, N_DG, Lx, Nx)
 
 C10 = lambda x: 1 / (alpha_s[0] ** 3) - dn1 * (1 / (alpha_s[0] ** 3)) * jnp.sin(2*jnp.pi*x/Lx)
 C20 = lambda x: 1 / (alpha_s[3] ** 3) - dn2 * (1 / (alpha_s[3] ** 3)) * jnp.sin(2*jnp.pi*x/Lx)
 C0 = lambda x, y, z: jnp.concatenate([jnp.array([C10(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape), jnp.array([C20(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape)])
-input_parameters["Ck_0"] = legT(C0, N_DG)
+input_parameters["Ck_0"] = legT(C0, basis_idx, N_DG, Lx, Nx)
 # Simulate
 start_time = time()
 output = block_until_ready(simulation(input_parameters, **solver_parameters))

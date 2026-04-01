@@ -1,8 +1,14 @@
+"""Example: 2D Orszag–Tang vortex.
+
+Loads the 2D Orszag–Tang setup from ``input_2D_orszag_tang.toml``, constructs
+initial distribution-function moments consistent with the prescribed fluid
+velocity and electromagnetic fields, runs the simulation, and generates plots
+via ``orszag_tang_data_analysis.py``.
+"""
+
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-number_of_processors_to_use = 1 # Parallelization, this should divide total resolution
-os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
 from jax import block_until_ready, config
 config.update("jax_enable_x64", True)
@@ -12,11 +18,16 @@ from spectrax import simulation, load_parameters, construct_idx_array, legT
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
 
+from orszag_tang_data_analysis import (
+        plot_energy_timeseries, plot_relative_energy_error,
+        plot_Jz_slice, animate_Jz
+    )
+
+# Read from input.toml
 toml_file = os.path.join(os.path.dirname(__file__), 'input_2D_orszag_tang.toml')
 input_parameters, solver_parameters = load_parameters(toml_file)
 
 print('Setting up simulation parameters...')
-start_time = time()
 deltaB = 0.2 # In-plane magnetic field amplitude. 
 U0 = deltaB * input_parameters["Omega_ce"] / jnp.sqrt(input_parameters["ms"][1] / input_parameters["ms"][0])
 
