@@ -186,7 +186,7 @@ def compute_basis_products(dx, dy, dz, basis_idx):
         ix, iy, iz = basis_idx[i]
         jx, jy, jz = basis_idx[j]
         kx, ky, kz = basis_idx[k]
-        return dx * dy * dz * (wigner(ix, jx, kx) * wigner(jy, jy, ky) * wigner(iz, jz, kz)) ** 2
+        return dx * dy * dz * (wigner(ix, jx, kx) * wigner(iy, jy, ky) * wigner(iz, jz, kz)) ** 2
 
     def inner_compute(idx): # Function for computing the surface integrals on each face
         b, pl, ql = idx
@@ -254,7 +254,7 @@ def compute_R_pm_matrices(upwind=False):
     return R_p, R_m
 
 def legT(f, basis_idx, N_DG, Lx, Nx, Ly=1, Ny=1, Lz=1, Nz=1): # Transform initial values into finite element basis
-        Nq = int(N_DG // 2 + 1)
+        Nq = int(N_DG // 2 + 1) # Number of necessary quadrature points for exact inner product with highest order mode
         dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz
         x_elements = dx / 2 + jnp.linspace(0, Lx, Nx, endpoint=False)
         y_elements = dy / 2 + jnp.linspace(0, Ly, Ny, endpoint=False)
@@ -269,9 +269,8 @@ def legT(f, basis_idx, N_DG, Lx, Nx, Ly=1, Ny=1, Lz=1, Nz=1): # Transform initia
         leg_vals3d = leg_vals[basis_idx[:, 1], :][:, :, None, None] * leg_vals[basis_idx[:, 0], :][:, None, :, None] * leg_vals[basis_idx[:, 2], :][:, None, None, :] # create values of evaluated Legendre polynomials on 3d local grid. Shape (Nl, Nq, Nq, Nq) where Nq is the number of quadrature points.
         leg_vals3d = jnp.transpose(leg_vals3d, (1, 2, 3, 0))
         w_array = w_quad[:, None, None] * w_quad[None, :, None] * w_quad[None, None, :]
-
-        X = x_elements[:, None, None, None, None, None] + quad_points[None, None, None, :, None, None] * dx / 2
-        Y = y_elements[None, :, None, None, None, None] + quad_points[None, None, None, None, :, None] * dy / 2
+        X = x_elements[None, :, None, None, None, None] + quad_points[None, None, None, None, :, None] * dx / 2
+        Y = y_elements[:, None, None, None, None, None] + quad_points[None, None, None, :, None, None] * dy / 2
         Z = z_elements[None, None, :, None, None, None] + quad_points[None, None, None, None, None, :] * dz / 2
         X, Y, Z = jnp.broadcast_arrays(X, Y, Z)
         Uk_0 = (basis_idx[:, 0] + 0.5) * (basis_idx[:, 1] + 0.5) * (basis_idx[:, 2] + 0.5) * jnp.sum(f(X, Y, Z)[..., None] * leg_vals3d * w_array[:, :, :, None], axis=(-4, -3, -2))

@@ -8,8 +8,8 @@ import jax
 import jax.numpy as jnp
 from jax import block_until_ready, config
 config.update("jax_enable_x64", True)
-from spectrax import simulation, load_parameters, plot, construct_idx_array
-from scipy.special import eval_legendre, roots_legendre, eval_hermite
+from spectrax import simulation, load_parameters, legT
+from scipy.special import eval_hermite
 from matplotlib.animation import FuncAnimation, PillowWriter
 
 # Read from input.toml
@@ -31,28 +31,6 @@ Nz = solver_parameters["Nz"]
 Nn = solver_parameters["Nn"]
 N_DG = solver_parameters["N_DG"]
 dims = solver_parameters["dims"]
-
-basis_idx = construct_idx_array(dims, N_DG)
-def legT(f, N_DG=3, Nq=10):
-        dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz
-        x_elements = dx / 2 + jnp.linspace(0, Lx, Nx, endpoint=False)
-        y_elements = dy / 2 + jnp.linspace(0, Ly, Ny, endpoint=False)
-        z_elements = dz / 2 + jnp.linspace(0, Lz, Nz, endpoint=False)
-        quad_points, w_quad = jnp.array(roots_legendre(Nq))
-        leg_vals = jnp.array(eval_legendre(jnp.arange(N_DG)[:, None], quad_points)) # Create array of shape (N_DG, Nq) evaluating the n'th Legendre polynomial at each quadrature point
-        leg_vals3d = leg_vals[basis_idx[:, 1], :][:, :, None, None] * leg_vals[basis_idx[:, 0], :][:, None, :, None] * leg_vals[basis_idx[:, 2], :][:, None, None, :] # create values of evaluated Legendre polynomials on 3d local grid. Shape (Nl, Nq, Nq, Nq) where Nq is the number of quadrature points.
-        leg_vals3d = jnp.transpose(leg_vals3d, (1, 2, 3, 0))
-        w_array = w_quad[:, None, None] * w_quad[None, :, None] * w_quad[None, None, :]
-        
-        Fk_0 = jnp.zeros((*f(0, 0, 0).shape, Ny, Nx, Nz, basis_idx.shape[0])) # Initialize array
-        for i, x in enumerate(x_elements): # Loop over all elements
-              for j, y in enumerate(y_elements):
-                    for k, z in enumerate(z_elements):
-                          X, Y, Z = jnp.meshgrid(x+dx*quad_points/2, y+dy*quad_points/2, z+dz*quad_points/2, indexing='xy') # Create local mesh
-                          integral = jnp.sum(f(X, Y, Z)[..., None] * leg_vals3d * w_array[:, :, :, None], axis=(-4, -3, -2))
-                          Fk_0 = Fk_0.at[..., j, i, k, :].set((2 * basis_idx[:, 0] + 1) * (2 * basis_idx[:, 1] + 1) * (2 * basis_idx[:, 2] + 1) * integral / 8)
-
-        return Fk_0
 
 # Initialize distribution function as a two-stream instability
 values  = (dn1 + dn2) * Lx / (4 * jnp.pi * nx * Omega_ce) # Initial perturbation is then 2 * values * cos(2\pi*x/L)

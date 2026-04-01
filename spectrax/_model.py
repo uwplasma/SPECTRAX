@@ -152,7 +152,7 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
     ################## Inverse mass matrix and final expression #################
     
     Col  = -nu * col[None, :, :, :, None, None, None, None] * Ck
-    Diff = -D * 0 * Ck # Diffusion disabled for now. Adding it is very low priority.
+    Diff = -D * 0 * Ck # Diffusion disabled for now. Adding it is low priority.
 
     inv_m = (2 * basis_idx[:, 0] + 1) * (2 * basis_idx[:, 1] + 1) * (2 * basis_idx[:, 2] + 1) / (dx * dy * dz)
     dCk_s_dt = -inv_m * (integral + bdy + dNL) + Col + Diff

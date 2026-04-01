@@ -8,8 +8,8 @@ from time import time
 from functools import partial
 import lineax as lx
 from jax.flatten_util import ravel_pytree
-from ._preconditioning import inverse_preconditioner
-import jaxopt
+# from ._preconditioning import inverse_preconditioner
+# import jaxopt3
 from collections import deque
 
 
