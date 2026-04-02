@@ -255,3 +255,11 @@ plot_field_evolution(ne, 2000, 'OT_tests_ne.gif')
 plot_field_evolution(Jz, 2000, 'OT_tests_Jz.gif')
 
 plt.show()
+
+# print('Saving results...')
+# jnp.savez('output_Orszag.npz', **output)
+
+plot_energy_timeseries(output, savepath="energy.png")
+plot_relative_energy_error(output, savepath="energy_error.png")
+plot_Jz_slice(output, input_parameters, solver_parameters, t_query=output["time"][-1], savepath="Jz_slice.png")
+animate_Jz(output, input_parameters, solver_parameters, tmax=None, out_gif="Jz.gif")

@@ -16,7 +16,7 @@ when possible.
 from __future__ import annotations
 
 from typing import Any, Mapping
-
+from spectrax import construct_idx_array
 import jax.numpy as jnp
 
 __all__ = ["diagnostics"]
@@ -40,34 +40,6 @@ def _infer_Ns(output: Mapping[str, Any]) -> int:
         raise ValueError(f"Cannot infer Ns from u_s of length {n}; expected multiple of 3.")
     return n // 3
 
-
-def _infer_masses(output: Mapping[str, Any], Ns: int) -> jnp.ndarray:
-    """Infer per-species mass multipliers for kinetic-energy normalization.
-
-    The kinetic-energy diagnostic used here follows the convention in the legacy
-    two-species code, where species 0 is normalized to mass 1 and species 1 is
-    scaled by ``mi_me``. For ``Ns>2`` a user may provide:
-
-    - ``output["ms"]``: array of shape ``(Ns,)``
-    - ``output["masses"]``: array of shape ``(Ns,)``
-
-    If neither is present, this returns ``ones((Ns,))``.
-    """
-    if "ms" in output:
-        ms = jnp.asarray(output["ms"])
-        if ms.size != Ns:
-            raise ValueError(f'output["ms"] has size {ms.size}, expected {Ns}.')
-        return ms
-    if "masses" in output:
-        ms = jnp.asarray(output["masses"])
-        if ms.size != Ns:
-            raise ValueError(f'output["masses"] has size {ms.size}, expected {Ns}.')
-        return ms
-    if Ns == 2 and "mi_me" in output:
-        return jnp.array([1.0, output["mi_me"]])
-    return jnp.ones((Ns,))
-
-
 def diagnostics(output: dict) -> None:
     """Compute and attach common diagnostics to ``output`` (mutates in-place).
 
@@ -79,15 +51,15 @@ def diagnostics(output: dict) -> None:
 
         - ``alpha_s``: array of shape ``(3*Ns,)`` (thermal scales per species)
         - ``u_s``: array of shape ``(3*Ns,)`` (drift velocities per species)
-        - ``Ck``: Hermite-Fourier coefficients of shape ``(Nt, Ns*Hs, Ny, Nx, Nz)``
-        - ``Fk``: field Fourier coefficients of shape ``(Nt, 6, Ny, Nx, Nz)``
-        - ``Omega_cs``: array of shape ``(Ns,)`` (cyclotron frequencies)
+        - ``qs``: species charges (normalized to electron charge)
+        - ``ms`` for general per-species mass scaling
+        - ``Ck``: Hermite-Fourier coefficients of shape ``(Nt, Ns*Hs, Ny, Nx, Nz, Nl)``
+        - ``Fk``: field Fourier coefficients of shape ``(Nt, 6, Ny, Nx, Nz, Nl)``
+        - ``Omega_ce``: electron cyclotron frequency
         - ``Lx``: domain length in x (used for ``k_norm``)
 
         Optionally, it may use:
         - ``Nn``, ``Nm``, ``Np`` to decode flattened Hermite indices
-        - ``mi_me`` for legacy 2-species Debye length and mass scaling
-        - ``ms`` or ``masses`` for general per-species mass scaling
 
     Added keys
     ----------
@@ -110,25 +82,20 @@ def diagnostics(output: dict) -> None:
     # Required arrays
     alpha_s = jnp.asarray(output["alpha_s"])
     u_s = jnp.asarray(output["u_s"])
+    qs = jnp.asarray(output["qs"])
+    ms = jnp.asarray(output["ms"])
+    Omega_ce = output["Omega_ce"]
     Fk = jnp.asarray(output["Fk"])
     Ck = jnp.asarray(output["Ck"])
-    Omega_cs = jnp.asarray(output["Omega_cs"])
     Lx = output["Lx"]
 
     Ns = _infer_Ns(output)
 
     # Infer spatial grid sizes from shapes.
-    # Arrays are stored in fftshift ordering throughout the solver.
-    Ny = int(Fk.shape[-3])
-    Nx = int(Fk.shape[-2])
-    Nz = int(Fk.shape[-1])
-
-    # k=0 mode indices for fftshifted arrays.
-    # - for odd N:  N//2 == (N-1)//2
-    # - for even N: N//2 correctly points to the centered zero-frequency bin
-    half_ny = Ny // 2
-    half_nx = Nx // 2
-    half_nz = Nz // 2
+    Ny = int(Fk.shape[-4])
+    Nx = int(Fk.shape[-3])
+    Nz = int(Fk.shape[-2])
+    Nl = int(Fk.shape[-1])
 
     # Basic sanity
     if alpha_s.size != 3 * Ns:
@@ -152,19 +119,15 @@ def diagnostics(output: dict) -> None:
     # Debye length:
     # - For Ns==2, preserve the legacy electron/ion expression when mi_me is provided.
     # - For Ns>2, use an effective value based on the x-thermal scales.
-    if Ns == 2 and "mi_me" in output:
-        mi_me = output["mi_me"]
-        lambda_D = jnp.sqrt(1.0 / (2.0 * (1.0 / alpha_s[0] ** 2 + 1.0 / (mi_me * alpha_s[3] ** 2))))
-    else:
-        alpha_x = alpha_s.reshape(Ns, 3)[:, 0]
-        lambda_D = jnp.sqrt(1.0 / (2.0 * jnp.sum(1.0 / (alpha_x ** 2))))
+    alpha_x = alpha_s.reshape(Ns, 3)[:, 0]
+    lambda_D = jnp.sqrt(1.0 / (2.0 * jnp.sum((qs ** 2 / ms) / (alpha_x ** 2)))) # This assumes all species have the same average density.
 
     # Original k_norm convention (species 0, x thermal).
     k_norm = jnp.sqrt(2.0) * jnp.pi * alpha_s[0] / Lx
 
     # Reshape Ck into species blocks along Hermite axis:
-    # (Nt, Htot, Ny, Nx, Nz) -> (Nt, Ns, Hs, Ny, Nx, Nz)
-    Ck_rs = Ck.reshape(Ck.shape[0], Ns, Hs, Ny, Nx, Nz)
+    # (Nt, Htot, Ny, Nx, Nz, Nl) -> (Nt, Ns, Hs, Ny, Nx, Nz, Nl)
+    Ck_rs = Ck.reshape(Ck.shape[0], Ns, Hs, Ny, Nx, Nz, Nl)
 
     def _take_mode(offset: Any) -> jnp.ndarray:
         """Gather a Hermite coefficient at a given per-species flattened index.
@@ -176,13 +139,12 @@ def diagnostics(output: dict) -> None:
         Returns
         -------
         jnp.ndarray
-            Array of shape ``(Nt, Ns)`` giving the coefficient evaluated at the
-            k=0 Fourier mode.
+            Array of shape ``(Nt, Ns)`` giving the coefficient's average value over the domain
         """
         offset = jnp.asarray(offset, dtype=jnp.int32)
         off_clip = jnp.clip(offset, 0, Hs - 1)
-        gathered = jnp.take(Ck_rs, off_clip, axis=2, mode="clip")  # (Nt, Ns, Ny, Nx, Nz)
-        k0 = gathered[:, :, half_ny, half_nx, half_nz]              # (Nt, Ns)
+        gathered = jnp.take(Ck_rs, off_clip, axis=2, mode="clip")  # (Nt, Ns, Ny, Nx, Nz, Nl)
+        k0 = jnp.sum(gathered[:, :, :, :, :, 0], axis=(-3, -2, -1)) / (Nx * Ny * Nz) # (Nt, Ns)
         mask = (offset >= 0) & (offset < Hs)
         return k0 * mask.astype(k0.dtype)
 
@@ -200,7 +162,7 @@ def diagnostics(output: dict) -> None:
     # Species parameters
     alpha = alpha_s.reshape(Ns, 3)
     u = u_s.reshape(Ns, 3)
-    masses = _infer_masses(output, Ns)
+    masses = ms
 
     a0, a1, a2 = alpha[:, 0], alpha[:, 1], alpha[:, 2]
     u0, u1, u2 = u[:, 0], u[:, 1], u[:, 2]
@@ -214,7 +176,8 @@ def diagnostics(output: dict) -> None:
     kinetic_energy_species = pref[None, :] * (term0[None, :] * C000 + term1 + term2)  # (Nt, Ns)
     kinetic_energy = jnp.sum(kinetic_energy_species, axis=1)  # (Nt,)
     # Field energy
-    EM_energy = 0.5 * jnp.sum(jnp.abs(Fk) ** 2, axis=(-4, -3, -2, -1)) * Omega_cs[0] ** 2  # (Nt,)
+    basis_idx = construct_idx_array(output["dims"], output["N_DG"])
+    EM_energy = 0.5 * Omega_ce ** 2 * jnp.sum(jnp.abs(Fk) ** 2 / ((1 + 2 * basis_idx[:, 0]) * (1 + 2 * basis_idx[:, 1]) * (1 + 2 * basis_idx[:, 2])), axis=(-4, -3, -2, -1)) / (Nx * Ny * Nz) # (Nt,)
 
     total_energy = kinetic_energy + EM_energy
 
