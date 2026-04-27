@@ -162,24 +162,24 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     return parameters
 
 def construct_idx_array(dims=1, N_DG=2):
-        Nl = comb(N_DG + dims - 1, dims)
-        l = 0
-        indices = jnp.zeros((Nl, 3))
+    Nl = comb(N_DG + dims - 1, dims)
+    l = 0
+    indices = jnp.zeros((Nl, 3))
 
-        if dims == 1:
-            for i in range(N_DG):
-                indices = indices.at[l, :].set([i, 0, 0])
-                l += 1
-        else:
-            for i in range(N_DG):
-                for j in range(N_DG - i):
-                    for k in range(N_DG - i - j):
-                        indices = indices.at[l, :].set([i, j, k])
-                        l += 1
-                        if dims < 3:
-                            break
+    if dims == 1:
+        for i in range(N_DG):
+            indices = indices.at[l, :].set([i, 0, 0])
+            l += 1
+    else:
+        for i in range(N_DG):
+            for j in range(N_DG - i):
+                for k in range(N_DG - i - j):
+                    indices = indices.at[l, :].set([i, j, k])
+                    l += 1
+                    if dims < 3:
+                        break
         
-        return indices.astype(jnp.int32)
+    return indices.astype(jnp.int32)
 
 def compute_basis_products(dx, dy, dz, basis_idx):
     def wigner(j1, j2, j3): # Special case of wigner 3j symbol where bottom row is zero
@@ -267,28 +267,28 @@ def compute_R_pm_matrices(upwind=False):
     return R_p, R_m
 
 def legT(f, basis_idx, N_DG, Lx, Nx, Ly=1, Ny=1, Lz=1, Nz=1): # Transform initial values into finite element basis
-        Nq = int(N_DG // 2 + 1) # Number of necessary quadrature points for exact inner product with highest order mode
-        dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz
-        x_elements = dx / 2 + jnp.linspace(0, Lx, Nx, endpoint=False)
-        y_elements = dy / 2 + jnp.linspace(0, Ly, Ny, endpoint=False)
-        z_elements = dz / 2 + jnp.linspace(0, Lz, Nz, endpoint=False)
-        quad_points, w_quad = jnp.array(roots_legendre(Nq))
-        def legendre(n, x):
-            def term(k, acc):
-                return acc + (-1)**k * jnp.round(factorial(2*n-2*k) / (factorial(k) * factorial(n-k) * factorial(n-2*k))) * x**(n-2*k)
-            return lax.fori_loop(0, (n // 2) + 1, term, jnp.zeros_like(x)) / 2**n
-        legendre_array = vmap(vmap(legendre, in_axes=(None, 0)), in_axes=(0, None))
-        leg_vals = jnp.array(legendre_array(jnp.arange(N_DG), quad_points)) # Create array of shape (N_DG, Nq) evaluating the n'th Legendre polynomial at each quadrature point
-        leg_vals3d = leg_vals[basis_idx[:, 1], :][:, :, None, None] * leg_vals[basis_idx[:, 0], :][:, None, :, None] * leg_vals[basis_idx[:, 2], :][:, None, None, :] # create values of evaluated Legendre polynomials on 3d local grid. Shape (Nl, Nq, Nq, Nq) where Nq is the number of quadrature points.
-        leg_vals3d = jnp.transpose(leg_vals3d, (1, 2, 3, 0))
-        w_array = w_quad[:, None, None] * w_quad[None, :, None] * w_quad[None, None, :]
-        X = x_elements[None, :, None, None, None, None] + quad_points[None, None, None, None, :, None] * dx / 2
-        Y = y_elements[:, None, None, None, None, None] + quad_points[None, None, None, :, None, None] * dy / 2
-        Z = z_elements[None, None, :, None, None, None] + quad_points[None, None, None, None, None, :] * dz / 2
-        X, Y, Z = jnp.broadcast_arrays(X, Y, Z)
-        Uk_0 = (basis_idx[:, 0] + 0.5) * (basis_idx[:, 1] + 0.5) * (basis_idx[:, 2] + 0.5) * jnp.sum(f(X, Y, Z)[..., None] * leg_vals3d * w_array[:, :, :, None], axis=(-4, -3, -2))
+    Nq = int(N_DG // 2 + 1) # Number of necessary quadrature points for exact inner product with highest order mode
+    dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz
+    x_elements = dx / 2 + jnp.linspace(0, Lx, Nx, endpoint=False)
+    y_elements = dy / 2 + jnp.linspace(0, Ly, Ny, endpoint=False)
+    z_elements = dz / 2 + jnp.linspace(0, Lz, Nz, endpoint=False)
+    quad_points, w_quad = jnp.array(roots_legendre(Nq))
+    def legendre(n, x):
+        def term(k, acc):
+            return acc + (-1)**k * jnp.round(factorial(2*n-2*k) / (factorial(k) * factorial(n-k) * factorial(n-2*k))) * x**(n-2*k)
+        return lax.fori_loop(0, (n // 2) + 1, term, jnp.zeros_like(x)) / 2**n
+    legendre_array = vmap(vmap(legendre, in_axes=(None, 0)), in_axes=(0, None))
+    leg_vals = jnp.array(legendre_array(jnp.arange(N_DG), quad_points)) # Create array of shape (N_DG, Nq) evaluating the n'th Legendre polynomial at each quadrature point
+    leg_vals3d = leg_vals[basis_idx[:, 1], :][:, :, None, None] * leg_vals[basis_idx[:, 0], :][:, None, :, None] * leg_vals[basis_idx[:, 2], :][:, None, None, :] # create values of evaluated Legendre polynomials on 3d local grid. Shape (Nl, Nq, Nq, Nq) where Nq is the number of quadrature points.
+    leg_vals3d = jnp.transpose(leg_vals3d, (1, 2, 3, 0))
+    w_array = w_quad[:, None, None] * w_quad[None, :, None] * w_quad[None, None, :]
+    X = x_elements[None, :, None, None, None, None] + quad_points[None, None, None, None, :, None] * dx / 2
+    Y = y_elements[:, None, None, None, None, None] + quad_points[None, None, None, :, None, None] * dy / 2
+    Z = z_elements[None, None, :, None, None, None] + quad_points[None, None, None, None, None, :] * dz / 2
+    X, Y, Z = jnp.broadcast_arrays(X, Y, Z)
+    Uk_0 = (basis_idx[:, 0] + 0.5) * (basis_idx[:, 1] + 0.5) * (basis_idx[:, 2] + 0.5) * jnp.sum(f(X, Y, Z)[..., None] * leg_vals3d * w_array[:, :, :, None], axis=(-4, -3, -2))
 
-        return Uk_0
+    return Uk_0
 
 def load_parameters(input_file):
     """

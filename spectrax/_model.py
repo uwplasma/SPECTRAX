@@ -203,7 +203,38 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
 
     ################## Inverse mass matrix and final expression #################
     
-    Col  = -nu * col[None, :, :, :, None, None, None, None] * Ck
+    def compute_collisions(Ck, nu):
+        p = jnp.arange(Np)[None, :, None, None, None, None, None, None]
+        m = jnp.arange(Nm)[None, None, :, None, None, None, None, None]
+        n = jnp.arange(Nn)[None, None, None, :, None, None, None, None]
+
+        C000 = Ck[:, 0, 0, 0, None, None, None, :, :, :, 0, None]
+        C100 = Ck[:, 1, 0, 0, None, None, None, :, :, :, 0, None]
+        C010 = Ck[:, 0, 1, 0, None, None, None, :, :, :, 0, None]
+        C001 = Ck[:, 0, 0, 1, None, None, None, :, :, :, 0, None]
+        C200 = Ck[:, 2, 0, 0, None, None, None, :, :, :, 0, None]
+        C020 = Ck[:, 0, 2, 0, None, None, None, :, :, :, 0, None]
+        C002 = Ck[:, 0, 0, 2, None, None, None, :, :, :, 0, None]
+        
+        Col000 = - (n + m + p)
+        Col100 = jnp.sqrt(p) * C100 / C000
+        Col010 = jnp.sqrt(m) * C010 / C000
+        Col001 = jnp.sqrt(n) * C001 / C000
+        Col200 = jnp.sqrt(p * (p - 1)) * (jnp.sqrt(2) * C200 / C000 - (C100 / C000)**2)
+        Col020 = jnp.sqrt(m * (m - 1)) * (jnp.sqrt(2) * C020 / C000 - (C010 / C000)**2)
+        Col002 = jnp.sqrt(n * (n - 1)) * (jnp.sqrt(2) * C002 / C000 - (C001 / C000)**2)
+        
+        terms0 = Col000 * Ck
+        terms1 = Col100 * shift_multi(Ck, dn=0, dm=0, dp=-1) + Col010 * shift_multi(Ck, dn=0, dm=-1, dp=0) + Col001 * shift_multi(Ck, dn=-1, dm=0, dp=0)
+        terms2 = (Col200 * shift_multi(shift_multi(Ck, dn=0, dm=0, dp=-1), dn=0, dm=0, dp=-1)
+                    + Col020 * shift_multi(shift_multi(Ck, dn=0, dm=-1, dp=0), dn=0, dm=-1, dp=0)
+                      + Col002 * shift_multi(shift_multi(Ck, dn=-1, dm=0, dp=0), dn=-1, dm=0, dp=0))
+
+        return nu * (terms0 + terms1 + terms2)
+
+    Col = -nu * col[None, :, :, :, None, None, None, None] * Ck
+    # Col = compute_collisions(Ck, nu) - 0 * col[None, :, :, :, None, None, None, None] * Ck
+
     Diff = -D * 0 * Ck # Diffusion disabled for now. Adding it is low priority.
 
     inv_m = (2 * basis_idx[:, 0] + 1) * (2 * basis_idx[:, 1] + 1) * (2 * basis_idx[:, 2] + 1) / (dx * dy * dz)

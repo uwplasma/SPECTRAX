@@ -200,20 +200,6 @@ def plot_relative_energy_error(
     return ax
 
 
-# def _ifft_Ck_frame(Ck_frame: Array) -> Array:
-#     """
-#     Inverse FFT (k->x) for one time frame.
-
-#     Matches the example:
-#         C = ifftn(ifftshift(Ck, axes=(-3,-2,-1)), axes=(-3,-2,-1), norm="forward").real
-#     """
-#     # Ensure complex dtype
-#     Ck_frame = np.asarray(Ck_frame)
-#     shifted = np.fft.ifftshift(Ck_frame, axes=(-3, -2, -1))
-#     C_frame = np.fft.ifftn(shifted, axes=(-3, -2, -1), norm="forward").real
-#     return C_frame
-
-
 def _compute_Jz_from_C_frame(
     C_frame: Array,
     input_parameters: Dict[str, Any],

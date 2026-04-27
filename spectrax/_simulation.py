@@ -155,5 +155,6 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
     # Output results
     temporary_output = {"Ck": Ck, "Fk": Fk, "time": time}
     output = {**temporary_output, **parameters}
-    # diagnostics(output)
+    diagnostics(output)
+    
     return output

@@ -16,7 +16,7 @@ when possible.
 from __future__ import annotations
 
 from typing import Any, Mapping
-from spectrax import construct_idx_array
+
 import jax.numpy as jnp
 
 __all__ = ["diagnostics"]
@@ -176,8 +176,8 @@ def diagnostics(output: dict) -> None:
     kinetic_energy_species = pref[None, :] * (term0[None, :] * C000 + term1 + term2)  # (Nt, Ns)
     kinetic_energy = jnp.sum(kinetic_energy_species, axis=1)  # (Nt,)
     # Field energy
-    basis_idx = construct_idx_array(output["dims"], output["N_DG"])
-    EM_energy = 0.5 * Omega_ce ** 2 * jnp.sum(jnp.abs(Fk) ** 2 / ((1 + 2 * basis_idx[:, 0]) * (1 + 2 * basis_idx[:, 1]) * (1 + 2 * basis_idx[:, 2])), axis=(-4, -3, -2, -1)) / (Nx * Ny * Nz) # (Nt,)
+    basis_idx = output["basis_idx"]
+    EM_energy = 0.5 * Omega_ce ** 2 * jnp.sum(jnp.abs(Fk) ** 2 / ((1 + 2 * basis_idx[:, 0]) * (1 + 2 * basis_idx[:, 1]) * (1 + 2 * basis_idx[:, 2])), axis=(-5, -4, -3, -2, -1)) / (Nx * Ny * Nz) # (Nt,)
 
     total_energy = kinetic_energy + EM_energy
 

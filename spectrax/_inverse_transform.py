@@ -1,20 +1,19 @@
-"""Inverse Hermite–Fourier transform utilities.
+"""Inverse Hermite–DG transform utilities.
 
 This module reconstructs the phase-space distribution function ``f(x, v)`` from
-Hermite–Fourier coefficients. The implementation is written for JAX and uses
+Hermite–DG coefficients. The implementation is written for JAX and uses
 `orthax.hermite.hermval` to evaluate Hermite polynomials efficiently.
 """
 
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
-from jax.numpy.fft import ifftn, ifftshift
 from jax.scipy.special import factorial
 from orthax.hermite import hermval
 from jax import jit, vmap
 from functools import partial
 
-__all__ = ["inverse_HF_transform"]
+__all__ = ["inverse_HDG_transform"]
 
 # Generate Hermite polynomial values for all orders from 0 to N-1
 def generate_Hermite_basis(N, x):
@@ -44,7 +43,7 @@ def generate_Hermite_term(C, Herm_x, Herm_y, Herm_z, Nn, Nm, Np, xi_x, xi_y, xi_
 
     This helper forms the weighted Hermite basis products and contracts them with
     the Hermite coefficients ``C``. It is intended to be used only from 
-    :func:`inverse_HF_transform`.
+    :func:`inverse_HDG_transform`.
 
     Parameters
     ----------
@@ -95,14 +94,14 @@ def generate_Hermite_term(C, Herm_x, Herm_y, Herm_z, Nn, Nm, Np, xi_x, xi_y, xi_
     return jnp.tensordot(C, basis, axes=([1], [0])) * gauss[None, None, None, None, :, :, :]
 
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np'])
-def inverse_HF_transform(Ck, Nn, Nm, Np, xi_x, xi_y, xi_z):
-    """Reconstruct ``f(x, v)`` from Hermite–Fourier coefficients.
+def inverse_HDG_transform(Ck, Nn, Nm, Np, xi_x, xi_y, xi_z):
+    """Reconstruct ``f(x, v)`` from Hermite–DG coefficients.
 
     Parameters
     ----------
     Ck : jnp.ndarray
-        Hermite-Fourier coefficients for (one or more) species/moments.
-        The inverse FFT is applied along the last three axes.
+        Hermite-DG coefficients for (one or more) species/moments.
+        Value for element is given by the mean (zeroth) mode.
     Nn, Nm, Np : int
         Number of Hermite modes retained along each velocity-space axis.
     xi_x, xi_y, xi_z : jnp.ndarray
@@ -114,7 +113,7 @@ def inverse_HF_transform(Ck, Nn, Nm, Np, xi_x, xi_y, xi_z):
     jnp.ndarray
         The reconstructed distribution function evaluated on ``(t, x, y, z, xi_x, xi_y, xi_z)``.
     """
-    C = ifftn(ifftshift(Ck, axes=(-3, -2, -1)), axes=(-3, -2, -1)).real
+    C = Ck[..., 0]
 
     # Precompute Hermite functions up to desired order
     Herm_x = generate_Hermite_basis(Nn, xi_x)  # (Nn, Nvy, Nvx, Nvz)

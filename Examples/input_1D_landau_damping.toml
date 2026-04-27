@@ -7,16 +7,16 @@ qs = [-1.0, 1.0]
 alpha_s = [0.1, 0.1, 0.1, 0.0023, 0.0023, 0.0023]
 u_s = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 Omega_ce = 1.0
-nu = 1.0
+nu = 1
 t_max = 50.0
 nx = 1
 ny = 0
 nz = 0
-dn1 = 0.001
+dn1 = 0.01
 ode_tolerance = 1e-8
 
 [solver_parameters]
-Nx=3
+Nx=33
 Ny=1
 Nz=1
 Nn=40

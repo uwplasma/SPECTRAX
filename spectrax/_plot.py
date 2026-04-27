@@ -6,7 +6,7 @@ This module is intentionally lightweight and expects the dictionary returned by
 
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
-from ._inverse_transform import inverse_HF_transform
+from ._inverse_transform import inverse_HDG_transform
 from matplotlib.animation import FuncAnimation
 
 __all__ = ['plot']
@@ -43,8 +43,10 @@ def plot(output):
     # Energy plots
     axes[0, 0].plot(time, output["EM_energy"], label="EM Energy")
     axes[0, 0].plot(time, output["kinetic_energy"], label="Kinetic Energy")
-    axes[0, 0].plot(time, output["kinetic_energy_species1"], label="Kinetic Energy Species 1")
-    axes[0, 0].plot(time, output["kinetic_energy_species2"], label="Kinetic Energy Species 2")
+    if "kinetic_energy_species1" in output:
+        axes[0, 0].plot(time, output["kinetic_energy_species1"], label="Kinetic Energy Species 1")
+    if "kinetic_energy_species2" in output:
+        axes[0, 0].plot(time, output["kinetic_energy_species2"], label="Kinetic Energy Species 2")
     axes[0, 0].plot(time, output["total_energy"], label="Total Energy")
     axes[0, 0].set(title="Energy", xlabel=r"Time ($\omega_{pe}^{-1}$)", ylabel="Energy", yscale="log")#, ylim=[1e-5, None])
     axes[0, 0].legend()
@@ -65,9 +67,9 @@ def plot(output):
     
     # Electron Phase space plot
     i=0
-    vx = jnp.linspace(-4 * alpha_s[0], 4 * alpha_s[0], 201)
+    vx = jnp.linspace(-4 * jnp.max(alpha_s[:3]), 4 * jnp.max(alpha_s[:3]), 201)
     Vx, Vy, Vz = jnp.meshgrid(vx, jnp.array([0.]), jnp.array([0.]), indexing='xy')
-    f1 = inverse_HF_transform(Ck[:, (i*Nn*Nm*Np):(i+1)*Nn*Nm*Np, ...], Nn, Nm, Np, 
+    f1 = inverse_HDG_transform(Ck[:, (i*Nn*Nm*Np):(i+1)*Nn*Nm*Np, ...], Nn, Nm, Np, 
                                   (Vx - u_s[3*i]) / alpha_s[3*i], 
                                   (Vy - u_s[3*i+1]) / alpha_s[3*i+1], 
                                   (Vz - u_s[3*i+2]) / alpha_s[3*i+2])
@@ -82,9 +84,9 @@ def plot(output):
     
     # Ion Phase space plot
     i=1
-    vx = jnp.linspace(-4 * alpha_s[0], 4 * alpha_s[0], 201)
+    vx = jnp.linspace(-4 * jnp.max(alpha_s[3:]), 4 * jnp.max(alpha_s[3:]), 201)
     Vx, Vy, Vz = jnp.meshgrid(vx, jnp.array([0.]), jnp.array([0.]), indexing='xy')
-    f2 = inverse_HF_transform(Ck[:, (i*Nn*Nm*Np):(i+1)*Nn*Nm*Np, ...], Nn, Nm, Np, 
+    f2 = inverse_HDG_transform(Ck[:, (i*Nn*Nm*Np):(i+1)*Nn*Nm*Np, ...], Nn, Nm, Np, 
                                   (Vx - u_s[3*i]) / alpha_s[3*i], 
                                   (Vy - u_s[3*i+1]) / alpha_s[3*i+1], 
                                   (Vz - u_s[3*i+2]) / alpha_s[3*i+2])
@@ -120,3 +122,5 @@ def plot(output):
     plt.title(r"$\langle |C_{1,n}|^2 \rangle$ vs Time and Mode Number", fontsize=16)
 
     plt.show()
+
+    # Still need to fix all the dC plots; i.e., add dC back in simulation output

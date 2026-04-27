@@ -176,85 +176,85 @@ cross_helicity = jnp.sum(rho * VA_perp * U_perp, axis=(-3, -2, -1)) / (Nx * Ny)
 total_fluctuation_energy = jnp.sum(rho * (U_perp**2 + VA_perp**2), axis=(-3, -2, -1)) / (Nx * Ny)
 alignment_corr = cross_helicity / total_fluctuation_energy
 
-fig, ax = plt.subplots()
-ax.plot(t, alignment_corr)
-ax.set_xlabel(r'$\omega_p t$')
-ax.set_ylabel(r'$\kappa$')
-ax.set_title(r'$\kappa = \frac{\langle \rho u_{\perp} \cdot v_{A\perp}\rangle}{\langle \rho(u_{\perp}^2 + v_{A\perp}^2)\rangle}$')
-ax.title.set_fontsize(16)
-ax.grid()
-fig.savefig('OT_tests_alignment.png')
+# fig, ax = plt.subplots()
+# ax.plot(t, alignment_corr)
+# ax.set_xlabel(r'$\omega_p t$')
+# ax.set_ylabel(r'$\kappa$')
+# ax.set_title(r'$\kappa = \frac{\langle \rho u_{\perp} \cdot v_{A\perp}\rangle}{\langle \rho(u_{\perp}^2 + v_{A\perp}^2)\rangle}$')
+# ax.title.set_fontsize(16)
+# ax.grid()
+# fig.savefig('OT_tests_alignment.png')
 
-plt.show()
+# plt.show()
 
-# Plot densities
-plt.figure(figsize=(8, 6))
-plt.imshow(ne[-1], aspect='auto', cmap='plasma', 
-           interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
-plt.colorbar(label=r'$n_e$').ax.yaxis.label.set_size(16)
+# # Plot densities
+# plt.figure(figsize=(8, 6))
+# plt.imshow(ne[-1], aspect='auto', cmap='plasma', 
+#            interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
+# plt.colorbar(label=r'$n_e$').ax.yaxis.label.set_size(16)
 
-plt.figure(figsize=(8, 6))
-plt.imshow(ni[-1], aspect='auto', cmap='plasma', 
-           interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
-plt.colorbar(label=r'$n_i$').ax.yaxis.label.set_size(16)
+# plt.figure(figsize=(8, 6))
+# plt.imshow(ni[-1], aspect='auto', cmap='plasma', 
+#            interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
+# plt.colorbar(label=r'$n_i$').ax.yaxis.label.set_size(16)
 
-# Plot energies
-fig, ax = plt.subplots(figsize=(12, 8))
-ax.semilogy(t, U_EM[:, 0], label=r'$E_x$ Energy')
-ax.semilogy(t, U_EM[:, 1], label=r'$E_y$ Energy')
-ax.semilogy(t, U_EM[:, 2], label=r'$E_z$ Energy')
-ax.semilogy(t, U_EM[:, 3], label=r'$B_x$ Energy')
-ax.semilogy(t, U_EM[:, 4], label=r'$B_y$ Energy')
-ax.semilogy(t, U_EM[:, 5], label=r'$B_z$ Energy')
+# # Plot energies
+# fig, ax = plt.subplots(figsize=(12, 8))
+# ax.semilogy(t, U_EM[:, 0], label=r'$E_x$ Energy')
+# ax.semilogy(t, U_EM[:, 1], label=r'$E_y$ Energy')
+# ax.semilogy(t, U_EM[:, 2], label=r'$E_z$ Energy')
+# ax.semilogy(t, U_EM[:, 3], label=r'$B_x$ Energy')
+# ax.semilogy(t, U_EM[:, 4], label=r'$B_y$ Energy')
+# ax.semilogy(t, U_EM[:, 5], label=r'$B_z$ Energy')
 
-ax.semilogy(t, U_E, label=r'Total electric energy')
-ax.semilogy(t, U_B, label=r'Total magnetic energy')
-ax.semilogy(t, U_EM_tot, label=r'Total electromagnetic energy')
+# ax.semilogy(t, U_E, label=r'Total electric energy')
+# ax.semilogy(t, U_B, label=r'Total magnetic energy')
+# ax.semilogy(t, U_EM_tot, label=r'Total electromagnetic energy')
 
-ax.set_xlabel(r'$\omega_p t$')
-ax.set_ylabel(r'Energy')
-ax.grid()
-ax.legend()
-ax.set_title('Orszag-Tang vortex: electromagentic field energies')
-fig.tight_layout()
-fig.savefig('OT_tests_energies.png')
+# ax.set_xlabel(r'$\omega_p t$')
+# ax.set_ylabel(r'Energy')
+# ax.grid()
+# ax.legend()
+# ax.set_title('Orszag-Tang vortex: electromagentic field energies')
+# fig.tight_layout()
+# fig.savefig('OT_tests_energies.png')
 
-plt.show()
+# plt.show()
 
-def plot_field_evolution(field, interval=50, save_file='', save_fps=10):
-    fig, ax = plt.subplots()
-    im = ax.imshow(field[0], aspect='auto', cmap='plasma', interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))
-    cbar = plt.colorbar(im, ax=ax)
-    title = ax.set_title(r"$t = 0$")
-    ax.set_xlabel("x/d_e")  # Set x-axis label
-    ax.set_ylabel("y/d_e")  # Set y-axis label
+# def plot_field_evolution(field, interval=50, save_file='', save_fps=10):
+#     fig, ax = plt.subplots()
+#     im = ax.imshow(field[0], aspect='auto', cmap='plasma', interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))
+#     cbar = plt.colorbar(im, ax=ax)
+#     title = ax.set_title(r"$t = 0$")
+#     ax.set_xlabel("x/d_e")  # Set x-axis label
+#     ax.set_ylabel("y/d_e")  # Set y-axis label
 
-    def update(frame):
-        im.set_array(field[frame])
-        im.set_clim(vmin=field[frame].min(), vmax=field[frame].max())
-        title.set_text(f"$t = {t[frame]}$")
-        cbar.update_normal(im)
-        return [im, cbar.ax, title]
+#     def update(frame):
+#         im.set_array(field[frame])
+#         im.set_clim(vmin=field[frame].min(), vmax=field[frame].max())
+#         title.set_text(f"$t = {t[frame]}$")
+#         cbar.update_normal(im)
+#         return [im, cbar.ax, title]
 
-    # Create the animation
-    anim = FuncAnimation(
-        fig, update, frames=field.shape[0], interval=interval, blit=False  # Adjust interval as needed
-    )
+#     # Create the animation
+#     anim = FuncAnimation(
+#         fig, update, frames=field.shape[0], interval=interval, blit=False  # Adjust interval as needed
+#     )
 
-    if save_file != '':
-        anim.save(save_file, writer=PillowWriter(fps=save_fps))
+#     if save_file != '':
+#         anim.save(save_file, writer=PillowWriter(fps=save_fps))
 
-    # plt.show()
+#     # plt.show()
 
-plot_field_evolution(Uex, 2000, 'OT_tests_Uex.gif')
+# plot_field_evolution(Uex, 2000, 'OT_tests_Uex.gif')
 
-plot_field_evolution(Uey, 2000, 'OT_tests_Uey.gif')
+# plot_field_evolution(Uey, 2000, 'OT_tests_Uey.gif')
 
-plot_field_evolution(ne, 2000, 'OT_tests_ne.gif')
+# plot_field_evolution(ne, 2000, 'OT_tests_ne.gif')
 
-plot_field_evolution(Jz, 2000, 'OT_tests_Jz.gif')
+# plot_field_evolution(Jz, 2000, 'OT_tests_Jz.gif')
 
-plt.show()
+# plt.show()
 
 # print('Saving results...')
 # jnp.savez('output_Orszag.npz', **output)
