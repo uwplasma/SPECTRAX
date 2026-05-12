@@ -56,7 +56,7 @@ def cross_product(k_vec, F_vec):
 
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
 def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx, 
-                        inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, tripple_product, Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
+                        inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product, Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
                            Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np, Ns):
     """
     Evaluate the right-hand side of the coupled Hermite-DG moment equations.
@@ -80,7 +80,7 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
         p="plus": using value from above.
     di_inner_product : jnp.ndarray
         Array of inner products between one basis element and the derivative in one of the directions of another basis element.
-    tripple_product : jnp.ndarray
+    triple_product : jnp.ndarray
         Array of integrals of three multiplied basis elements.
     A* : jnp.ndarray
         Velocity-space Hermite-coefficient matrix for coefficient time derivative. (x,y,z) = derivative in (x,y,z) direction. 
@@ -182,22 +182,22 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
         jnp.sqrt(2) * sqrt_m_minus * (u0 / a1) * shift_multi(Ck, dn=0, dm=-1, dp=0))
 
     ECx = Fk[0, None, None, None, None, :, :, :, :, None] * shift_multi(Ck, dn=-1, dm=0, dp=0)[:, :, :, :, :, :, :, None, :]    
-    Ex_term = (sqrt_n_minus * jnp.sqrt(2) / a0) * jnp.tensordot(ECx, tripple_product, axes=([-2, -1], [0, 1]))
+    Ex_term = (sqrt_n_minus * jnp.sqrt(2) / a0) * jnp.tensordot(ECx, triple_product, axes=([-2, -1], [0, 1]))
 
     BC_aux_x = Fk[3, None, None, None, None, :, :, :, :, None] * C_aux_x[:, :, :, :, :, :, :, None, :]
-    Bx_term = jnp.tensordot(BC_aux_x, tripple_product, axes=([-2, -1], [0, 1]))
+    Bx_term = jnp.tensordot(BC_aux_x, triple_product, axes=([-2, -1], [0, 1]))
 
     ECy = Fk[1, None, None, None, None, :, :, :, :, None] * shift_multi(Ck, dn=0, dm=-1, dp=0)[:, :, :, :, :, :, :, None, :]
-    Ey_term = (sqrt_m_minus * jnp.sqrt(2) / a1) * jnp.tensordot(ECy, tripple_product, axes=([-2, -1], [0, 1]))
+    Ey_term = (sqrt_m_minus * jnp.sqrt(2) / a1) * jnp.tensordot(ECy, triple_product, axes=([-2, -1], [0, 1]))
 
     BC_aux_y = Fk[4, None, None, None, None, :, :, :, :, None] * C_aux_y[:, :, :, :, :, :, :, None, :]
-    By_term = jnp.tensordot(BC_aux_y, tripple_product, axes=([-2, -1], [0, 1]))
+    By_term = jnp.tensordot(BC_aux_y, triple_product, axes=([-2, -1], [0, 1]))
 
     ECz = Fk[2, None, None, None, None, :, :, :, :, None] * shift_multi(Ck, dn=0, dm=0, dp=-1)[:, :, :, :, :, :, :, None, :]
-    Ez_term = (sqrt_p_minus * jnp.sqrt(2) / a2) * jnp.tensordot(ECz, tripple_product, axes=([-2, -1], [0, 1]))
+    Ez_term = (sqrt_p_minus * jnp.sqrt(2) / a2) * jnp.tensordot(ECz, triple_product, axes=([-2, -1], [0, 1]))
 
     BC_aux_z = Fk[5, None, None, None, None, :, :, :, :, None] * C_aux_z[:, :, :, :, :, :, :, None, :]
-    Bz_term = jnp.tensordot(BC_aux_z, tripple_product, axes=([-2, -1], [0, 1]))
+    Bz_term = jnp.tensordot(BC_aux_z, triple_product, axes=([-2, -1], [0, 1]))
 
     dNL = -(q * Omega_ce / ms) * (Ex_term + Bx_term + Ey_term + By_term + Ez_term + Bz_term)
 

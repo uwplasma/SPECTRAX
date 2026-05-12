@@ -63,7 +63,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl, t, Ck_Fk, args):
 
     (ms, qs, nu, D, Omega_ce, alpha_s, u_s, Lx, Ly, Lz, col, 
     sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
-    basis_idx, inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, tripple_product, 
+    basis_idx, inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product, 
     Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m
     ) = args[8:]
 
@@ -72,7 +72,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl, t, Ck_Fk, args):
     Fk = Ck_Fk[total_Ck_size:].reshape(6, Ny, Nx, Nz, Nl)
 
     dy_dt = Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx, 
-                                inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, tripple_product, 
+                                inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product, 
                                 Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
                                     Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np, Ns)
 
@@ -126,7 +126,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
             parameters["sqrt_n_plus"], parameters["sqrt_n_minus"], parameters["sqrt_m_plus"], parameters["sqrt_m_minus"], 
             parameters["sqrt_p_plus"], parameters["sqrt_p_minus"], parameters["basis_idx"], 
             parameters["inner_mm"], parameters["inner_pm"], parameters["inner_mp"], parameters["inner_pp"], parameters["di_inner_product"],
-            parameters["tripple_product"], parameters["Ax_p"], parameters["Ax_m"], 
+            parameters["triple_product"], parameters["Ax_p"], parameters["Ax_m"], 
             parameters["Ay_p"], parameters["Ay_m"], parameters["Az_p"], parameters["Az_m"], parameters["R_p"], parameters["R_m"]
             )
     

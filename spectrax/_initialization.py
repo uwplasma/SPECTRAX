@@ -139,7 +139,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus = build_coeff_tables(Nn, Nm, Np)
     Lx, Ly, Lz = parameters["Lx"], parameters["Ly"], parameters["Lz"]
     # Precompute matrices for product coefficients between basis functions
-    inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, tripple_product = compute_basis_products(Lx/Nx, Ly/Ny, Lz/Nz, basis_idx)
+    inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product = compute_basis_products(Lx/Nx, Ly/Ny, Lz/Nz, basis_idx)
     
     alpha = parameters["alpha_s"].reshape(Ns, 3)
     u = parameters["u_s"].reshape(Ns, 3)
@@ -154,7 +154,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "basis_idx": basis_idx, "inner_mm": inner_mm,
         "inner_pm": inner_pm, "inner_mp": inner_mp,
         "inner_pp": inner_pp, "di_inner_product": di_inner_product,
-        "tripple_product": tripple_product, "Ax_p": Ax_p,
+        "triple_product": triple_product, "Ax_p": Ax_p,
         "Ax_m": Ax_m, "Ay_p": Ay_p, "Ay_m": Ay_m, "Az_p": Az_p, "Az_m": Az_m,
         "R_p": R_p, "R_m": R_m
     })
@@ -219,9 +219,9 @@ def compute_basis_products(dx, dy, dz, basis_idx):
     inner_pp = inner_mm * ((-1) ** (i + j))
 
     di_inner_product = vmap(vmap(vmap(construct_di_inner)))(jnp.stack(jnp.indices((3, Nl, Nl)), axis=-1)) # Construct matrix of basis-derivative products
-    tripple_product = vmap(vmap(vmap(compute_tp)))(jnp.stack(jnp.indices((Nl, Nl, Nl)), axis=-1)) # Construct matrix of triple products
+    triple_product = vmap(vmap(vmap(compute_tp)))(jnp.stack(jnp.indices((Nl, Nl, Nl)), axis=-1)) # Construct matrix of triple products
 
-    return inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, tripple_product
+    return inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product
 
 def compute_A_pm_matrices(Nn, Nm, Np, alpha, u):
     def compute_A_off(idx):
