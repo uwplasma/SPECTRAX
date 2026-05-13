@@ -25,7 +25,7 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
         Velocity scaling factors for each species.
     u_s : jnp.ndarray, shape (3 * Ns,)
         Velocity shift for each species.
-    Ck : jnp.ndarray, shape (Ns * Np * Nm * Nn, Ny, Nx, Nz)
+    Ck : jnp.ndarray, shape (Ns * Np * Nm * Nn, Ny, Nx//2+1, Nz)
         Hermite-Fourier coefficients for all species stacked along the first axis.
     Nn, Nm, Np : int
         Number of Hermite modes in x, y, and z respectively.
@@ -37,7 +37,7 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     jnp.ndarray, shape (3, Ny, Nx, Nz)
         The total Ampère-Maxwell current components `(Jx, Jy, Jz)`.
     """
-    # Reshape Ck into structured Hermite-Fourier coefficients: (Ns, Np, Nm, Nn, Ny, Nx, Nz)
+    # Reshape Ck into structured Hermite-Fourier coefficients: (Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz)
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-3:])
     
     # Reshape alpha and velocity
@@ -45,7 +45,7 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     u = u_s.reshape(Ns, 3)
 
     # Grab the modes we need (0,1,1,1) for jx, jy, jz contributions
-    C0 = Ck[:, 0, 0, 0]  # shape: (Ns, Ny, Nx, Nz)
+    C0 = Ck[:, 0, 0, 0]  # shape: (Ns, Ny, Nx//2+1, Nz)
     C100 = Ck[:, 0, 0, 1] if Nn > 1 else jnp.zeros_like(C0)
     C010 = Ck[:, 0, 1, 0] if Nm > 1 else jnp.zeros_like(C0)
     C001 = Ck[:, 1, 0, 0] if Np > 1 else jnp.zeros_like(C0)
@@ -65,10 +65,10 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
                        u1[:, None, None, None] * C0,
                        u2[:, None, None, None] * C0], axis=0)
 
-    # Final current per species: shape (3, Ns, Ny, Nx, Nz)
+    # Final current per species: shape (3, Ns, Ny, Nx//2+1, Nz)
     J_species = (term1 + term2) * pre[None, :, None, None, None]
 
-    # Sum over species → shape: (3, Ny, Nx, Nz)
+    # Sum over species → shape: (3, Ny, Nx//2+1, Nz)
     return jnp.sum(J_species, axis=1)
 
 def _pad_hermite_axes(Ck):
@@ -142,13 +142,12 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
     Returns
     -------
     jnp.ndarray
-        Time derivative `dCk/dt` with shape `(Ns, Np, Nm, Nn, Ny, Nx, Nz)`.
+        Time derivative `dCk/dt` with shape `(Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz)`.
     """
 
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-3:])
     C = C.reshape(Ns, Np, Nm, Nn, *C.shape[-3:])
     F = F[:, None, None, None, None, :, :, :]  # (6,1,1,1,Nx,Ny,Nz) for broadcasting  
-    Ny, Nx, Nz = Ck.shape[-3], Ck.shape[-2], Ck.shape[-1]
     
     # Define u, alpha, charge, and gyrofrequency depending on species.
     alpha = alpha_s.reshape(Ns, 3)
@@ -203,10 +202,10 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         sqrt_p_minus / jnp.sqrt(2) * shift_multi(Ck, dn=0, dm=0, dp=-1) +
         (u2 / a2) * Ck
     ) + q * Omega_c * (
-        jnp.fft.fftshift(jnp.fft.fftn((sqrt_n_minus * jnp.sqrt(2) / a0) * F[0] * shift_multi(C, dn=-1, dm=0, dp=0) +
+        jnp.fft.rfftn((sqrt_n_minus * jnp.sqrt(2) / a0) * F[0] * shift_multi(C, dn=-1, dm=0, dp=0) +
                       (sqrt_m_minus * jnp.sqrt(2) / a1) * F[1] * shift_multi(C, dn=0, dm=-1, dp=0) + 
                       (sqrt_p_minus * jnp.sqrt(2) / a2) * F[2] * shift_multi(C, dn=0, dm=0, dp=-1) +
-                      F[3] * C_aux_x + F[4] * C_aux_y + F[5] * C_aux_z, axes=(-3, -2, -1), norm="forward"), axes=(-3, -2, -1)) * mask23
+                      F[3] * C_aux_x + F[4] * C_aux_y + F[5] * C_aux_z, axes=(-1, -3, -2), norm="forward") * mask23
     ) + Col + Diff)
     
     return dCk_s_dt

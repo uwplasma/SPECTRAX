@@ -55,22 +55,20 @@ nu = input_parameters["nu"]
 # ---------------------------------------------------------------------------
 
 C10     = jnp.array([
-        0 + 1j * (1 / (2 * alpha_s[0] ** 3)) * dn1,
         1 / (alpha_s[0] ** 3) + 0 * 1j,
         0 - 1j * (1 / (2 * alpha_s[0] ** 3)) * dn1
 ])
 C20     = jnp.array([
-        0 + 1j * (1 / (2 * alpha_s[3] ** 3)) * dn2,
         1 / (alpha_s[3] ** 3) + 0 * 1j,
         0 - 1j * (1 / (2 * alpha_s[3] ** 3)) * dn2
 ])
 
-# Indices corresponding to (-k, 0, +k) for the chosen Fourier mode in x.
-indices = jnp.array([int((Nx-1)/2-nx), int((Nx-1)/2), int((Nx-1)/2+nx)])
+# Indices corresponding to (0, k) for the chosen Fourier mode in x.
+indices = jnp.array([0, nx])
 
 # Ck_0 stores the Hermite-Fourier coefficients for each species.
-# Here Ns=2 and Nm=Nz=1 so the shape is (2*Nn, 1, Nx, 1).
-Ck_0    = jnp.zeros((2 * Nn, 1, Nx, 1), dtype=jnp.complex128)
+# Here Ns=2 and Nm=Nz=1 so the shape is (2*Nn, 1, Nx//2+1, 1).
+Ck_0    = jnp.zeros((2 * Nn, 1, Nx//2+1, 1), dtype=jnp.complex128)
 Ck_0    = Ck_0.at[0,  0, indices, 0].set(C10)
 Ck_0    = Ck_0.at[Nn, 0, indices, 0].set(C20)
 input_parameters["Ck_0"] = Ck_0
@@ -87,9 +85,8 @@ for j in jnp.arange(len(kx)):
     input_parameters["Lx"] = Lx
 
     # Initialize Fourier components of the electromagnetic fields.
-    indices = jnp.array([int((Nx-1)/2-nx), int((Nx-1)/2+nx)])
-    values  = (dn1 + dn2) * Lx / (4 * jnp.pi * nx * Omega_cs[0])
-    Fk_0    = jnp.zeros((6, 1, Nx, 1), dtype=jnp.complex128).at[0, 0, indices, 0].set(values)
+    value  = (dn1 + dn2) * Lx / (4 * jnp.pi * nx * Omega_cs[0])
+    Fk_0    = jnp.zeros((6, 1, Nx//2+1, 1), dtype=jnp.complex128).at[0, 0, nx, 0].set(value)
     input_parameters["Fk_0"] = Fk_0
 
     # Run the simulation (block until the JAX computation is complete).

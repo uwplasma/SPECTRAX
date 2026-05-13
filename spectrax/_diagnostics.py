@@ -79,8 +79,8 @@ def diagnostics(output: dict) -> None:
 
         - ``alpha_s``: array of shape ``(3*Ns,)`` (thermal scales per species)
         - ``u_s``: array of shape ``(3*Ns,)`` (drift velocities per species)
-        - ``Ck``: Hermite-Fourier coefficients of shape ``(Nt, Ns*Hs, Ny, Nx, Nz)``
-        - ``Fk``: field Fourier coefficients of shape ``(Nt, 6, Ny, Nx, Nz)``
+        - ``Ck``: Hermite-Fourier coefficients of shape ``(Nt, Ns*Hs, Ny, Nx//2+1, Nz)``
+        - ``Fk``: field Fourier coefficients of shape ``(Nt, 6, Ny, Nx//2+1, Nz)``
         - ``Omega_cs``: array of shape ``(Ns,)`` (cyclotron frequencies)
         - ``Lx``: domain length in x (used for ``k_norm``)
 
@@ -118,17 +118,9 @@ def diagnostics(output: dict) -> None:
     Ns = _infer_Ns(output)
 
     # Infer spatial grid sizes from shapes.
-    # Arrays are stored in fftshift ordering throughout the solver.
     Ny = int(Fk.shape[-3])
-    Nx = int(Fk.shape[-2])
+    Nx_kept = int(Fk.shape[-2])
     Nz = int(Fk.shape[-1])
-
-    # k=0 mode indices for fftshifted arrays.
-    # - for odd N:  N//2 == (N-1)//2
-    # - for even N: N//2 correctly points to the centered zero-frequency bin
-    half_ny = Ny // 2
-    half_nx = Nx // 2
-    half_nz = Nz // 2
 
     # Basic sanity
     if alpha_s.size != 3 * Ns:
@@ -163,39 +155,31 @@ def diagnostics(output: dict) -> None:
     k_norm = jnp.sqrt(2.0) * jnp.pi * alpha_s[0] / Lx
 
     # Reshape Ck into species blocks along Hermite axis:
-    # (Nt, Htot, Ny, Nx, Nz) -> (Nt, Ns, Hs, Ny, Nx, Nz)
-    Ck_rs = Ck.reshape(Ck.shape[0], Ns, Hs, Ny, Nx, Nz)
+    # (Nt, Htot, Ny, Nx//2+1, Nz) -> (Nt, Ns, Hs, Ny, Nx//2+1, Nz)
+    Ck_rs = Ck.reshape(Ck.shape[0], Ns, Hs, Ny, Nx_kept, Nz)
 
-    def _take_mode(offset: Any) -> jnp.ndarray:
-        """Gather a Hermite coefficient at a given per-species flattened index.
-
-        This helper is used to safely extract low-order Hermite moments such as
-        ``C000`` and ``C100`` even when the Hermite basis is truncated so that
-        some offsets fall out of range.
-
-        Returns
-        -------
-        jnp.ndarray
-            Array of shape ``(Nt, Ns)`` giving the coefficient evaluated at the
-            k=0 Fourier mode.
-        """
+    def _take_mode(n: int, m: int, p: int) -> jnp.ndarray:
+        """Gather a Hermite coefficient using explicit (n, m, p) indices."""
+        # Flatten the index based on Nn, Nm, Np
+        offset = n + Nn * m + Nn * Nm * p
         offset = jnp.asarray(offset, dtype=jnp.int32)
         off_clip = jnp.clip(offset, 0, Hs - 1)
         gathered = jnp.take(Ck_rs, off_clip, axis=2, mode="clip")  # (Nt, Ns, Ny, Nx, Nz)
-        k0 = gathered[:, :, half_ny, half_nx, half_nz]              # (Nt, Ns)
-        mask = (offset >= 0) & (offset < Hs)
+        k0 = gathered[:, :, 0, 0, 0]              # (Nt, Ns)
+        
+        # Strictly mask out modes that fall outside the allocated resolution
+        mask = (n < Nn) & (m < Nm) & (p < Np) & (n >= 0) & (m >= 0) & (p >= 0)
         return k0 * mask.astype(k0.dtype)
 
-    # Low-order Hermite moments in flattened (n,m,p) indexing:
-    # idx = n + Nn*m + Nn*Nm*p
-    C000 = _take_mode(0)
-    C100 = _take_mode(1)
-    C010 = _take_mode(Nn)
-    C001 = _take_mode(Nn * Nm)
+    # Low-order Hermite moments
+    C000 = _take_mode(0, 0, 0)
+    C100 = _take_mode(1, 0, 0)
+    C010 = _take_mode(0, 1, 0)
+    C001 = _take_mode(0, 0, 1)
 
-    C200 = _take_mode(2)
-    C020 = _take_mode(2 * Nn)
-    C002 = _take_mode(2 * Nn * Nm)
+    C200 = _take_mode(2, 0, 0)
+    C020 = _take_mode(0, 2, 0)
+    C002 = _take_mode(0, 0, 2)
 
     # Species parameters
     alpha = alpha_s.reshape(Ns, 3)
@@ -214,7 +198,11 @@ def diagnostics(output: dict) -> None:
     kinetic_energy_species = pref[None, :] * (term0[None, :] * C000 + term1 + term2)  # (Nt, Ns)
     kinetic_energy = jnp.sum(kinetic_energy_species, axis=1)  # (Nt,)
     # Field energy
-    EM_energy = 0.5 * jnp.sum(jnp.abs(Fk) ** 2, axis=(-4, -3, -2, -1)) * Omega_cs[0] ** 2  # (Nt,)
+    rfft_weights = jnp.full(Nx_kept, 2.0)
+    rfft_weights = rfft_weights.at[0].set(1.0)
+    rfft_weights = rfft_weights.at[-1].set(1.0)
+    weight_grid = rfft_weights.reshape(1, 1, -1, 1)
+    EM_energy = 0.5 * jnp.sum((jnp.abs(Fk) ** 2) * weight_grid, axis=(-4, -3, -2, -1)) * Omega_cs[0] ** 2
 
     total_energy = kinetic_energy + EM_energy
 

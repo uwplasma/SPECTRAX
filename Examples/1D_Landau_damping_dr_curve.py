@@ -73,11 +73,12 @@ E_field_component = int(jnp.sign(ny) + 2 * jnp.sign(nz))
 # ---------------------------------------------------------------------------
 Ce0_mk, Ce0_0, Ce0_k = 0 + 1j * (1 / (2 * alpha_s[0] ** 3)) * dn, 1 / (alpha_s[0] ** 3) + 0 * 1j, 0 - 1j * (1 / (2 * alpha_s[0] ** 3)) * dn
 Ci0_0 = 1 / (alpha_s[3] ** 3) + 0 * 1j
-Ck_0 = jnp.zeros((2 * Nn * Nm * Np, Ny, Nx, Nz), dtype=jnp.complex128)
-Ck_0 = Ck_0.at[0, int((Ny-1)/2-ny), int((Nx-1)/2-nx), int((Nz-1)/2-nz)].set(Ce0_mk)
-Ck_0 = Ck_0.at[0, int((Ny-1)/2), int((Nx-1)/2), int((Nz-1)/2)].set(Ce0_0)
-Ck_0 = Ck_0.at[0, int((Ny-1)/2+ny), int((Nx-1)/2+nx), int((Nz-1)/2+nz)].set(Ce0_k)
-Ck_0 = Ck_0.at[Nn * Nm * Np, int((Ny-1)/2), int((Nx-1)/2), int((Nz-1)/2)].set(Ci0_0)
+Ck_0 = jnp.zeros((2 * Nn * Nm * Np, Ny, Nx//2+1, Nz), dtype=jnp.complex128)
+if nx == 0 and (ny != 0 or nz != 0):
+    Ck_0 = Ck_0.at[0, -ny, 0, -nz].set(Ce0_mk) # The negative nx, ny, nz index only exists if nx=0
+Ck_0 = Ck_0.at[0, 0, 0, 0].set(Ce0_0)
+Ck_0 = Ck_0.at[0, ny, nx, nz].set(Ce0_k)
+Ck_0 = Ck_0.at[Nn * Nm * Np, 0, 0, 0].set(Ci0_0)
 input_parameters["Ck_0"] = Ck_0
 
 # Target dimensionless wavenumbers to scan.
@@ -92,9 +93,10 @@ for j in jnp.arange(len(kx)):
     input_parameters["Lx"] = Lx
 
     # Initialize Fourier components of the electromagnetic fields.
-    Fk_0 = jnp.zeros((6, Ny, Nx, Nz), dtype=jnp.complex128)
-    Fk_0 = Fk_0.at[E_field_component, int((Ny-1)/2-ny), int((Nx-1)/2-nx), int((Nz-1)/2-nz)].set(dn * Lx / (4 * jnp.pi * n * Omega_cs[0]))
-    Fk_0 = Fk_0.at[E_field_component, int((Ny-1)/2+ny), int((Nx-1)/2+nx), int((Nz-1)/2+nz)].set(dn * Lx / (4 * jnp.pi * n * Omega_cs[0]))
+    Fk_0 = jnp.zeros((6, Ny, Nx//2+1, Nz), dtype=jnp.complex128)
+    Fk_0 = Fk_0.at[E_field_component, ny, nx, nz].set(dn * Lx / (4 * jnp.pi * n * Omega_cs[0]))
+    if nx == 0 and (ny != 0 or nz != 0):
+        Fk_0 = Fk_0.at[E_field_component, -ny, -nx, -nz].set(dn * Lx / (4 * jnp.pi * n * Omega_cs[0]))
     input_parameters["Fk_0"] = Fk_0
 
     # Run the simulation (block until the JAX computation is complete).

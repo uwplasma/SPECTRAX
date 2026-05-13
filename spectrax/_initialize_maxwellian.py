@@ -4,7 +4,7 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax import jit
-from jax.numpy.fft import fftn, fftshift
+from jax.numpy.fft import rfftn
 from jax.scipy.special import factorial
 from functools import partial
 
@@ -35,7 +35,7 @@ def compute_C_nmp(Us_grid, alpha_s, u_s, Nn, Nm, Np, Ns):
     Returns
     -------
     jnp.ndarray
-        Complex Hermite-Fourier coefficients with shape `(Ns, Np, Nm, Nn, Ny, Nx, Nz)`
+        Complex Hermite-Fourier coefficients with shape `(Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz)`
         corresponding to the Maxwellian evaluated on the supplied grid.
     """
     
@@ -61,6 +61,6 @@ def compute_C_nmp(Us_grid, alpha_s, u_s, Nn, Nm, Np, Ns):
         * (1 / (alpha_x ** (n + 1) * alpha_y ** (m + 1) * alpha_z ** (p + 1)))
         * (U_x - u_x) ** n * (U_y - u_y) ** m * (U_z - u_z) ** p)
     
-    Ck_0 = fftshift(fftn(C, axes=(-3, -2, -1), norm="forward"), axes=(-3, -2, -1))  # shape (Ns, Np, Nm, Nn, Ny, Nx, Nz)
+    Ck_0 = rfftn(C, axes=(-1, -3, -2), norm="forward")  # shape (Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz)
   
     return Ck_0
