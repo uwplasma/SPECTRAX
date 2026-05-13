@@ -158,36 +158,28 @@ def diagnostics(output: dict) -> None:
     # (Nt, Htot, Ny, Nx//2+1, Nz) -> (Nt, Ns, Hs, Ny, Nx//2+1, Nz)
     Ck_rs = Ck.reshape(Ck.shape[0], Ns, Hs, Ny, Nx_kept, Nz)
 
-    def _take_mode(offset: Any) -> jnp.ndarray:
-        """Gather a Hermite coefficient at a given per-species flattened index.
-
-        This helper is used to safely extract low-order Hermite moments such as
-        ``C000`` and ``C100`` even when the Hermite basis is truncated so that
-        some offsets fall out of range.
-
-        Returns
-        -------
-        jnp.ndarray
-            Array of shape ``(Nt, Ns)`` giving the coefficient evaluated at the
-            k=0 Fourier mode.
-        """
+    def _take_mode(n: int, m: int, p: int) -> jnp.ndarray:
+        """Gather a Hermite coefficient using explicit (n, m, p) indices."""
+        # Flatten the index based on Nn, Nm, Np
+        offset = n + Nn * m + Nn * Nm * p
         offset = jnp.asarray(offset, dtype=jnp.int32)
         off_clip = jnp.clip(offset, 0, Hs - 1)
         gathered = jnp.take(Ck_rs, off_clip, axis=2, mode="clip")  # (Nt, Ns, Ny, Nx, Nz)
         k0 = gathered[:, :, 0, 0, 0]              # (Nt, Ns)
-        mask = (offset >= 0) & (offset < Hs)
+        
+        # Strictly mask out modes that fall outside the allocated resolution
+        mask = (n < Nn) & (m < Nm) & (p < Np) & (n >= 0) & (m >= 0) & (p >= 0)
         return k0 * mask.astype(k0.dtype)
 
-    # Low-order Hermite moments in flattened (n,m,p) indexing:
-    # idx = n + Nn*m + Nn*Nm*p
-    C000 = _take_mode(0)
-    C100 = _take_mode(1)
-    C010 = _take_mode(Nn)
-    C001 = _take_mode(Nn * Nm)
+    # Low-order Hermite moments
+    C000 = _take_mode(0, 0, 0)
+    C100 = _take_mode(1, 0, 0)
+    C010 = _take_mode(0, 1, 0)
+    C001 = _take_mode(0, 0, 1)
 
-    C200 = _take_mode(2)
-    C020 = _take_mode(2 * Nn)
-    C002 = _take_mode(2 * Nn * Nm)
+    C200 = _take_mode(2, 0, 0)
+    C020 = _take_mode(0, 2, 0)
+    C002 = _take_mode(0, 0, 2)
 
     # Species parameters
     alpha = alpha_s.reshape(Ns, 3)
