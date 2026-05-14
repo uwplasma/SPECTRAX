@@ -1,11 +1,15 @@
 """Time integration driver for the spectral Vlasov–Maxwell system."""
 
 import jax.numpy as jnp
+import jax.random as jr
+import lineax as lx
 from jax import jit, config
 config.update("jax_enable_x64", True)
 from functools import partial
 from diffrax import (diffeqsolve, Dopri8, ODETerm,
-                     SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
+                     SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize, 
+                     ControlTerm, MultiTerm, VirtualBrownianTree, backward_hermite_coefficients, CubicInterpolation,
+                     Midpoint)
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
 from ._diagnostics import diagnostics
@@ -82,7 +86,8 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
 
     (qs, nu, D, Omega_cs, alpha_s, u_s,
      Lx, Ly, Lz, kx_grid, ky_grid, kz_grid, k2_grid, nabla, col,
-     sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus
+     sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus,
+     F_ext
     ) = args[7:]
 
     total_Ck_size = Nn * Nm * Np * Ns * Nx * Ny * Nz
@@ -93,7 +98,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     # Build the 2/3 mask once per call (JIT will constant-fold it since Nx/Ny/Nz are static)
     mask23 = _twothirds_mask(Ny, Nx, Nz)
 
-    F = jnp.fft.ifftn(jnp.fft.ifftshift(Fk * mask23, axes=(-3, -2, -1)), axes=(-3, -2, -1), norm="forward")
+    F = jnp.fft.ifftn(jnp.fft.ifftshift((Fk + F_ext.evaluate(t)) * mask23, axes=(-3, -2, -1)), axes=(-3, -2, -1), norm="forward")
     C = jnp.fft.ifftn(jnp.fft.ifftshift(Ck * mask23, axes=(-3, -2, -1)), axes=(-3, -2, -1), norm="forward")
 
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
@@ -149,7 +154,31 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
 
     # Define the time array for data output.
     time = jnp.linspace(0, parameters["t_max"], timesteps)
-    
+
+    tau = jnp.broadcast_to(jnp.asarray(parameters["Forcing_tau"]), (6, Ny, Nx, Nz))
+    OU_D = jnp.broadcast_to(jnp.asarray(parameters["Forcing_D"]), (6, Ny, Nx, Nz))
+    N_times = 101
+    dt0 = 0.01
+    drift = lambda t, y, args: -y / tau
+    diff = lambda t, y, args: lx.DiagonalLinearOperator(OU_D / tau)
+    brownian_motion = VirtualBrownianTree(0, parameters["t_max"], tol=1e-3, shape=(6, Ny, Nx, Nz), key=jr.PRNGKey(12))
+    OU_times = jnp.linspace(0, parameters["t_max"], N_times)
+
+    OU_ext = diffeqsolve(MultiTerm(ODETerm(drift), ControlTerm(diff, brownian_motion)), Midpoint(), 
+                      t0=0, t1=parameters["t_max"], dt0=dt0, y0=jnp.zeros((6, Ny, Nx, Nz)), 
+                      saveat=SaveAt(ts=OU_times), max_steps=1000000)
+
+    # Idea: Gain factor of two cost reduction by only running nonnegative kx. Then concatenate second half of array by flipping in all directions. Would have to modify kx=0 values though because these would not be symmetric wrt (ky, kz) -> (-ky, -kz)
+    # For now: 
+    # Symmetrize about k -> -k to ensure fields are real
+    # Divide by sqrt(2) rather than 2 because the stochastic term for any sum of two Weiner processes is (dW2 + dW2) = sqrt(2)dW and not 2dW
+    OU_ext_real = (OU_ext.ys + jnp.flip(OU_ext.ys, axis=(-3, -2, -1))) / jnp.sqrt(2)
+
+
+    # Generate interpolator for external forcing
+    coeffs = backward_hermite_coefficients(OU_ext.ts, OU_ext_real)
+    F_ext = CubicInterpolation(OU_ext.ts, coeffs)
+
     # Arguments for the ODE system.
     args = (Nx, Ny, Nz, Nn, Nm, Np, Ns, parameters["qs"], parameters["nu"], parameters["D"],
             parameters["Omega_cs"], parameters["alpha_s"], parameters["u_s"], 
@@ -158,7 +187,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
             parameters["k2_grid"], parameters["nabla"], parameters["collision_matrix"], 
             parameters["sqrt_n_plus"], parameters["sqrt_n_minus"],
             parameters["sqrt_m_plus"], parameters["sqrt_m_minus"],
-            parameters["sqrt_p_plus"], parameters["sqrt_p_minus"])
+            parameters["sqrt_p_plus"], parameters["sqrt_p_minus"], F_ext)
     
 
     controllers = {

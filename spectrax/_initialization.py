@@ -60,6 +60,8 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "Omega_cs": lambda p: jnp.array([1.0, 1.0 / p["mi_me"]]),
         "nu": 3.0,
         "D": 0.0,
+        "Forcing_D": 0.0,
+        "Forcing_tau": 1.0,
         "t_max": 50.0,
         "nx": 1,
         "ny": 0,

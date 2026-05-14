@@ -147,7 +147,7 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
 
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-3:])
     C = C.reshape(Ns, Np, Nm, Nn, *C.shape[-3:])
-    F = F[:, None, None, None, None, :, :, :]  # (6,1,1,1,Nx,Ny,Nz) for broadcasting  
+    F = F[:, None, None, None, None, :, :, :]  # (6,1,1,1,1,Ny,Nx,Nz) for broadcasting  
     Ny, Nx, Nz = Ck.shape[-3], Ck.shape[-2], Ck.shape[-1]
     
     # Define u, alpha, charge, and gyrofrequency depending on species.
