@@ -14,15 +14,12 @@ __all__ = ["cross_product", "ode_system", "simulation"]
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz'])
 def _twothirds_mask(Ny: int, Nx: int, Nz: int):
-    """Return a boolean mask in fftshifted (zero-centered) k-ordering that keeps |k|<=N//3 in each dim."""
-    def centered_modes(N):
-        # integer mode numbers in fftshift ordering: [-N//2, ..., -1, 0, 1, ..., N//2-1]
-        k = jnp.fft.fftfreq(N) * N
-        return jnp.fft.fftshift(k)
-
-    ky = centered_modes(Ny)[:, None, None]
-    kx = centered_modes(Nx)[None, :, None]
-    kz = centered_modes(Nz)[None, None, :]
+    """Return a boolean mask that keeps |k|<=N//3 in each dim."""
+    # Real-valued fft leaves only the positive-k elements on the last axis given.
+    # We choose the x-axis since this gets us the savings in 1D as well as 2D/3D.
+    ky = (jnp.fft.fftfreq(Ny) * Ny)[:, None, None]
+    kx = (jnp.fft.rfftfreq(Nx) * Nx)[None, :, None]
+    kz = (jnp.fft.fftfreq(Nz) * Nz)[None, None, :]
 
     # cutoffs (keep indices with |k| <= floor(N/3)); if N<3 this naturally keeps only k=0
     cy = Ny // 3
@@ -85,16 +82,16 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
      sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus
     ) = args[7:]
 
-    total_Ck_size = Nn * Nm * Np * Ns * Nx * Ny * Nz
-    Ck = Ck_Fk[:total_Ck_size].reshape(Nn * Nm * Np * Ns, Ny, Nx, Nz)
-    Fk = Ck_Fk[total_Ck_size:].reshape(6, Ny, Nx, Nz)
+    total_Ck_size = Nn * Nm * Np * Ns * (Nx//2+1) * Ny * Nz
+    Ck = Ck_Fk[:total_Ck_size].reshape(Nn * Nm * Np * Ns, Ny, Nx//2+1, Nz)
+    Fk = Ck_Fk[total_Ck_size:].reshape(6, Ny, Nx//2+1, Nz)
 
 
     # Build the 2/3 mask once per call (JIT will constant-fold it since Nx/Ny/Nz are static)
     mask23 = _twothirds_mask(Ny, Nx, Nz)
 
-    F = jnp.fft.ifftn(jnp.fft.ifftshift(Fk * mask23, axes=(-3, -2, -1)), axes=(-3, -2, -1), norm="forward")
-    C = jnp.fft.ifftn(jnp.fft.ifftshift(Ck * mask23, axes=(-3, -2, -1)), axes=(-3, -2, -1), norm="forward")
+    F = jnp.fft.irfftn(Fk * mask23, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
+    C = jnp.fft.irfftn(Ck * mask23, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
 
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
@@ -180,12 +177,12 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         max_steps=1000000, progress_meter=TqdmProgressMeter())
         
     # Reshape the solution to extract Ck and Fk
-    Ck = sol.ys[:,:(-6 * Nx * Ny * Nz)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx, Nz)
-    Fk = sol.ys[:,(-6 * Nx * Ny * Nz):].reshape(len(sol.ts), 6, Ny, Nx, Nz)
+    Ck = sol.ys[:,:(-6 * (Nx//2+1) * Ny * Nz)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz)
+    Fk = sol.ys[:,(-6 * (Nx//2+1) * Ny * Nz):].reshape(len(sol.ts), 6, Ny, Nx//2+1, Nz)
     
     # Set n = 0, k = 0 mode to zero to get array with time evolution of perturbation.
-    dCk = Ck.at[:, 0, int((Ny-1)/2), int((Nx-1)/2), int((Nz-1)/2)].set(0)
-    dCk = dCk.at[:, Nn * Nm * Np, int((Ny-1)/2), int((Nx-1)/2), int((Nz-1)/2)].set(0)
+    dCk = Ck.at[:, 0, 0, 0, 0].set(0)
+    dCk = dCk.at[:, Nn * Nm * Np, 0, 0, 0].set(0)
     
     # Output results
     temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk}

@@ -72,24 +72,19 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     }
     
     # Initialize distribution function as a two-stream instability
-    indices = jnp.array([int((Nx-1)/2-default_parameters["nx"]), int((Nx-1)/2+default_parameters["nx"])])
     dn1     = default_parameters["dn1"]
     dn2     = default_parameters["dn2"]
     alpha_e = default_parameters["alpha_e"]
     values  = (dn1 + dn2) * default_parameters["Lx"] / (4 * jnp.pi * default_parameters["nx"] * default_parameters["Omega_cs"](default_parameters)[0])
-    Fk_0    = jnp.zeros((6, 1, Nx, 1), dtype=jnp.complex128).at[0, 0, indices, 0].set(values)
-    C10     = jnp.array([
-            0 + 1j * (1 / (2 * alpha_e[0] ** 3)) * dn1,
-            1 / (alpha_e[0] ** 3) + 0 * 1j,
+    Fk_0    = jnp.zeros((6, 1, Nx//2+1, 1), dtype=jnp.complex128).at[0, 0, default_parameters["nx"], 0].set(values)
+    C10     = jnp.array([1 / (alpha_e[0] ** 3) + 0 * 1j,
             0 - 1j * (1 / (2 * alpha_e[0] ** 3)) * dn1
     ])
-    C20     = jnp.array([
-            0 + 1j * (1 / (2 * alpha_e[0] ** 3)) * dn2,
-            1 / (alpha_e[0] ** 3) + 0 * 1j,
+    C20     = jnp.array([1 / (alpha_e[0] ** 3) + 0 * 1j,
             0 - 1j * (1 / (2 * alpha_e[0] ** 3)) * dn2
     ])
-    indices = jnp.array([int((Nx-1)/2-default_parameters["nx"]), int((Nx-1)/2), int((Nx-1)/2+default_parameters["nx"])])
-    Ck_0    = jnp.zeros((2 * Nn, 1, Nx, 1), dtype=jnp.complex128)
+    indices = jnp.array([0, default_parameters["nx"]])
+    Ck_0    = jnp.zeros((2 * Nn, 1, Nx//2+1, 1), dtype=jnp.complex128)
     Ck_0    = Ck_0.at[0,  0, indices, 0].set(C10)
     Ck_0    = Ck_0.at[Nn, 0, indices, 0].set(C20)
     
@@ -111,10 +106,14 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
             parameters[key] = value(parameters)
         if isinstance(value, list):
             parameters[key] = jnp.array(value)
-    kx_simulation = (jnp.arange(-Nx//2, Nx//2) + 1) * 2 * jnp.pi
-    ky_simulation = (jnp.arange(-Ny//2, Ny//2) + 1) * 2 * jnp.pi
-    kz_simulation = (jnp.arange(-Nz//2, Nz//2) + 1) * 2 * jnp.pi  
-    kx_grid, ky_grid, kz_grid = jnp.meshgrid(kx_simulation, ky_simulation, kz_simulation, indexing='xy')
+
+    # Real-valued fft leaves only the positive-k elements on the last axis given.
+    # We choose the x-axis since this gets us the savings in 1D as well as 2D/3D.
+    kx_simulation = jnp.fft.rfftfreq(Nx) * Nx * 2 * jnp.pi
+    ky_simulation = jnp.fft.fftfreq(Ny) * Ny * 2 * jnp.pi
+    kz_simulation = jnp.fft.fftfreq(Nz) * Nz * 2 * jnp.pi
+
+    ky_grid, kx_grid, kz_grid = jnp.meshgrid(ky_simulation, kx_simulation, kz_simulation, indexing='ij')
     k2_grid = kx_grid**2 + ky_grid**2 + kz_grid**2
     nabla = jnp.array([kx_grid / Lx, ky_grid / Ly, kz_grid / Lz])
 
