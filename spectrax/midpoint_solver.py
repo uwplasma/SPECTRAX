@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 import optimistix as optx
 from jax import lax
-from jax.scipy.sparse.linalg import gmres
+from solvax import gmres
 
 
 class ImplicitMidpoint(diffrax.AbstractSolver):
@@ -93,14 +93,15 @@ def _newton_gmres(F_fn, y0, y_init, rtol, atol, max_iters):
             inner_tol = jnp.minimum(0.1, norm * 0.5)
 
             def update(_):
-                delta, _ = gmres(
+                linear_solution = gmres(
                     jvp,
                     jax.tree.map(jnp.negative, res),
-                    tol=inner_tol,
+                    rtol=inner_tol,
                     atol=atol,
-                    maxiter=min(20, max_iters // 2),
+                    restart=20,
+                    max_restarts=min(20, max_iters // 2),
                 )
-                return jax.tree.map(lambda y, d: y + d, y1, delta)
+                return jax.tree.map(lambda y, d: y + d, y1, linear_solution.x)
 
             y1_next = lax.cond(
                 norm < 1.0, lambda _: y1, update, operand=None
