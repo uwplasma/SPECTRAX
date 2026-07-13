@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from jax import jit, config, shard_map
 from jax.sharding import AxisType, NamedSharding, PartitionSpec as P
 config.update("jax_enable_x64", True)
-from functools import partial
+from functools import lru_cache, partial
 from diffrax import (diffeqsolve, Dopri8, ODETerm,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
 from diffrax import is_okay
@@ -158,6 +158,50 @@ def _phase_arg_specs():
         P(), P(), P(), P(),
     )
 
+@lru_cache(maxsize=16)
+def _mapped_solve(Nx, Ny, Nz, Nm, Np, solver, adaptive_time_step, mesh):
+    """Reuse the jitted shard map for equivalent simulation configurations."""
+    phase_mesh = "hermite" in mesh.axis_names
+    Ck_spec = P("species", None, None, "hermite") if phase_mesh else P("species")
+    saved_Ck_spec = (
+        P(None, "species", None, None, "hermite")
+        if phase_mesh else P(None, "species")
+    )
+    specs = _phase_arg_specs() if phase_mesh else _species_arg_specs()
+
+    def local_solve(y0, local_args, local_solver_args):
+        local_time, local_t0, local_dt, local_t_max, local_tolerance = (
+            local_solver_args
+        )
+        local_Ns, local_Nn = y0[0].shape[0], y0[0].shape[3]
+        vector_field = lambda t, y, a: ode_system(
+            Nx, Ny, Nz, local_Nn, Nm, Np, local_Ns, mesh, t, y,
+            (Nx, Ny, Nz, local_Nn, Nm, Np, local_Ns) + a,
+        )
+        error_norm = partial(_sharded_rms_norm, axes=mesh.axis_names)
+        local_controller = (
+            PIDController(rtol=local_tolerance, atol=local_tolerance,
+                          norm=error_norm)
+            if adaptive_time_step else ConstantStepSize()
+        )
+        sol = diffeqsolve(
+            ODETerm(vector_field), solver=solver,
+            stepsize_controller=local_controller,
+            t0=local_t0, t1=local_t_max, dt0=local_dt,
+            y0=y0, args=local_args, saveat=SaveAt(ts=local_time),
+            max_steps=1000000, progress_meter=NoProgressMeter(),
+            throw=False,
+        )
+        return sol.ys, sol.result
+
+    return jit(
+        shard_map(
+            local_solve, mesh=mesh,
+            in_specs=((Ck_spec, P()), specs, (P(),) * 5),
+            out_specs=((saved_Ck_spec, P()), P()), check_vma=False,
+        )
+    )
+
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
                timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True,
                throw=True, species_mesh=None):
@@ -256,43 +300,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
 
     # Keep Diffrax's state and save buffers local on explicit meshes.
     if species_mesh is not None:
-        saved_Ck_spec = (
-            P(None, "species", None, None, "hermite")
-            if phase_mesh else P(None, "species")
-        )
-
-        def local_solve(y0, local_args, local_solver_args):
-            local_time, local_t0, local_dt, local_t_max, local_tolerance = (
-                local_solver_args
-            )
-            local_Ns, local_Nn = y0[0].shape[0], y0[0].shape[3]
-            vector_field = lambda t, y, a: ode_system(
-                Nx, Ny, Nz, local_Nn, Nm, Np, local_Ns, species_mesh, t, y,
-                (Nx, Ny, Nz, local_Nn, Nm, Np, local_Ns) + a,
-            )
-            error_norm = partial(
-                _sharded_rms_norm, axes=species_mesh.axis_names
-            )
-            local_controller = (
-                PIDController(rtol=local_tolerance, atol=local_tolerance,
-                              norm=error_norm)
-                if adaptive_time_step else ConstantStepSize()
-            )
-            sol = diffeqsolve(
-                ODETerm(vector_field), solver=solver,
-                stepsize_controller=local_controller,
-                t0=local_t0, t1=local_t_max, dt0=local_dt,
-                y0=y0, args=local_args, saveat=SaveAt(ts=local_time),
-                max_steps=1000000, progress_meter=NoProgressMeter(),
-                throw=False,
-            )
-            return sol.ys, sol.result
-
-        solution, solver_result = shard_map(
-            local_solve, mesh=species_mesh,
-            in_specs=((Ck_spec, P()), specs, (P(),) * 5),
-            out_specs=((saved_Ck_spec, P()), P()),
-            check_vma=False,
+        solution, solver_result = _mapped_solve(
+            Nx, Ny, Nz, Nm, Np, solver, adaptive_time_step, species_mesh,
         )(initial_conditions, args[7:], solver_args)
     else:
         ode_system_partial = partial(
