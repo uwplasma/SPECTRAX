@@ -176,6 +176,20 @@ output = simulation(species_mesh=make_species_mesh())
 
 The number of devices must divide `Ns`; electromagnetic fields remain replicated.
 
+For Hermite-heavy runs, also shard the first Hermite axis:
+
+```python
+from spectrax import make_phase_space_mesh, simulation
+
+output = simulation(species_mesh=make_phase_space_mesh(hermite_shards=4))
+```
+
+The remaining device-mesh axis must divide `Ns`; `hermite_shards` must divide
+`Nn` and leave at least two local modes.
+
+To exercise four or eight local CPU devices, set
+`XLA_FLAGS=--xla_force_host_platform_device_count=4` (or `8`) before starting
+Python; JAX must see this setting before it is imported.
 
 ###  Testing
 Run the test suite using the following command:
