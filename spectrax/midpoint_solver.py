@@ -48,6 +48,7 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
     ``linear_rtol`` and ``linear_atol`` control each GMRES solve.
     Newton iteration stops when ``||F|| <= max(atol, rtol * ||F_initial||)``.
     Accepted-step diagnostics are accumulated in :class:`MidpointSolverState`.
+    ``inner_product`` controls the reductions used by Newton and GMRES.
     An optional ``preconditioner(args, dt)`` factory supplies the inverse action
     used by GMRES.
     """
@@ -59,6 +60,7 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
     linear_rtol: float = 1e-4
     linear_atol: float = 0.0
     linear_max_restarts: int = 20
+    inner_product: Callable | None = None
     preconditioner: Callable | None = None
 
     term_structure = diffrax.ODETerm
@@ -96,6 +98,7 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
             F_fn,
             y1_init,
             precond=precond,
+            inner_product=self.inner_product,
             rtol=self.rtol,
             atol=self.atol,
             max_steps=self.max_iters,
