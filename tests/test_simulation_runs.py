@@ -1,6 +1,7 @@
 import pytest
 import jax.numpy as jnp
 from spectrax import simulation
+from spectrax.midpoint_solver import ImplicitMidpoint
 
 def test_simulation_runs():
     """Test if the simulation runs without errors with default parameters."""
@@ -16,6 +17,17 @@ def test_electric_field_update():
     """Test that the electric field updates and does not remain zero."""
     result = simulation()
     assert not jnp.all(result["Fk"] == 0), "Electric field did not update."
+
+
+def test_implicit_midpoint_runs_with_structured_state():
+    result = simulation(
+        {"t_max": 0.01, "ode_tolerance": 1e-8}, Nx=5, Nn=3,
+        timesteps=2, dt=0.01, solver=ImplicitMidpoint(max_iters=4),
+        adaptive_time_step=False,
+    )
+
+    assert jnp.all(jnp.isfinite(result["Ck"]))
+    assert jnp.all(jnp.isfinite(result["Fk"]))
 
 if __name__ == "__main__":
     pytest.main()
