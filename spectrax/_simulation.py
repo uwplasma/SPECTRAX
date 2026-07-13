@@ -5,7 +5,7 @@ from jax import jit, config
 config.update("jax_enable_x64", True)
 from functools import partial
 from diffrax import (diffeqsolve, Dopri8, ODETerm,
-                     SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
+                     SaveAt, PIDController, NoProgressMeter, ConstantStepSize)
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
 from ._diagnostics import diagnostics
@@ -107,9 +107,10 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
 
     return dy_dt
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step'])
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step', 'progress_meter'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
-               timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True):
+               timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True,
+               progress_meter=NoProgressMeter()):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -130,6 +131,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         Initial integration step size.
     solver : diffrax.AbstractSolver, optional
         Diffrax solver instance controlling the time integration.
+    progress_meter : diffrax.AbstractProgressMeter, optional
+        Diffrax progress meter; disabled by default to avoid host callbacks.
 
     Returns
     -------
@@ -174,7 +177,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         stepsize_controller=stepsize_controller,
         t0=0, t1=parameters["t_max"], dt0=dt,
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
-        max_steps=1000000, progress_meter=TqdmProgressMeter())
+        max_steps=1000000, progress_meter=progress_meter)
         
     # Reshape the solution to extract Ck and Fk
     Ck = sol.ys[:,:(-6 * (Nx//2+1) * Ny * Nz)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz)
