@@ -1,5 +1,7 @@
 import pytest
+import diffrax
 import jax.numpy as jnp
+import optimistix as optx
 from spectrax import simulation
 from spectrax.midpoint_solver import ImplicitMidpoint
 
@@ -28,6 +30,15 @@ def test_implicit_midpoint_runs_with_structured_state():
 
     assert jnp.all(jnp.isfinite(result["Ck"]))
     assert jnp.all(jnp.isfinite(result["Fk"]))
+
+
+def test_implicit_midpoint_reports_newton_exhaustion():
+    term = diffrax.ODETerm(lambda t, y, args: y + 1)
+    result = ImplicitMidpoint(max_iters=0).step(
+        term, 0.0, 0.1, jnp.array(0.0), None, None, False
+    )[-1]
+
+    assert result == diffrax.RESULTS.promote(optx.RESULTS.nonlinear_max_steps_reached)
 
 if __name__ == "__main__":
     pytest.main()

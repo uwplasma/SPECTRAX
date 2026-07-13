@@ -3,6 +3,7 @@
 import diffrax
 import jax
 import jax.numpy as jnp
+import optimistix as optx
 from jax import lax
 from jax.scipy.sparse.linalg import gmres
 
@@ -47,11 +48,18 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
             f_mid = terms.vf(t1, y_mid, args)
             return jax.tree.map(lambda a, b, f: a - b - δt * f, y1, y0, f_mid)
 
-        y1 = _newton_gmres(F_fn, y0, y1_init, self.rtol, self.atol, self.max_iters)
+        y1, converged = _newton_gmres(
+            F_fn, y0, y1_init, self.rtol, self.atol, self.max_iters
+        )
 
         y_error = jax.tree.map(lambda a, b: a - b, y1, y1_init)
         dense_info = dict(y0=y0, y1=y1)
-        return y1, y_error, dense_info, None, diffrax.RESULTS.successful
+        result = diffrax.RESULTS.where(
+            converged,
+            diffrax.RESULTS.successful,
+            diffrax.RESULTS.promote(optx.RESULTS.nonlinear_max_steps_reached),
+        )
+        return y1, y_error, dense_info, None, result
 
 
 def _newton_gmres(F_fn, y0, y_init, rtol, atol, max_iters):
@@ -98,7 +106,7 @@ def _newton_gmres(F_fn, y0, y_init, rtol, atol, max_iters):
             return y1_next, norm >= 1.0, i + 1
 
         init_state = (y_init, True, 0)
-        y1_final, _, _ = lax.while_loop(cond_fn, body_fn, init_state)
-        return y1_final
+        y1_final, not_converged, _ = lax.while_loop(cond_fn, body_fn, init_state)
+        return y1_final, ~not_converged
 
     return loop_fn(y_init)
