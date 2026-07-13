@@ -19,5 +19,11 @@ def test_electric_field_update():
     result = simulation()
     assert not jnp.all(result["Fk"] == 0), "Electric field did not update."
 
+def test_max_steps_failure_reported():
+    """Report a solver step limit when exceptions are disabled."""
+    result = simulation({"t_max": 0.02}, dt=0.01, adaptive_time_step=False,
+                        max_steps=1, throw=False)
+    assert result["solver_result"] == RESULTS.max_steps_reached
+
 if __name__ == "__main__":
     pytest.main()
