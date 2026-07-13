@@ -1,9 +1,11 @@
 """Custom Diffrax solver: implicit midpoint with a Newton–GMRES nonlinear solve."""
 
 from collections.abc import Callable
+from typing import NamedTuple
 
 import diffrax
 import jax
+import jax.numpy as jnp
 import optimistix as optx
 from solvax import newton_krylov
 
@@ -24,6 +26,15 @@ def collision_diffusion_preconditioner(args, dt):
     return apply
 
 
+class MidpointSolverState(NamedTuple):
+    """Newton--GMRES iteration totals and per-step maxima."""
+
+    newton_iterations: jax.Array
+    linear_iterations: jax.Array
+    max_newton_iterations: jax.Array
+    max_linear_iterations: jax.Array
+
+
 class ImplicitMidpoint(diffrax.AbstractSolver):
     """Implicit midpoint ODE solver using a JAX-compiled Newton–GMRES iteration.
 
@@ -36,6 +47,7 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
     ``rtol`` and ``atol`` control the nonlinear residual, while
     ``linear_rtol`` and ``linear_atol`` control each GMRES solve.
     Newton iteration stops when ``||F|| <= max(atol, rtol * ||F_initial||)``.
+    Accepted-step diagnostics are accumulated in :class:`MidpointSolverState`.
     An optional ``preconditioner(args, dt)`` factory supplies the inverse action
     used by GMRES.
     """
@@ -56,13 +68,17 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
         return 2
 
     def init(self, terms, t0, t1, y0, args):
-        return None
+        del terms, t0, t1, y0, args
+        zero = jnp.int32(0)
+        return MidpointSolverState(zero, zero, zero, zero)
 
     def func(self, terms, t0, y0, args):
         return terms.vf(t0, y0, args)
 
     def step(self, terms, t0, t1, y0, args, solver_state, made_jump):
-        del solver_state, made_jump
+        del made_jump
+        if solver_state is None:
+            solver_state = self.init(terms, t0, t1, y0, args)
 
         δt = t1 - t0
         t_mid = t0 + 0.5 * δt
@@ -97,4 +113,10 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
             diffrax.RESULTS.successful,
             diffrax.RESULTS.promote(optx.RESULTS.nonlinear_max_steps_reached),
         )
-        return y1, y_error, dense_info, None, result
+        next_solver_state = MidpointSolverState(
+            solver_state.newton_iterations + solution.newton_iterations,
+            solver_state.linear_iterations + solution.linear_iterations,
+            jnp.maximum(solver_state.max_newton_iterations, solution.newton_iterations),
+            jnp.maximum(solver_state.max_linear_iterations, solution.linear_iterations),
+        )
+        return y1, y_error, dense_info, next_solver_state, result

@@ -15,6 +15,7 @@ def test_simulation_runs():
     assert isinstance(result, dict), "Simulation did not return a dictionary."
     assert "Ck" in result, "Missing Ck in output."
     assert "Fk" in result, "Missing Fk in output."
+    assert "midpoint_stats" not in result
     assert result["Ck"].shape[1:] == (result["Ns"] * result["Nn"] * result["Nm"] * result["Np"],
                                       result["Ny"], result["Nx"] // 2 + 1, result["Nz"])
     assert result["Fk"].shape[1:] == (6, result["Ny"], result["Nx"] // 2 + 1, result["Nz"])
@@ -41,6 +42,9 @@ def test_implicit_midpoint_runs_with_structured_state():
 
     assert jnp.all(jnp.isfinite(result["Ck"]))
     assert jnp.all(jnp.isfinite(result["Fk"]))
+    stats = result["midpoint_stats"]
+    assert stats.newton_iterations >= stats.max_newton_iterations > 0
+    assert stats.linear_iterations >= stats.max_linear_iterations > 0
 
 
 def test_collision_diffusion_midpoint_diagonal():
