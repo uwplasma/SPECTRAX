@@ -102,9 +102,10 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
     return dCk_s_dt, dFk_dt
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step'])
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step', 'throw'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
-               timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True):
+               timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True,
+               throw=True):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -125,6 +126,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         Initial integration step size.
     solver : diffrax.AbstractSolver, optional
         Diffrax solver instance controlling the time integration.
+    throw : bool, optional
+        Raise on integration failure; otherwise report it in ``solver_result``.
 
     Returns
     -------
@@ -172,7 +175,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         stepsize_controller=stepsize_controller,
         t0=0, t1=parameters["t_max"], dt0=dt,
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
-        max_steps=1000000, progress_meter=TqdmProgressMeter())
+        max_steps=1000000, progress_meter=TqdmProgressMeter(), throw=throw)
         
     # Reshape the solution to extract Ck and Fk
     Ck = sol.ys[0].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz)
@@ -183,7 +186,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     dCk = dCk.at[:, Nn * Nm * Np, 0, 0, 0].set(0)
     
     # Output results
-    temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk}
+    temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk,
+                        "solver_result": sol.result}
     output = {**temporary_output, **parameters}
     diagnostics(output)
     return output
