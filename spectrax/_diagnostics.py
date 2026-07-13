@@ -19,7 +19,13 @@ from typing import Any, Mapping
 
 import jax.numpy as jnp
 
-__all__ = ["diagnostics"]
+__all__ = ["diagnostics", "hermite_tail_fraction"]
+
+
+def _rfft_weights(Nx: int, Nx_kept: int) -> jnp.ndarray:
+    """Return Parseval weights for an RFFT of length ``Nx``."""
+    weights = jnp.full(Nx_kept, 2.0).at[0].set(1.0)
+    return weights.at[-1].set(1.0 + (Nx % 2) * (Nx_kept > 1))
 
 
 def _infer_Ns(output: Mapping[str, Any]) -> int:
@@ -66,6 +72,50 @@ def _infer_masses(output: Mapping[str, Any], Ns: int) -> jnp.ndarray:
     if Ns == 2 and "mi_me" in output:
         return jnp.array([1.0, output["mi_me"]])
     return jnp.ones((Ns,))
+
+
+def hermite_tail_fraction(output: Mapping[str, Any], width: int = 1) -> jnp.ndarray:
+    """Return the perturbation norm fraction at each Hermite boundary.
+
+    The tail is the union of the outer ``width`` modes on every Hermite axis
+    with more than one retained mode. Squared ``dCk`` coefficients are summed
+    with Parseval weights over Fourier space. For SPECTRAX's matched-Maxwellian
+    basis this norm is proportional to perturbed-distribution free energy, but
+    it is not the total plasma energy.
+
+    Returns an array with shape ``(Nt, Ns)``. A zero perturbation, or a layout
+    with no active Hermite axis, has zero tail fraction.
+    """
+    if not isinstance(width, int) or width < 1:
+        raise ValueError("width must be a positive integer.")
+
+    dCk = jnp.asarray(output["dCk"])
+    Ns = int(output["Ns"]) if "Ns" in output else _infer_Ns(output)
+    Nn, Nm, Np = (int(output[key]) for key in ("Nn", "Nm", "Np"))
+    expected_modes = Ns * Nn * Nm * Np
+    if dCk.ndim != 5 or dCk.shape[1] != expected_modes:
+        raise ValueError(f"dCk must have shape (Nt, {expected_modes}, Ny, Nx//2+1, Nz).")
+
+    n = jnp.arange(Nn)[None, None, :]
+    m = jnp.arange(Nm)[None, :, None]
+    p = jnp.arange(Np)[:, None, None]
+    tail = jnp.zeros((Np, Nm, Nn), dtype=bool)
+    if Nn > 1:
+        tail |= n >= max(Nn - width, 0)
+    if Nm > 1:
+        tail |= m >= max(Nm - width, 0)
+    if Np > 1:
+        tail |= p >= max(Np - width, 0)
+
+    Nx_kept = dCk.shape[-2]
+    weights = _rfft_weights(int(output.get("Nx", 2 * (Nx_kept - 1))), Nx_kept)
+    power = jnp.abs(dCk.reshape(dCk.shape[0], Ns, Np, Nm, Nn, *dCk.shape[-3:])) ** 2
+    power *= weights.reshape(1, 1, 1, 1, 1, 1, -1, 1)
+    total = jnp.sum(power, axis=(2, 3, 4, 5, 6, 7))
+    boundary = jnp.sum(power * tail.reshape(1, 1, Np, Nm, Nn, 1, 1, 1),
+                       axis=(2, 3, 4, 5, 6, 7))
+    denominator = jnp.where(total > 0, total, 1.0)
+    return jnp.where(total > 0, boundary / denominator, 0.0)
 
 
 def diagnostics(output: dict) -> None:
@@ -198,10 +248,8 @@ def diagnostics(output: dict) -> None:
     kinetic_energy_species = pref[None, :] * (term0[None, :] * C000 + term1 + term2)  # (Nt, Ns)
     kinetic_energy = jnp.sum(kinetic_energy_species, axis=1)  # (Nt,)
     # Field energy
-    rfft_weights = jnp.full(Nx_kept, 2.0)
-    rfft_weights = rfft_weights.at[0].set(1.0)
     Nx = output.get("Nx", 2 * (Nx_kept - 1))
-    rfft_weights = rfft_weights.at[-1].set(1.0 + (Nx % 2) * (Nx_kept > 1))
+    rfft_weights = _rfft_weights(Nx, Nx_kept)
     weight_grid = rfft_weights.reshape(1, 1, -1, 1)
     EM_energy = 0.5 * jnp.sum((jnp.abs(Fk) ** 2) * weight_grid, axis=(-4, -3, -2, -1)) * Omega_cs[0] ** 2
 
