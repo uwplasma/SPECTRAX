@@ -13,7 +13,7 @@ from time import time
 from jax import block_until_ready, config
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
-from spectrax import simulation, load_parameters, compute_C_nmp
+from spectrax import simulation, load_parameters, compute_C_nmp, periodic_grid
 from jax.numpy.fft import rfftn
 from orszag_tang_data_analysis import (
         plot_energy_timeseries, plot_relative_energy_error,
@@ -50,9 +50,9 @@ E = lambda x, y, z: jnp.array([jnp.zeros_like(x),
                                jnp.zeros_like(x), 
                                jnp.zeros_like(x)])
 
-x = jnp.linspace(0, input_parameters["Lx"], Nx)
-y = jnp.linspace(0, input_parameters["Ly"], Ny)
-z = jnp.linspace(0, input_parameters["Lz"], Nz)
+x = periodic_grid(input_parameters["Lx"], Nx)
+y = periodic_grid(input_parameters["Ly"], Ny)
+z = periodic_grid(input_parameters["Lz"], Nz)
 X, Y, Z = jnp.meshgrid(x, y, z, indexing='xy')
 
 Us_grid = jnp.stack([Ue(X, Y, Z), Ui(X, Y, Z)], axis=0)  # shape (Ns, 3, Ny, Nx, Nz)
