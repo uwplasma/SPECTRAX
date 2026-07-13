@@ -92,16 +92,18 @@ def _newton_gmres(F_fn, y0, y_init, rtol, atol, max_iters):
             # Adaptive inner tolerance (Eisenstat–Walker).
             inner_tol = jnp.minimum(0.1, norm * 0.5)
 
-            delta, _ = gmres(
-                jvp,
-                jax.tree.map(jnp.negative, res),
-                tol=inner_tol,
-                atol=atol,
-                maxiter=min(20, max_iters // 2),
-            )
+            def update(_):
+                delta, _ = gmres(
+                    jvp,
+                    jax.tree.map(jnp.negative, res),
+                    tol=inner_tol,
+                    atol=atol,
+                    maxiter=min(20, max_iters // 2),
+                )
+                return jax.tree.map(lambda y, d: y + d, y1, delta)
 
-            y1_next = jax.tree.map(
-                lambda y, d: jnp.where(norm < 1.0, y, y + d), y1, delta
+            y1_next = lax.cond(
+                norm < 1.0, lambda _: y1, update, operand=None
             )
             return y1_next, norm >= 1.0, i + 1
 
