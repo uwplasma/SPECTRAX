@@ -165,6 +165,17 @@ python example_script.py
 
 The `simulation` function returns a dictionary containing the evolved Hermite coefficients `Ck`, electromagnetic coefficients `Fk`, time array, the input parameters and diagnostic quantities.
 
+Distribute complete species blocks over the available devices while keeping each
+spatial FFT local with:
+
+```python
+from spectrax import make_species_mesh, simulation
+
+output = simulation(species_mesh=make_species_mesh())
+```
+
+The number of devices must divide `Ns`; electromagnetic fields remain replicated.
+
 
 ###  Testing
 Run the test suite using the following command:

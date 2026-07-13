@@ -1,16 +1,26 @@
 """Time integration driver for the spectral Vlasov–Maxwell system."""
 
+import jax
 import jax.numpy as jnp
-from jax import jit, config
+from jax import jit, config, shard_map
+from jax.sharding import AxisType, NamedSharding, PartitionSpec as P
 config.update("jax_enable_x64", True)
 from functools import partial
 from diffrax import (diffeqsolve, Dopri8, ODETerm,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
+from diffrax import is_okay
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
 from ._diagnostics import diagnostics
 
-__all__ = ["cross_product", "ode_system", "simulation"]
+__all__ = ["cross_product", "make_species_mesh", "ode_system", "simulation"]
+
+def make_species_mesh(devices=None):
+    """Create a one-dimensional Explicit mesh for species parallelism."""
+    devices = jax.devices() if devices is None else devices
+    return jax.make_mesh(
+        (len(devices),), ("species",), axis_types=(AxisType.Explicit,), devices=devices
+    )
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz'])
 def _twothirds_mask(Ny: int, Nx: int, Nz: int):
@@ -49,8 +59,8 @@ def cross_product(k_vec, F_vec):
     Fx, Fy, Fz = F_vec
     return jnp.array([ky * Fz - kz * Fy, kz * Fx - kx * Fz, kx * Fy - ky * Fx])
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns'])
-def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'mesh'])
+def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, mesh, t, Ck_Fk, args):
     """
     Right-hand side for the coupled Vlasov-Maxwell system expressed in spectral form.
 
@@ -62,6 +72,8 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
         Number of Hermite modes per velocity-space dimension.
     Ns : int
         Number of species.
+    mesh : jax.sharding.Mesh or None
+        Species mesh used for local distribution transforms.
     t : float
         Integration time (unused but required by Diffrax interface).
     Ck_Fk : tuple[jnp.ndarray, jnp.ndarray]
@@ -90,22 +102,42 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     F = jnp.fft.irfftn(Fk * mask23, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
     C = jnp.fft.irfftn(Ck * mask23, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
 
+    local_Omega_cs = Omega_cs
+    if mesh is not None:
+        start = jax.lax.axis_index("species") * Ns
+        local_Omega_cs = jax.lax.dynamic_slice_in_dim(Omega_cs, start, Ns)
+
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
-                                      Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23=mask23)
+                                      Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, local_Omega_cs, Nn, Nm, Np, Ns, mask23=mask23)
 
     dBk_dt = -1j * cross_product(nabla, Fk[:3])
     
-    current = plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns)
+    current = plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns, mesh)
     dEk_dt = 1j * cross_product(nabla, Fk[3:]) - current / Omega_cs[0]
 
     dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
     return dCk_s_dt, dFk_dt
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step', 'throw'])
+def _species_arg_specs():
+    return (
+        P("species"), P(), P(), P(), P("species"), P("species"),
+    ) + (P(),) * 15
+
+def _species_rms_norm(error):
+    Ck_error, Fk_error = error
+    squared_error = jnp.vdot(Ck_error, Ck_error)
+    squared_error += jnp.where(
+        jax.lax.axis_index("species") == 0, jnp.vdot(Fk_error, Fk_error), 0
+    )
+    size = Ck_error.size * jax.lax.axis_size("species") + Fk_error.size
+    return jnp.sqrt(
+        jnp.maximum(jnp.real(jax.lax.psum(squared_error, "species")), 0) / size
+    )
+
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
                timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True,
-               throw=True):
+               throw=True, species_mesh=None):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -128,6 +160,9 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         Diffrax solver instance controlling the time integration.
     throw : bool, optional
         Raise on integration failure; otherwise report it in ``solver_result``.
+    species_mesh : jax.sharding.Mesh, optional
+        Explicit mesh used to shard distribution coefficients by species while
+        replicating electromagnetic fields.
 
     Returns
     -------
@@ -144,9 +179,25 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         parameters["Ck_0"].reshape(Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz),
         parameters["Fk_0"].reshape(6, Ny, Nx//2+1, Nz),
     )
+    if species_mesh is not None:
+        if Ns % species_mesh.shape["species"]:
+            raise ValueError("The number of species must be divisible by the mesh size.")
+        state_shardings = (
+            NamedSharding(species_mesh, P("species")),
+            NamedSharding(species_mesh, P()),
+        )
+        # Stage single-device initialization results before multi-device placement.
+        initial_conditions = jax.device_put(
+            jax.device_get(initial_conditions), state_shardings
+        )
 
     # Define the time array for data output.
     time = jnp.linspace(0, parameters["t_max"], timesteps)
+    solver_args = (time, 0.0, dt, parameters["t_max"], parameters["ode_tolerance"])
+    if species_mesh is not None:
+        replicated = NamedSharding(species_mesh, P())
+        solver_args = jax.device_put(jax.device_get(solver_args), replicated)
+    time, t0, dt, t_max, ode_tolerance = solver_args
     
     # Arguments for the ODE system.
     args = (Nx, Ny, Nz, Nn, Nm, Np, Ns, parameters["qs"], parameters["nu"], parameters["D"],
@@ -157,29 +208,75 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
             parameters["sqrt_n_plus"], parameters["sqrt_n_minus"],
             parameters["sqrt_m_plus"], parameters["sqrt_m_minus"],
             parameters["sqrt_p_plus"], parameters["sqrt_p_minus"])
+    if species_mesh is not None:
+        arg_shardings = tuple(
+            NamedSharding(species_mesh, spec) for spec in _species_arg_specs()
+        )
+        args = args[:7] + jax.device_put(jax.device_get(args[7:]), arg_shardings)
     
 
     controllers = {
     True: PIDController(
-        rtol=parameters["ode_tolerance"],
-        atol=parameters["ode_tolerance"],
+        rtol=ode_tolerance,
+        atol=ode_tolerance,
     ),
     False: ConstantStepSize(),
     }
     stepsize_controller = controllers[adaptive_time_step]
 
-    # Solve the ODE system
-    ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns)
-    sol = diffeqsolve(
-        ODETerm(ode_system_partial), solver=solver,
-        stepsize_controller=stepsize_controller,
-        t0=0, t1=parameters["t_max"], dt0=dt,
-        y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
-        max_steps=1000000, progress_meter=TqdmProgressMeter(), throw=throw)
+    # Keep Diffrax's state and save buffers local on explicit species meshes.
+    if species_mesh is not None:
+        def local_solve(y0, local_args, local_solver_args):
+            local_time, local_t0, local_dt, local_t_max, local_tolerance = (
+                local_solver_args
+            )
+            local_Ns = y0[0].shape[0]
+            vector_field = lambda t, y, a: ode_system(
+                Nx, Ny, Nz, Nn, Nm, Np, local_Ns, species_mesh, t, y,
+                (Nx, Ny, Nz, Nn, Nm, Np, local_Ns) + a,
+            )
+            local_controller = (
+                PIDController(rtol=local_tolerance, atol=local_tolerance,
+                              norm=_species_rms_norm)
+                if adaptive_time_step else ConstantStepSize()
+            )
+            sol = diffeqsolve(
+                ODETerm(vector_field), solver=solver,
+                stepsize_controller=local_controller,
+                t0=local_t0, t1=local_t_max, dt0=local_dt,
+                y0=y0, args=local_args, saveat=SaveAt(ts=local_time),
+                max_steps=1000000, progress_meter=NoProgressMeter(),
+                throw=False,
+            )
+            return sol.ys, sol.result
+
+        solution, solver_result = shard_map(
+            local_solve, mesh=species_mesh,
+            in_specs=((P("species"), P()), _species_arg_specs(), (P(),) * 5),
+            out_specs=((P(None, "species"), P()), P()), check_vma=False,
+        )(initial_conditions, args[7:], solver_args)
+    else:
+        ode_system_partial = partial(
+            ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns, species_mesh
+        )
+        sol = diffeqsolve(
+            ODETerm(ode_system_partial), solver=solver,
+            stepsize_controller=stepsize_controller,
+            t0=t0, t1=t_max, dt0=dt,
+            y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
+            max_steps=1000000, progress_meter=TqdmProgressMeter(), throw=throw,
+        )
+        solution, solver_result = sol.ys, sol.result
+    if (species_mesh is not None and throw
+            and not bool(jax.device_get(is_okay(solver_result)))):
+        raise RuntimeError(str(solver_result))
         
     # Reshape the solution to extract Ck and Fk
-    Ck = sol.ys[0].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz)
-    Fk = sol.ys[1]
+    solution = jax.device_get(solution) if species_mesh is not None else solution
+    Ck = jnp.asarray(solution[0]).reshape(
+        len(time), Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz
+    )
+    Fk = jnp.asarray(solution[1])
     
     # Set n = 0, k = 0 mode to zero to get array with time evolution of perturbation.
     dCk = Ck.at[:, 0, 0, 0, 0].set(0)
@@ -187,7 +284,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     
     # Output results
     temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk,
-                        "solver_result": sol.result}
+                        "solver_result": solver_result}
     output = {**temporary_output, **parameters}
     diagnostics(output)
     return output
