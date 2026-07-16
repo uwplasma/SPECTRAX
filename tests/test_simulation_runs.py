@@ -6,6 +6,7 @@ from spectrax import simulation
 from spectrax.midpoint_solver import (
     ImplicitMidpoint,
     collision_diffusion_preconditioner,
+    collision_diffusion_x_streaming_preconditioner,
 )
 
 
@@ -61,6 +62,31 @@ def test_collision_diffusion_midpoint_diagonal():
     diagonal = 1 + 0.1 * (2 * args[-7][None, :, :, :, None, None, None] + 15)
     assert jnp.array_equal(result[0], coefficients / diagonal)
     assert jnp.array_equal(result[1], fields)
+
+
+def test_collision_diffusion_x_streaming_line():
+    args = [None] * 21
+    args[-20], args[-19] = 2.0, 3.0
+    args[-17], args[-16], args[-15] = jnp.arange(4.0, 7.0), jnp.arange(7.0, 10.0), 10.0
+    args[-12], args[-9] = jnp.full((1, 1, 1), 2.0), jnp.full((1, 1, 1), 5.0)
+    args[-7] = jnp.arange(3.0).reshape(1, 1, 3)
+    args[-6] = jnp.sqrt(jnp.arange(1.0, 4.0)).reshape(1, 1, 1, 3, 1, 1, 1)
+    args[-5] = jnp.sqrt(jnp.arange(3.0)).reshape(1, 1, 1, 3, 1, 1, 1)
+    coefficients = jnp.arange(1.0, 4.0).astype(complex).reshape(1, 1, 1, 3, 1, 1, 1)
+    fields = jnp.ones((6, 1, 1, 1))
+
+    actual = collision_diffusion_x_streaming_preconditioner(tuple(args), 0.2)(
+        (coefficients, fields)
+    )
+    phase = 0.1j * 2 / 10
+    diagonal = 1 + 0.1 * (2 * jnp.arange(3.0) + 15) + phase * 7
+    coupling = phase * 4 / jnp.sqrt(2)
+    matrix = (jnp.diag(diagonal)
+              + jnp.diag(coupling * jnp.sqrt(jnp.arange(1.0, 3.0)), 1)
+              + jnp.diag(coupling * jnp.sqrt(jnp.arange(1.0, 3.0)), -1))
+    expected = jnp.linalg.solve(matrix, coefficients.reshape(3))
+    assert jnp.allclose(actual[0].reshape(3), expected, rtol=1e-12, atol=1e-12)
+    assert jnp.array_equal(actual[1], fields)
 
 
 def test_implicit_midpoint_reports_newton_exhaustion():

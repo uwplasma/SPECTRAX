@@ -7,7 +7,7 @@ import diffrax
 import jax
 import jax.numpy as jnp
 import optimistix as optx
-from solvax import newton_krylov
+from solvax import lu_factor_banded, lu_solve_banded, newton_krylov
 
 
 def collision_diffusion_preconditioner(args, dt):
@@ -22,6 +22,45 @@ def collision_diffusion_preconditioner(args, dt):
     def apply(residual):
         coefficients, fields = residual
         return coefficients / diagonal, fields
+
+    return apply
+
+
+def collision_diffusion_x_streaming_preconditioner(args, dt):
+    """Invert collision, diffusion, and x-streaming Hermite line blocks."""
+    nu, diffusion = args[-20:-18]
+    alpha = args[-17].reshape(-1, 3)[:, 0]
+    drift = args[-16].reshape(-1, 3)[:, 0]
+    length, kx, k2 = args[-15], args[-12], args[-9]
+    collision, sqrt_plus, sqrt_minus = args[-7:-4]
+    phase = (0.5j * dt / length * kx)[None, None, None]
+    species = (slice(None),) + (None,) * 6
+    diagonal = (
+        1
+        + 0.5 * dt * (
+            nu * collision[None, :, :, :, None, None, None]
+            + diffusion * k2[None, None, None, None]
+        )
+        + drift[species] * phase
+    )
+    coupling = alpha[species] * phase / jnp.sqrt(2)
+
+    def lines(value):
+        return jnp.moveaxis(jnp.broadcast_to(value, diagonal.shape), 3, -1)
+
+    bands = jnp.stack(
+        (lines(coupling * sqrt_minus), lines(diagonal),
+         lines(coupling * sqrt_plus)), axis=-2,
+    )
+    flat_bands = bands.reshape(-1, 3, bands.shape[-1])
+    factors = jax.vmap(lambda band: lu_factor_banded(band, 1, 1))(flat_bands)
+
+    def apply(residual):
+        coefficients, fields = residual
+        rhs = jnp.moveaxis(coefficients, 3, -1).reshape(-1, coefficients.shape[3])
+        solution = jax.vmap(lu_solve_banded)(factors, rhs)
+        solution = solution.reshape(bands.shape[:-2] + (-1,))
+        return jnp.moveaxis(solution, -1, 3), fields
 
     return apply
 
