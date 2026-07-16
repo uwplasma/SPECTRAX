@@ -13,7 +13,7 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
 
     This solver implements the implicit midpoint rule:
 
-        y_{n+1} = y_n + Δt * f(t_{n+1}, (y_n + y_{n+1}) / 2)
+        y_{n+1} = y_n + Δt * f(t_n + Δt / 2, (y_n + y_{n+1}) / 2)
 
     The nonlinear equation for ``y_{n+1}`` is solved with Newton iterations,
     where each linearized step is solved via GMRES using JAX's linearization.
@@ -41,13 +41,14 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
         del solver_state, made_jump
 
         δt = t1 - t0
+        t_mid = t0 + 0.5 * δt
         f0 = terms.vf(t0, y0, args)
         y1_init = jax.tree.map(lambda y, f: y + δt * f, y0, f0)
 
-        # Define F(y1) = y1 - y0 - δt * f(t1, (y0 + y1)/2)
+        # Define F(y1) = y1 - y0 - δt * f(t_mid, (y0 + y1)/2)
         def F_fn(y1):
             y_mid = jax.tree.map(lambda a, b: 0.5 * (a + b), y0, y1)
-            f_mid = terms.vf(t1, y_mid, args)
+            f_mid = terms.vf(t_mid, y_mid, args)
             return jax.tree.map(lambda a, b, f: a - b - δt * f, y1, y0, f_mid)
 
         y1, converged = _newton_gmres(

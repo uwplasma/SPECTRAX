@@ -41,5 +41,14 @@ def test_implicit_midpoint_reports_newton_exhaustion():
 
     assert result == diffrax.RESULTS.promote(optx.RESULTS.nonlinear_max_steps_reached)
 
+
+def test_implicit_midpoint_evaluates_rhs_at_midpoint_time():
+    term = diffrax.ODETerm(lambda t, y, args: t)
+    y1 = ImplicitMidpoint(max_iters=2, linear_restart=1, linear_max_restarts=1).step(
+        term, 0.0, 0.2, jnp.array(0.0), None, None, False
+    )[0]
+
+    assert jnp.allclose(y1, 0.02, rtol=0, atol=1e-12)
+
 if __name__ == "__main__":
     pytest.main()
