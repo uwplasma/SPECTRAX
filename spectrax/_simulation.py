@@ -9,6 +9,7 @@ from diffrax import (diffeqsolve, Dopri8, ODETerm,
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
 from ._diagnostics import diagnostics
+from .midpoint_solver import ImplicitMidpoint
 
 __all__ = ["cross_product", "ode_system", "simulation"]
 
@@ -130,7 +131,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     -------
     dict
         Dictionary containing the evolved coefficients (`Ck`, `Fk`), time samples,
-        perturbation diagnostics, and all simulation parameters.
+        perturbation diagnostics, all simulation parameters, and `midpoint_stats`
+        when using :class:`ImplicitMidpoint`.
     """
     
     # **Initialize simulation parameters**
@@ -171,7 +173,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         ODETerm(ode_system_partial), solver=solver,
         stepsize_controller=stepsize_controller,
         t0=0, t1=parameters["t_max"], dt0=dt,
-        y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
+        y0=initial_conditions, args=args,
+        saveat=SaveAt(ts=time, solver_state=isinstance(solver, ImplicitMidpoint)),
         max_steps=1000000, progress_meter=TqdmProgressMeter())
         
     # Reshape the solution to extract Ck and Fk
@@ -184,6 +187,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     
     # Output results
     temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk}
+    if sol.solver_state is not None:
+        temporary_output["midpoint_stats"] = sol.solver_state
     output = {**temporary_output, **parameters}
     diagnostics(output)
     return output
