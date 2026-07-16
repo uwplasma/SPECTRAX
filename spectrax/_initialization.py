@@ -9,15 +9,7 @@ import diffrax
 import inspect
 from .midpoint_solver import ImplicitMidpoint
 
-__all__ = ["load_parameters", "initialize_simulation_parameters", "periodic_grid"]
-
-
-def periodic_grid(length, size):
-    """Return ``size`` uniformly spaced points on the periodic interval ``[0, length)``."""
-    if size < 1:
-        raise ValueError("size must be positive")
-    return jnp.arange(size) * (length / size)
-
+__all__ = ["load_parameters", "initialize_simulation_parameters"]
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz','Nn', 'Nm', 'Np', 'Ns', 'timesteps'])
 def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, timesteps=500, dt=0.01):
