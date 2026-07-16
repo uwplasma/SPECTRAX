@@ -39,6 +39,7 @@
   - [Installation](#installation)
   - [Usage](#usage)
     - [Command‑line Interface](#commandline-interface)
+    - [Runtime performance](#runtime-performance)
   - [Testing](#testing)
 - [Input File Format](#input-file-format)
 - [Contributing](#contributing)
@@ -190,6 +191,25 @@ The remaining device-mesh axis must divide `Ns`; `hermite_shards` must divide
 To exercise four or eight local CPU devices, set
 `XLA_FLAGS=--xla_force_host_platform_device_count=4` (or `8`) before starting
 Python; JAX must see this setting before it is imported.
+
+#### Runtime performance
+
+For repeated runs, enable JAX's persistent compilation cache before starting
+Python:
+
+```sh
+export JAX_COMPILATION_CACHE_DIR="$HOME/.cache/jax"
+```
+
+Compiled programs remain specific to array shapes, dtypes, JAX/XLA versions,
+and device topology. Use `JAX_LOG_COMPILES=1` and
+`JAX_EXPLAIN_CACHE_MISSES=1` to diagnose unexpected recompilation. See the
+[JAX persistent-cache guide](https://docs.jax.dev/en/latest/persistent_compilation_cache.html)
+for cache security and shared-filesystem considerations.
+
+Spatial FFT cost can vary substantially between nearby resolutions. Benchmark
+physically acceptable grid sizes on the target backend, and retain convergence
+and spectral-tail checks when changing resolution for performance.
 
 ###  Testing
 Run the test suite using the following command:
