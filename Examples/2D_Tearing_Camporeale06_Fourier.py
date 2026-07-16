@@ -20,7 +20,7 @@ input_parameters, solver_parameters = load_parameters(toml_file)
 
 print('Setting up simulation parameters...')
 start_time = time()
-a = 1 # Current sheet thickness
+a = jnp.sqrt(2) # Current sheet thickness
 ka = 0.5 # Normalized perturbation wavenumber
 Lx = 32 * a # input_parameters["Lx"]
 Ly = 2 * jnp.pi * a / ka
