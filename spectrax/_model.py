@@ -6,14 +6,14 @@ equations (:func:`Hermite_Fourier_system`).
 """
 
 import jax.numpy as jnp
-from jax import jit
+from jax import jit, lax
 from functools import partial
 
 __all__ = ['plasma_current', 'Hermite_Fourier_system']
 
 
-@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
-def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
+@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns', 'mesh'])
+def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns, mesh=None):
     """
     Compute the spectral Ampère-Maxwell current from Hermite-Fourier coefficients.
 
@@ -69,7 +69,10 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     J_species = (term1 + term2) * pre[None, :, None, None, None]
 
     # Sum over species → shape: (3, Ny, Nx//2+1, Nz)
-    return jnp.sum(J_species, axis=1)
+    if mesh is None:
+        return jnp.sum(J_species, axis=1)
+    axis = mesh.axis_names[0]
+    return lax.psum(jnp.sum(J_species, axis=1), axis)
 
 def _pad_hermite_axes(Ck):
     """Pad Hermite axes (p, m, n) by one cell on both sides.
@@ -138,7 +141,6 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         Number of Hermite modes and species.
     mask23 : jnp.ndarray
         Boolean mask implementing the 2/3 de-aliasing rule in Fourier space.
-
     Returns
     -------
     jnp.ndarray
