@@ -3,5 +3,6 @@ jaxlib
 jax_tqdm
 diffrax
 orthax
+solvax>=0.8.0
 matplotlib
 pandas
