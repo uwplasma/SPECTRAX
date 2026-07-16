@@ -71,8 +71,11 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns, mesh=None):
     # Sum over species → shape: (3, Ny, Nx//2+1, Nz)
     if mesh is None:
         return jnp.sum(J_species, axis=1)
-    axis = mesh.axis_names[0]
-    return lax.psum(jnp.sum(J_species, axis=1), axis)
+    if "hermite" in mesh.axis_names:
+        J_species = jnp.where(
+            lax.axis_index("hermite") == 0, J_species, jnp.zeros_like(J_species)
+        )
+    return lax.psum(jnp.sum(J_species, axis=1), mesh.axis_names)
 
 def _pad_hermite_axes(Ck):
     """Pad Hermite axes (p, m, n) by one cell on both sides.
@@ -85,24 +88,41 @@ def _pad_hermite_axes(Ck):
         ((0,0), (1,1), (1,1), (1,1), (0,0), (0,0), (0,0))
     )
 
-def shift_multi(Ck, dn=0, dm=0, dp=0):
+def shift_multi(Ck, dn=0, dm=0, dp=0, mesh=None):
     """
     Zero-padded shift along Hermite axes (n,m,p) simultaneously.
-    dn=+1 means 'use source at n-1', dn=-1 means 'use source at n+1', dn=0 is identity.
+    dn=+1 means 'use source at n+1', dn=-1 means 'use source at n-1', dn=0 is identity.
     Same for dm, dp. Works for values in {-1,0,+1}.
     """
-    P = _pad_hermite_axes(Ck)
+    if mesh is not None and "hermite" in mesh.axis_names:
+        padded = jnp.pad(
+            Ck, ((0,0), (1,1), (1,1), (0,0), (0,0), (0,0), (0,0))
+        )
+        local = padded[:, 1+dp:1+dp+Ck.shape[1], 1+dm:1+dm+Ck.shape[2]]
+        if dn == 0:
+            return local
+        size = mesh.shape["hermite"]
+        if dn == 1:
+            permutation = [(source, source - 1) for source in range(1, size)]
+            halo = lax.ppermute(local[:, :, :, :1], "hermite", permutation)
+            return jnp.concatenate((local[:, :, :, 1:], halo), axis=3)
+        permutation = [(source, source + 1) for source in range(size - 1)]
+        halo = lax.ppermute(local[:, :, :, -1:], "hermite", permutation)
+        return jnp.concatenate((halo, local[:, :, :, :-1]), axis=3)
+    padded = _pad_hermite_axes(Ck)
     _, Np, Nm, Nn, _, _, _ = Ck.shape
     # Start indices in the padded array
-    n0 = 1 + dn   # dn=+1 -> 0 ; dn=0 -> 1 ; dn=-1 -> 2
+    n0 = 1 + dn
     m0 = 1 + dm
     p0 = 1 + dp
-    return P[:, p0:p0+Np, m0:m0+Nm, n0:n0+Nn, :, :, :]
+    return padded[:, p0:p0+Np, m0:m0+Nm, n0:n0+Nn, :, :, :]
 
-@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
+_shift_multi = shift_multi
+
+@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns', 'mesh'])
 def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                            sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
-                           Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23):
+                           Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23, mesh=None):
     """
     Evaluate the right-hand side of the coupled Hermite-Fourier moment equations.
 
@@ -141,6 +161,9 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         Number of Hermite modes and species.
     mask23 : jnp.ndarray
         Boolean mask implementing the 2/3 de-aliasing rule in Fourier space.
+    mesh : jax.sharding.Mesh or None
+        Mesh used for Hermite halo exchange.
+
     Returns
     -------
     jnp.ndarray
@@ -149,6 +172,7 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
 
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-3:])
     C = C.reshape(Ns, Np, Nm, Nn, *C.shape[-3:])
+    shift_multi = partial(_shift_multi, mesh=mesh)
     F = F[:, None, None, None, None, :, :, :]  # (6,1,1,1,Nx,Ny,Nz) for broadcasting  
     
     # Define u, alpha, charge, and gyrofrequency depending on species.
