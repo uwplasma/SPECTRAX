@@ -13,3 +13,4 @@ from ._inverse_transform import *
 from ._model import *
 from ._plot import *
 from ._simulation import *
+from .ssprk3 import SSPRK3
