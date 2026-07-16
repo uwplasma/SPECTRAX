@@ -24,7 +24,8 @@ def test_electric_field_update():
 def test_implicit_midpoint_runs_with_structured_state():
     result = simulation(
         {"t_max": 0.01, "ode_tolerance": 1e-8}, Nx=5, Nn=3,
-        timesteps=2, dt=0.01, solver=ImplicitMidpoint(max_iters=4),
+        timesteps=2, dt=0.01,
+        solver=ImplicitMidpoint(max_iters=4, linear_restart=2, linear_max_restarts=2),
         adaptive_time_step=False,
     )
 

@@ -22,6 +22,8 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
     rtol: float = 1e-6
     atol: float = 1e-8
     max_iters: int = 300
+    linear_restart: int = 20
+    linear_max_restarts: int = 20
 
     term_structure = diffrax.ODETerm
     interpolation_cls = diffrax.LocalLinearInterpolation
@@ -49,7 +51,8 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
             return jax.tree.map(lambda a, b, f: a - b - δt * f, y1, y0, f_mid)
 
         y1, converged = _newton_gmres(
-            F_fn, y0, y1_init, self.rtol, self.atol, self.max_iters
+            F_fn, y0, y1_init, self.rtol, self.atol, self.max_iters,
+            self.linear_restart, self.linear_max_restarts,
         )
 
         y_error = jax.tree.map(lambda a, b: a - b, y1, y1_init)
@@ -62,7 +65,8 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
         return y1, y_error, dense_info, None, result
 
 
-def _newton_gmres(F_fn, y0, y_init, rtol, atol, max_iters):
+def _newton_gmres(F_fn, y0, y_init, rtol, atol, max_iters,
+                  linear_restart, linear_max_restarts):
     """Solve ``F(y)=0`` using Newton iterations with GMRES linear solves.
 
     Notes
@@ -98,8 +102,8 @@ def _newton_gmres(F_fn, y0, y_init, rtol, atol, max_iters):
                     jax.tree.map(jnp.negative, res),
                     rtol=inner_tol,
                     atol=atol,
-                    restart=20,
-                    max_restarts=min(20, max_iters // 2),
+                    restart=linear_restart,
+                    max_restarts=linear_max_restarts,
                 )
                 return jax.tree.map(lambda y, d: y + d, y1, linear_solution.x)
 
