@@ -80,5 +80,21 @@ def test_implicit_midpoint_evaluates_rhs_at_midpoint_time():
 
     assert jnp.allclose(y1, 0.02, rtol=0, atol=1e-12)
 
+
+def test_implicit_midpoint_uses_custom_inner_product():
+    calls = []
+
+    def inner_product(left, right):
+        calls.append(None)
+        return jnp.vdot(left, right)
+
+    solver = ImplicitMidpoint(inner_product=inner_product)
+    solver.step(
+        diffrax.ODETerm(lambda t, y, args: y + 1),
+        0.0, 0.1, jnp.array(0.0), None, None, False,
+    )
+
+    assert calls
+
 if __name__ == "__main__":
     pytest.main()
