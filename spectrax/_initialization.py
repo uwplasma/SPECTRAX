@@ -254,7 +254,7 @@ def compute_R_pm_matrices(upwind=False):
     return R_p, R_m
 
 def legT(f, basis_idx, N_DG, Lx, Nx, Ly=1, Ny=1, Lz=1, Nz=1): # Transform initial values into finite element basis
-        Nq = int(N_DG // 2 + 1) # Number of necessary quadrature points for exact inner product with highest order mode
+        Nq = N_DG # Number of quadrature points needed to project every retained mode
         dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz
         x_elements = dx / 2 + jnp.linspace(0, Lx, Nx, endpoint=False)
         y_elements = dy / 2 + jnp.linspace(0, Ly, Ny, endpoint=False)
