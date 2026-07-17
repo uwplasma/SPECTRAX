@@ -21,5 +21,11 @@ def test_electric_field_update():
     result = simulation()
     assert not jnp.all(result["Fk"] == 0), "Electric field did not update."
 
+def test_spatial_sharding_matches_serial():
+    kwargs = dict(input_parameters={"t_max": 1e-3}, Nx=4, Nn=2,
+                  timesteps=2, dt=1e-3)
+    serial, sharded = simulation(**kwargs), simulation(**kwargs, shard_axis="x")
+    assert all(jnp.allclose(serial[key], sharded[key]) for key in ("Ck", "Fk"))
+
 if __name__ == "__main__":
     pytest.main()
