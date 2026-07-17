@@ -27,16 +27,14 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl, t, Ck_Fk, args):
     Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m
     ) = args[8:]
 
-    total_Ck_size = Nn * Nm * Np * Ns * Nx * Ny * Nz * Nl
-    Ck = Ck_Fk[:total_Ck_size].reshape(Nn * Nm * Np * Ns, Ny, Nx, Nz, Nl)
-    Fk = Ck_Fk[total_Ck_size:].reshape(6, Ny, Nx, Nz, Nl)
+    Ck, Fk = Ck_Fk
 
     dy_dt = Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx, 
                                 inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, tripple_product, 
                                 Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
                                     Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np, Ns)
 
-    return dy_dt
+    return dy_dt[:Ck.size].reshape(Ck.shape), dy_dt[Ck.size:].reshape(Fk.shape)
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'N_DG', 'dims', 'timesteps', 'solver'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, N_DG=2, dims=1, timesteps=200, dt = 0.01, solver=Dopri5()):
@@ -71,8 +69,11 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
     # **Initialize simulation parameters**
     parameters = initialize_simulation_parameters(input_parameters, Nx, Ny, Nz, Nn, Nm, Np, Ns, N_DG, dims, timesteps, dt)
 
-    # Combine initial conditions.
-    initial_conditions = jnp.concatenate([parameters["Ck_0"].flatten(), parameters["Fk_0"].flatten()])
+    # Keep distributions and fields separate so their layouts can be controlled independently.
+    initial_conditions = (
+        parameters["Ck_0"].reshape(Ns * Nn * Nm * Np, Ny, Nx, Nz, -1),
+        parameters["Fk_0"].reshape(6, Ny, Nx, Nz, -1),
+    )
 
     # Define the time array for data output.
     time = jnp.linspace(0, parameters["t_max"], timesteps)
@@ -102,9 +103,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
     
     ## Idea: take the eigenvalues of ODE_system to determine the stability of the system.
     
-    # Reshape the solution to extract Ck and Fk
-    Ck = sol.ys[:,:(-6 * Nx * Ny * Nz * Nl)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx, Nz, Nl)
-    Fk = sol.ys[:,(-6 * Nx * Ny * Nz * Nl):].reshape(len(sol.ts), 6, Ny, Nx, Nz, Nl) # 
+    Ck, Fk = sol.ys
     
     # Set n = 0, k = 0 mode to zero to get array with time evolution of perturbation.
     dCk = Ck.at[:, 0, 0, 1, 0, 0].set(0)
