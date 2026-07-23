@@ -50,9 +50,9 @@ E = lambda x, y, z: jnp.array([jnp.zeros_like(x),
                                jnp.zeros_like(x), 
                                jnp.zeros_like(x)])
 
-x = jnp.linspace(0, input_parameters["Lx"], Nx)
-y = jnp.linspace(0, input_parameters["Ly"], Ny)
-z = jnp.linspace(0, input_parameters["Lz"], Nz)
+x = jnp.linspace(0, input_parameters["Lx"], Nx, endpoint=False)
+y = jnp.linspace(0, input_parameters["Ly"], Ny, endpoint=False)
+z = jnp.linspace(0, input_parameters["Lz"], Nz, endpoint=False)
 X, Y, Z = jnp.meshgrid(x, y, z, indexing='xy')
 
 Us_grid = jnp.stack([Ue(X, Y, Z), Ui(X, Y, Z)], axis=0)  # shape (Ns, 3, Ny, Nx, Nz)
