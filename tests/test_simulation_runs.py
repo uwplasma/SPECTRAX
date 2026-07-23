@@ -1,6 +1,19 @@
 import pytest
 import jax.numpy as jnp
-from spectrax import simulation
+from diffrax import ConstantStepSize, ODETerm, diffeqsolve
+from spectrax import SSPRK3, simulation
+
+def test_ssprk3_is_third_order():
+    term = ODETerm(lambda t, y, args: -y)
+
+    def error(dt):
+        solution = diffeqsolve(
+            term, SSPRK3(), t0=0, t1=1, dt0=dt, y0=jnp.array(1.0),
+            stepsize_controller=ConstantStepSize(),
+        )
+        return abs(solution.ys[0] - jnp.exp(-1.0))
+
+    assert error(0.05) < error(0.1) / 7.5
 
 def test_simulation_runs():
     """Test if the simulation runs without errors with default parameters."""
