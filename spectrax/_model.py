@@ -183,8 +183,37 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         jnp.sqrt(2) * sqrt_n_minus * (u1 / a0) * shift_multi(C, dn=-1, dm=0, dp=0) - 
         jnp.sqrt(2) * sqrt_m_minus * (u0 / a1) * shift_multi(C, dn=0, dm=-1, dp=0))
 
+    def compute_collisions(C, nu):
+        p = jnp.arange(Np)[None, :, None, None, None, None, None]
+        m = jnp.arange(Nm)[None, None, :, None, None, None, None]
+        n = jnp.arange(Nn)[None, None, None, :, None, None, None]
 
-    Col  = -nu * col[None, :, :, :, None, None, None] * Ck
+        C000 = C[:, 0, 0, 0, None, None, None, :, :, :]
+        C100 = C[:, 1, 0, 0, None, None, None, :, :, :]
+        C010 = C[:, 0, 1, 0, None, None, None, :, :, :]
+        C001 = C[:, 0, 0, 1, None, None, None, :, :, :]
+        C200 = C[:, 2, 0, 0, None, None, None, :, :, :]
+        C020 = C[:, 0, 2, 0, None, None, None, :, :, :]
+        C002 = C[:, 0, 0, 2, None, None, None, :, :, :]
+        
+        Col000 = - (n + m + p)
+        Col100 = jnp.sqrt(p) * C100 / C000
+        Col010 = jnp.sqrt(m) * C010 / C000
+        Col001 = jnp.sqrt(n) * C001 / C000
+        Col200 = jnp.sqrt(p * (p - 1)) * (jnp.sqrt(2) * C200 / C000 - (C100 / C000)**2)
+        Col020 = jnp.sqrt(m * (m - 1)) * (jnp.sqrt(2) * C020 / C000 - (C010 / C000)**2)
+        Col002 = jnp.sqrt(n * (n - 1)) * (jnp.sqrt(2) * C002 / C000 - (C001 / C000)**2)
+        
+        terms0 = Col000 * C
+        terms1 = Col100 * shift_multi(C, dn=0, dm=0, dp=-1) + Col010 * shift_multi(C, dn=0, dm=-1, dp=0) + Col001 * shift_multi(C, dn=-1, dm=0, dp=0)
+        terms2 = (Col200 * shift_multi(shift_multi(C, dn=0, dm=0, dp=-1), dn=0, dm=0, dp=-1)
+                    + Col020 * shift_multi(shift_multi(C, dn=0, dm=-1, dp=0), dn=0, dm=-1, dp=0)
+                      + Col002 * shift_multi(shift_multi(C, dn=-1, dm=0, dp=0), dn=-1, dm=0, dp=0))
+
+        return nu * jnp.fft.fftshift(jnp.fft.fftn(terms0 + terms1 + terms2, axes=(-3, -2, -1), norm="forward"), axes=(-3, -2, -1)) * mask23
+
+    Col = compute_collisions(C, nu) - Nn**(1) * col[None, :, :, :, None, None, None] * Ck
+    # Col  = -nu * col[None, :, :, :, None, None, None] * Ck
     
     Diff = -D * k2_grid * Ck
         

@@ -157,11 +157,11 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
 
     tau = jnp.broadcast_to(jnp.asarray(parameters["Forcing_tau"]), (6, Ny, Nx, Nz))
     OU_D = jnp.broadcast_to(jnp.asarray(parameters["Forcing_D"]), (6, Ny, Nx, Nz))
-    N_times = 101
+    N_times = 1001
     dt0 = 0.01
     drift = lambda t, y, args: -y / tau
     diff = lambda t, y, args: lx.DiagonalLinearOperator(OU_D / tau)
-    brownian_motion = VirtualBrownianTree(0, parameters["t_max"], tol=1e-3, shape=(6, Ny, Nx, Nz), key=jr.PRNGKey(12))
+    brownian_motion = VirtualBrownianTree(0, parameters["t_max"], tol=1e-3, shape=(6, Ny, Nx, Nz), key=jr.PRNGKey(184))
     OU_times = jnp.linspace(0, parameters["t_max"], N_times)
 
     OU_ext = diffeqsolve(MultiTerm(ODETerm(drift), ControlTerm(diff, brownian_motion)), Midpoint(), 
