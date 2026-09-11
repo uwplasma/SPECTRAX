@@ -14,7 +14,7 @@ from jax import block_until_ready, config
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from spectrax import simulation, load_parameters, compute_C_nmp
-from jax.numpy.fft import rfftn
+from jax.numpy.fft import fftn, fftshift
 from orszag_tang_data_analysis import (
         plot_energy_timeseries, plot_relative_energy_error,
         plot_Jz_slice, animate_Jz
@@ -50,9 +50,9 @@ E = lambda x, y, z: jnp.array([jnp.zeros_like(x),
                                jnp.zeros_like(x), 
                                jnp.zeros_like(x)])
 
-x = jnp.linspace(0, input_parameters["Lx"], Nx, endpoint=False)
-y = jnp.linspace(0, input_parameters["Ly"], Ny, endpoint=False)
-z = jnp.linspace(0, input_parameters["Lz"], Nz, endpoint=False)
+x = jnp.linspace(0, input_parameters["Lx"], Nx)
+y = jnp.linspace(0, input_parameters["Ly"], Ny)
+z = jnp.linspace(0, input_parameters["Lz"], Nz)
 X, Y, Z = jnp.meshgrid(x, y, z, indexing='xy')
 
 Us_grid = jnp.stack([Ue(X, Y, Z), Ui(X, Y, Z)], axis=0)  # shape (Ns, 3, Ny, Nx, Nz)
@@ -63,7 +63,7 @@ input_parameters["Ck_0"] = compute_C_nmp(Us_grid, alpha_s, u_s, Nn, Nm, Np, Ns)
 B_grid = B(X, Y, Z)  # shape (3, Ny, Nx, Nz)
 E_grid = E(X, Y, Z)  # shape (3, Ny, Nx, Nz)
 F_grid = jnp.concatenate((E_grid, B_grid), axis=0)  # shape (6, Ny, Nx, Nz)
-input_parameters["Fk_0"] = rfftn(F_grid, axes=(-1, -3, -2), norm="forward")  # shape (6, Ny, Nx//2+1, Nz)
+input_parameters["Fk_0"] = fftshift(fftn(F_grid, axes=(-3, -2, -1), norm="forward"), axes=(-3, -2, -1))  # shape (6, Ny, Nx, Nz)
 
 
 print('Starting simulation...')

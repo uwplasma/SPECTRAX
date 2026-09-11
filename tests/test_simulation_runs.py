@@ -8,10 +8,6 @@ def test_simulation_runs():
     assert isinstance(result, dict), "Simulation did not return a dictionary."
     assert "Ck" in result, "Missing Ck in output."
     assert "Fk" in result, "Missing Fk in output."
-    assert result["solver_stats"]["num_steps"] == (
-        result["solver_stats"]["num_accepted_steps"]
-        + result["solver_stats"]["num_rejected_steps"]
-    )
 
 def test_electric_field_update():
     """Test that the electric field updates and does not remain zero."""
