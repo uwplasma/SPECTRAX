@@ -34,6 +34,8 @@ def main():
     parser.add_argument("--window", type=float, nargs=2, metavar=("START", "END"))
     parser.add_argument("--shifts", type=float, nargs="+", default=[-10., -5., 0., 5., 10.])
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--reuse", type=Path,
+                        help="Re-evaluate additional-seed controls from an optimizations.json file")
     args = parser.parse_args()
     if 7 in args.seeds or len(args.seeds) != len(set(args.seeds)):
         parser.error("Seed 7 is the saved reference; additional seeds must be distinct")
@@ -45,10 +47,12 @@ def main():
         parser.error("Require dt > 0 and 0 <= window start < window end")
     if args.window and min(args.shifts) + args.window[0] < 0:
         parser.error("Shifted windows must start at nonnegative time")
-    settings = vars(args) | dict(output=str(args.output))
+    settings = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()}
     settings.pop("resume")
     manifest = metadata() | dict(settings=settings, source_controls_sha256=hashlib.sha256(source_path.read_bytes()).hexdigest(),
                                  study_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+    if args.reuse:
+        manifest["reused_controls_sha256"] = hashlib.sha256(args.reuse.read_bytes()).hexdigest()
     manifest_path = args.output / "manifest.json"
     if args.resume and (not manifest_path.exists() or json.loads(manifest_path.read_text()) != manifest):
         raise ValueError("Resume requires the same settings, source and environment")
@@ -59,6 +63,10 @@ def main():
     fg = jax.jit(jax.value_and_grad(objective))
     results_path = args.output / "optimizations.json"
     rows = json.loads(results_path.read_text()) if args.resume and results_path.exists() else []
+    if args.reuse:
+        rows = json.loads(args.reuse.read_text())
+        if set(args.seeds) - {row["seed"] for row in rows}:
+            parser.error("The reused file must contain every requested additional seed")
     pairs = [(7, np.asarray(source["initial_phase"]), np.asarray(source["optimized_phase"]))]
     for seed in args.seeds:
         saved = next((row for row in rows if row["seed"] == seed), None)
