@@ -2,6 +2,7 @@
 
 python benchmarks/optimization_comparison.py --output comparison
 python benchmarks/optimization_comparison.py --controls 128 --grid 32 --output p128
+python benchmarks/optimization_comparison.py --method fd --fd-reference none --output clean-fd
 python benchmarks/optimization_comparison.py --plot-only --output comparison
 
 Default physics: example's 16^2/4^3, 600 RK4 steps, weighted window [40,60].
@@ -11,6 +12,7 @@ reference compilation/execution are excluded from method-required total_seconds
 and cold traces, but retained in pipeline_wall_seconds and explicit exclusions.
 FD self-consistency calibration remains charged. Never infer a favorable AD speed
 claim from FD's extra AD validation. No optimum-based tuning or callback solves.
+Use --fd-reference none for FD with no AD compilation/execution or timing subtraction.
 Existing evidence is never overwritten. Interrupted worker JSON remains usable
 with --plot-only; restarting an interrupted optimizer is deliberately unsupported.
 """
@@ -74,10 +76,11 @@ def calibrate(evaluate, x, reference, report, save, *, gtol=1e-9):
     import numpy as np
     direction = np.random.default_rng(DIRECTION_SEED).normal(size=len(x))
     direction /= np.linalg.norm(direction)
-    ad_scale = max(float(np.linalg.norm(reference)), 1e-14)
+    ad_scale = None if reference is None else max(float(np.linalg.norm(reference)), 1e-14)
     report['calibration'] = dict(candidates=list(FD_STEPS), tolerance=FD_TOLERANCE,
                                  optimizer_gtol=gtol, absolute_tolerance=FD_GTOL_FRACTION * gtol,
-                                 direction=direction.tolist(), reference=reference.tolist(),
+                                 direction=direction.tolist(), reference=None if reference is None else reference.tolist(),
+                                 ad_discrepancy_available=reference is not None,
                                  rule='min max(successive FD vector change, successive directional FD change, current FD directional projection discrepancy) / (0.1*optimizer_gtol + 1e-3*max(norm(current_fd),1e-14)); accept score<=1; first candidate ineligible; first tie',
                                  rows=[])
     save()
@@ -86,8 +89,8 @@ def calibrate(evaluate, x, reference, report, save, *, gtol=1e-9):
         gradient = centered_fd(evaluate, x, step, 'calibration_full')
         directional = (evaluate(x + step * direction, 'calibration_direction')
                        - evaluate(x - step * direction, 'calibration_direction')) / (2 * step)
-        full_error = float(np.linalg.norm(gradient - reference) / ad_scale)
-        direction_error = float(abs(directional - reference @ direction) / ad_scale)
+        full_error = None if reference is None else float(np.linalg.norm(gradient - reference) / ad_scale)
+        direction_error = None if reference is None else float(abs(directional - reference @ direction) / ad_scale)
         scale = max(float(np.linalg.norm(gradient)), 1e-14)
         discrepancy = None if previous is None else float(max(
             np.linalg.norm(gradient - previous[0]), abs(directional - previous[1]),
@@ -268,7 +271,7 @@ def worker(args):
     report = dict(schema_version=2, status='starting', method=args.method, seed=args.seeds[0],
                   config={k: v for k, v in vars(args).items() if k not in ('output', 'worker', 'started', 'plot_only')},
                   compile_seconds={}, diagnostic_only_seconds=dict(ad_reference_compile=0.0, ad_reference_execution=0.0),
-                  timing_note='Fresh process; persistent JAX compilation cache disabled. Primary total_seconds = pipeline_wall_seconds - diagnostic_excluded_seconds. Only FD diagnostic AD reference compilation and synchronized execution are excluded; FD scalar compilation, first execution, self-consistency calibration, warmup, optimizer, launch/imports/provenance and all JSON/callback overhead remain charged. Exclusion is accounting, not a separately measured validation-free run; cache/allocator effects may remain. Warm optimization includes I/O and Python overhead. Final JSON write and parent plotting excluded. All objective counts include diagnostic calls.',
+                  timing_note='Fresh process; persistent JAX compilation cache disabled. Primary total_seconds = pipeline_wall_seconds - diagnostic_excluded_seconds. Only FD diagnostic AD reference compilation and synchronized execution are excluded; FD scalar compilation, first execution, self-consistency calibration, warmup, optimizer, launch/imports/provenance and all JSON/callback overhead remain charged. With fd_reference=ad, exclusion is accounting; diagnostic AD cache/allocator effects may remain. With fd_reference=none, FD never compiles/executes AD, exclusions are zero and total equals pipeline wall. Warm optimization includes I/O and Python overhead. Final JSON write and parent plotting excluded. All objective counts include diagnostic calls.',
                   constraints='Fixed amplitudes/initial spectra and integrated energies via example.setup; unrestricted periodic phases, bounds=None',
                   fd_protocol=dict(steps=list(FD_STEPS), tolerance=FD_TOLERANCE,
                                    absolute_tolerance=FD_GTOL_FRACTION * args.gtol,
@@ -297,16 +300,19 @@ def worker(args):
         # only from FD's method-required clock, never from the pipeline wall clock.
         scalar = (compile_function(jax, objective, x, 'scalar', report, save)
                   if args.method == 'fd' else None)
-        fg = compile_function(jax, jax.value_and_grad(objective), x, 'value_grad', report, save)
+        needs_ad = args.method == 'ad' or args.fd_reference == 'ad'
+        fg = (compile_function(jax, jax.value_and_grad(objective), x, 'value_grad', report, save)
+              if needs_ad else None)
         evaluate = Evaluations(scalar, fg, jax.block_until_ready, report, save, origin)
         report['status'] = 'baseline_and_calibration'
         tick = perf_counter()
-        value, reference = evaluate(x, 'baseline_reference_first_execution', gradient=True)
+        value, reference = (evaluate(x, 'baseline_reference_first_execution', gradient=True)
+                            if needs_ad else (None, None))
         report['baseline_objective'] = value
         step = None
         if args.method == 'fd':
             primal = evaluate(x, 'scalar_first_execution')
-            if not np.isclose(primal, value, rtol=1e-10, atol=1e-12):
+            if value is not None and not np.isclose(primal, value, rtol=1e-10, atol=1e-12):
                 raise ValueError('Scalar and AD primal disagree at baseline')
             report['baseline_objective'] = primal
             step = calibrate(evaluate, x, reference, report, save, gtol=args.gtol)
@@ -380,7 +386,7 @@ def plot(output):
         label = f"{report['method'].upper()} seed {report['seed']} ({report['status']})"
         for ax, key in zip(axes, ('total_seconds', 'warm_seconds')):
             ax.step([r[key] for r in rows], gain, where='post', label=label)
-    for ax, title in zip(axes, ('Method-required total (FD diagnostic AD excluded)', 'Warm optimization wall time')):
+    for ax, title in zip(axes, ('(a) Total optimization cost', '(b) Warm optimization')):
         ax.set(xlabel='Seconds', ylabel='Best accepted normalized electron gain', title=title)
         if ax.lines:
             ax.legend(fontsize=7)
@@ -393,6 +399,8 @@ def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--method', choices=('both', 'ad', 'fd'), default='both')
+    p.add_argument('--fd-reference', choices=('ad', 'none'), default='ad',
+                   help='Optional baseline AD diagnostic for FD; none never compiles/evaluates AD in the FD worker')
     p.add_argument('--seeds', type=int, nargs='+', default=[7])
     p.add_argument('--controls', type=int, default=8)
     p.add_argument('--grid', type=int, default=16)

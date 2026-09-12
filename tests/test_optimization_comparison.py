@@ -277,3 +277,57 @@ def test_cold_plot_uses_method_required_trace(tmp_path, monkeypatch):
     benchmark.plot(tmp_path)
     assert calls[0] == [6., 8., 9.]
     assert calls[1] == [0., 2., 2.]
+
+
+def test_calibration_without_ad_selects_same_step(tmp_path):
+    report, save, evaluate, _, center, _ = algebra_evaluations(tmp_path)
+    x = np.array([0.5, 0.1, -0.2])
+    with_ad = benchmark.calibrate(evaluate, x, 2 * (x - center), report, save)
+    scores = [row['score'] for row in report['calibration']['rows']]
+    without_ad = benchmark.calibrate(evaluate, x, None, report, save)
+    assert without_ad == with_ad
+    assert [row['score'] for row in report['calibration']['rows']] == scores
+    assert report['calibration']['reference'] is None
+    assert not report['calibration']['ad_discrepancy_available']
+    assert all(row['full_relative_error'] is None and row['directional_scaled_error'] is None
+               for row in report['calibration']['rows'])
+
+
+def test_fd_only_worker_never_constructs_ad(tmp_path, monkeypatch):
+    import jax
+    import jax.numpy as jnp
+    from types import SimpleNamespace
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('AD must not be constructed in FD-only mode')
+
+    monkeypatch.setattr(jax, 'value_and_grad', forbidden)
+    monkeypatch.setattr(benchmark, 'load_example', lambda: SimpleNamespace(
+        problem=lambda *args, **kwargs: (lambda x: jnp.sum((x - 0.2) ** 2), None)))
+    monkeypatch.setattr(benchmark, 'provenance', lambda jax: {'test': 'algebra'})
+    monkeypatch.setattr(benchmark, 'device_snapshot', lambda jax: {'test': 'cpu'})
+    assert benchmark.parser().parse_args(['--output', str(tmp_path)]).fd_reference == 'ad'
+    args = benchmark.parser().parse_args(['--output', str(tmp_path), '--worker',
+        '--method', 'fd', '--fd-reference', 'none', '--controls', '2', '--iterations', '3'])
+    previous_x64 = jax.config.jax_enable_x64
+    previous_cache = jax.config.jax_enable_compilation_cache
+    try:
+        with jax.default_device(jax.devices('cpu')[0]):
+            benchmark.worker(args)
+    finally:
+        jax.config.update('jax_enable_x64', previous_x64)
+        jax.config.update('jax_enable_compilation_cache', previous_cache)
+    report = json.loads((tmp_path / 'fd-seed7.json').read_text())
+    assert report['schema_version'] == 2
+    assert report['status'] == 'complete' and report['result']['success']
+    assert report['config']['fd_reference'] == 'none'
+    assert set(report['compile_seconds']) == {'scalar'}
+    assert not any(event['gradient'] for event in report['evaluations'])
+    assert report['diagnostic_objective_evaluations'] == 0
+    assert report['method_objective_evaluations'] == report['objective_evaluations']
+    assert report['diagnostic_excluded_seconds'] == 0
+    assert report['total_seconds'] == report['pipeline_wall_seconds']
+    assert all(row['total_seconds'] == row['pipeline_wall_seconds']
+               for row in report['accepted_trace'])
+    assert report['calibration']['reference'] is None
+    assert not report['calibration']['ad_discrepancy_available']
