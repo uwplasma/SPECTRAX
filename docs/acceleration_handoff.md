@@ -1,5 +1,7 @@
 # Scientific follow-up handoff
 
+**Current integration policy:** SOLVAX PR103 was admin-squash-merged at `917d1a679d8258bb7c9929e2320f4befbbe92f93` with explicit user authorization. SPECTRAX PR42 and PR43 must remain open and be merged only by other collaborators. Earlier blocked-merge descriptions below record the previous state. Existing numerical archives still use released SOLVAX 0.20.0.
+
 ## Branches and merge order
 
 SPECTRAX PR42 (`agent/checkpointed-plasma-control`, 23102ab) contains the small
