@@ -117,7 +117,7 @@ def main():
                                 Nn=h, Nm=h, Np=h, checkpointing=False, integrand=integrand)
 
     paths = ['spectrax/_autodiff.py', 'spectrax/_model.py', 'spectrax/_simulation.py',
-             'spectrax/_energization.py', 'spectrax/_velocity_observables.py',
+             'spectrax/_energization.py', 'spectrax/_velocity_observables.py', 'spectrax/_initialization.py',
              'Examples/2D_phase_control.py', 'benchmarks/energization_mechanism.py']
     report = dict(grid=grid, hermite=h, time=args.time, steps=args.steps, samples=args.samples,
                   nu=args.nu, quadratures=args.quadratures, local_quadratures=args.local_quadratures, device=jax.devices()[0].device_kind,
@@ -152,7 +152,7 @@ def main():
             row['field_energies'] = np.asarray(phase.quantities((C, F), base, grid, h)[:2]).tolist()
             for q, fn in velocity.items():
                 row['velocity'][str(q)] = {k: float(v) for k, v in fn(c0[0]).items()}
-            if index in (0, args.samples):
+            if index in (0, args.samples) or any(np.isclose(index*dt_sample, t) for t in (40, 50, 60)):
                 row['local_negativity'] = {str(q): {k: float(v) for k, v in fn(C).items()}
                                            for q, fn in local_negative.items()}
             rows.append(row)
