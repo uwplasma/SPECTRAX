@@ -16,7 +16,8 @@ import numpy as np
 from scipy.optimize import minimize
 
 from spectrax import simulation_final
-from spectrax._velocity_observables import make_tail_objective, preregistered_tail_spec
+from spectrax._velocity_observables import (make_tail_objective, preregistered_tail_spec,
+    spatial_average_coefficients, spatial_negative_mass_diagnostics, velocity_diagnostics)
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('phase_control', Path(__file__).with_name('2D_phase_control.py'))
@@ -59,11 +60,11 @@ def problem(reference, *, grid=24, hermite=8, steps=1200, window=(40., 60.),
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--grid', type=int, default=24)
-    parser.add_argument('--hermite', type=int, default=8)
+    parser.add_argument('--hermite', type=int, default=16)
     parser.add_argument('--steps', type=int, default=1200)
     parser.add_argument('--window', nargs=2, type=float, default=[40., 60.])
     parser.add_argument('--quadrature', type=int, default=96)
-    parser.add_argument('--nu', type=float, default=1.)
+    parser.add_argument('--nu', type=float, default=0.)
     parser.add_argument('--controls', type=int, default=8)
     parser.add_argument('--seed', type=int, default=7)
     parser.add_argument('--iterations', type=int, default=30)
@@ -101,7 +102,7 @@ def main():
 
     report = dict(grid=args.grid, hermite=args.hermite, steps=args.steps, window=args.window,
                   nu=args.nu, quadrature=args.quadrature, seed=args.seed,
-                  device=jax.devices()[0].device_kind, jax_version=jax.__version__,
+                  device=jax.devices()[0].device_kind, jax_version=jax.__version__, evaluation_only=args.evaluate_only,
                   tail_spec=dict(threshold=tail_spec.threshold, width=tail_spec.width,
                                  normalization=tail_spec.normalization),
                   compile_seconds=compile_seconds, first_evaluation_seconds=first_seconds,
@@ -121,9 +122,38 @@ def main():
         e0 = phase.quantities((a['Ck_0'], a['Fk_0']), a, args.grid, args.hermite)[:4]
         e1 = phase.quantities((b['Ck_0'], b['Fk_0']), b, args.grid, args.hermite)[:4]
         report['initial_energy_constraint_error'] = float(jnp.max(jnp.abs(e1-e0)))
+    # Endpoint checks are necessary but do not replace held-out-time, space,
+    # velocity or time-step refinement of the optimized controls.
+    states = jax.jit(run)
+    report['endpoint_diagnostics'] = {}
+    mean_coefficients = {}
+    evaluated = [('initial_phase', theta)]
+    if not args.evaluate_only:
+        evaluated.append(('optimized_phase', np.asarray(report['optimized_phase'])))
+    for label, x in evaluated:
+        p = phase.setup(x, args.grid, args.hermite, args.window[1])
+        C, F, gain = jax.block_until_ready(states(x))
+        row = dict(window_tail_gain=float(gain))
+        for when, c in [('initial', p['Ck_0']), ('final', C)]:
+            mean = spatial_average_coefficients(c, Nn=args.hermite, Nm=args.hermite, Np=args.hermite, Ns=2)
+            mean_coefficients[label+'_'+when] = np.asarray(mean)
+            row[when] = {k: float(v) for k, v in velocity_diagnostics(mean, p['alpha_s'][:3], p['u_s'][:3],
+                         spec=tail_spec, quadrature_order=args.quadrature).items()}
+            row[when]['local_negativity'] = {k: float(v) for k, v in spatial_negative_mass_diagnostics(
+                c, p['alpha_s'], p['u_s'], Nx=args.grid, Nn=args.hermite, Nm=args.hermite,
+                Np=args.hermite, Ns=2, quadrature_order=48).items()}
+        report['endpoint_diagnostics'][label] = row
+    report['endpoint_local_negativity_pass'] = all(
+        r[t]['local_negativity']['max_cell_fraction'] < 1e-8
+        for r in report['endpoint_diagnostics'].values() for t in ('initial', 'final'))
+    initial = phase.setup(theta, args.grid, args.hermite, args.window[1])
+    report['initial_energies'] = np.asarray(phase.quantities(
+        (initial['Ck_0'], initial['Fk_0']), initial, args.grid, args.hermite)[:4]).tolist()
+    np.savez(args.output/'endpoint_mean_coefficients.npz', **mean_coefficients)
     report['history'] = history
     paths = ['Examples/2D_tail_control.py', 'Examples/2D_phase_control.py',
-             'spectrax/_velocity_observables.py', 'spectrax/_autodiff.py', 'spectrax/_model.py']
+             'spectrax/_velocity_observables.py', 'spectrax/_autodiff.py', 'spectrax/_model.py',
+             'spectrax/_initialization.py']
     report['source_sha256'] = {p: hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in paths}
     (args.output/'results.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report), flush=True)
