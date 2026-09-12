@@ -15,19 +15,25 @@ __all__ = ["simulation_final"]
 
 def simulation_final(input_parameters=None, *, steps, Nx=33, Ny=1, Nz=1,
                      Nn=20, Nm=1, Np=1, Ns=2, checkpoint_size=None,
-                     checkpointing=True, checkpoints=None):
+                     checkpointing=True, checkpoints=None, integrand=None):
     """Return final ``(Ck, Fk)`` using fixed-step classical RK4.
 
     Compose with any real scalar JAX objective and ``jax.value_and_grad``;
     ``jax.jvp``, ``jax.vjp`` and ``jax.jit`` also work. Physical parameters,
     initial coefficients and ``t_max`` may be differentiated. Resolutions,
-    ``steps`` and checkpoint options must be static under JIT.
+    ``steps``, ``integrand`` and checkpoint options must be static under JIT.
 
     Coefficients have the same layout as one snapshot from ``simulation``:
     ``Ck: (Ns*Np*Nm*Nn, Ny, Nx//2+1, Nz)`` and
     ``Fk: (6, Ny, Nx//2+1, Nz)``. No trajectory or diagnostics are retained.
     The step size is ``t_max / steps``; check stability and time convergence.
     There is no adaptive error estimate or implicit nonlinear solve.
+
+    Optionally pass ``integrand(t, Ck, Fk)`` returning a real scalar or array.
+    It is integrated with the same RK4 stages, returning ``(Ck, Fk, integral)``
+    instead. Only the small accumulator is added to the checkpointed state;
+    its shape must remain fixed. This supports time-window objectives without
+    storing a trajectory. Smooth time weights permit accurate RK quadrature.
 
     SOLVAX replays segments during reverse mode. For N steps, state size S,
     and segment width C, retained state is O(S*(ceil(N/C)+C)), plus RHS
@@ -57,8 +63,26 @@ def simulation_final(input_parameters=None, *, steps, Nx=33, Ny=1, Nz=1,
     y0 = jnp.concatenate((parameters["Ck_0"].ravel(),
                           parameters["Fk_0"].ravel()))
 
+    split = Ns * Np * Nm * Nn * Ny * (Nx // 2 + 1) * Nz
+    state_size = y0.size
+
+    def unpack(y):
+        return (y[:split].reshape(Ns * Np * Nm * Nn, Ny, Nx // 2 + 1, Nz),
+                y[split:state_size].reshape(6, Ny, Nx // 2 + 1, Nz))
+
+    if integrand is not None:
+        sample = jnp.asarray(integrand(0.0, *unpack(y0)))
+        if jnp.iscomplexobj(sample):
+            raise ValueError("integrand must return real values")
+        integral_shape = sample.shape
+        y0 = jnp.concatenate((y0, jnp.zeros(sample.size, dtype=y0.dtype)))
+
     def rhs(t, y):
-        return ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, y, args)
+        derivative = ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, y[:state_size], args)
+        if integrand is not None:
+            rate = jnp.asarray(integrand(t, *unpack(y)))
+            return jnp.concatenate((derivative, rate.ravel()))
+        return derivative
 
     def advance(index, y):
         return _rk4_step(rhs, index * dt, dt, y)
@@ -79,9 +103,9 @@ def simulation_final(input_parameters=None, *, steps, Nx=33, Ny=1, Nz=1,
         )
     else:
         y = jax.lax.fori_loop(0, steps, advance, y0)
-    split = Ns * Np * Nm * Nn * Ny * (Nx // 2 + 1) * Nz
-    return (y[:split].reshape(Ns * Np * Nm * Nn, Ny, Nx // 2 + 1, Nz),
-            y[split:].reshape(6, Ny, Nx // 2 + 1, Nz))
+    if integrand is not None:
+        return (*unpack(y), jnp.real(y[state_size:]).reshape(integral_shape))
+    return unpack(y)
 
 
 def _rk4_step(rhs, t, dt, y):

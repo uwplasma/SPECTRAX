@@ -1,6 +1,6 @@
 # Differentiable plasma control in SPECTRAX
 
-SPECTRAX can expose useful gradients without introducing a separate plasma adjoint implementation. The recommended first showcase is **phase-only control of electron energization in a two-species, 2D3V Orszag–Tang-type plasma**, with identical initial magnetic spectra and initial energies. It combines a constrained, interpretable inverse-design problem with a demanding velocity-space discretization, while keeping the numerical addition small.
+SPECTRAX can expose useful gradients without introducing a separate plasma adjoint implementation. The recommended first showcase is **phase-only control of time-averaged electron energization in a two-species, 2D3V Orszag–Tang-type plasma**, with identical initial magnetic spectra and initial energies. It combines a constrained, interpretable inverse-design problem with a demanding velocity-space discretization, while keeping the numerical addition small.
 
 The implementation adds `simulation_final`, a terminal-state API using the existing Vlasov–Maxwell RHS and classical fixed-step RK4. The default uses SOLVAX's checkpointed recurrence, with JVP and VJP support. An optional fixed checkpoint count selects Diffrax's binomial reverse scheduler for the same RK4 scheme. A small uncheckpointed path provides a reference. Neither changes the collision operator, Fourier transforms, Maxwell equations, or Hermite coupling.
 
@@ -59,11 +59,13 @@ Distinct resolved Fourier modes are orthogonal. Phase changes therefore preserve
 
 This prevents the easiest unphysical optimization shortcut: injecting more initial energy. The control is still deliberately broad. Phase changes alter the spatial placement of structures, local stresses, and alignment with the fixed vortex. They do not preserve every higher-order spatial statistic or all cross correlations. Those changes are the physical mechanism available to the optimizer.
 
-The objective is
+The recommended objective averages the electron gain over a smooth time window:
 
-`L(theta) = -[K_e(T;theta)-K_e(0;theta)] / W_B,perp(0;theta)`.
+`L(theta) = -integral w(t) [K_e(t;theta)-K_e(0;theta)] / W_B,perp(0;theta) dt`.
 
-It maximizes **net electron kinetic-energy gain**, normalized by the initial fluctuating magnetic energy. The guide-field energy is excluded from the denominator. Electric, magnetic, electron, and ion energy changes must be plotted together, because ion flow and electric fields can participate in the transfer. The objective does not establish that all electron energy came from magnetic energy; nor is it an entropy-production or irreversible-heating diagnostic.
+For the demonstrated window [40,60], use `z=(2*t-100)/20` and `w(t)=15/(8*20)*(1-z²)²` inside the window, zero outside. This weight integrates to one and has a continuous first derivative at both endpoints. Omitting `--window` retains the simpler terminal-time objective.
+
+It maximizes **time-averaged net electron kinetic-energy gain**, normalized by the initial fluctuating magnetic energy. The guide-field energy is excluded from the denominator. Electric, magnetic, electron, and ion energy changes must be plotted together, because ion flow and electric fields can participate in the transfer. The objective does not establish that all electron energy came from magnetic energy; nor is it an entropy-production or irreversible-heating diagnostic.
 
 Kinetic current sheets and particle energization are physically connected, but their association alone does not identify the dissipation mechanism. TenBarge and Howes studied self-consistent current sheets and collisionless damping in kinetic turbulence; Zhou, Liu, and Loureiro emphasize the role of electron kinetics and Hermite-space transfer. These motivate current and velocity-space diagnostics, rather than equating a strong Jz structure with heating.[^7][^8]
 
@@ -104,27 +106,31 @@ value, gradient = jax.jit(jax.value_and_grad(loss))(theta)
 
 `make_initial_conditions` and `my_real_scalar_observable` are application functions, not new SPECTRAX APIs. Remove `checkpoints=16` to use the SOLVAX path and enable `jax.jvp` as well. `checkpoint_size` tunes the SOLVAX segment width. `checkpointing=False` selects the taped reference for small cases. Static resolutions and step counts should be captured in a closure or marked static in an outer JIT.
 
-The solver returns only one coefficient snapshot, with no leading time dimension and no diagnostic dictionary. It does not retain or return the initial conditions again. A large dense Jacobian is unnecessary for scalar optimization: use `value_and_grad`. For a few outputs and many inputs, use VJPs or reverse mode; for one or two input directions and many outputs, use JVPs. To optimize a trajectory integral, the appropriate extension is to accumulate a small quadrature state during integration rather than saving all full states. That extension is not part of this terminal-only PR.
+The solver returns only one coefficient snapshot, with no leading time dimension and no diagnostic dictionary. It does not retain or return the initial conditions again. A large dense Jacobian is unnecessary for scalar optimization: use `value_and_grad`. For a few outputs and many inputs, use VJPs or reverse mode; for one or two input directions and many outputs, use JVPs. Pass `integrand(t, Ck, Fk)` to accumulate a real scalar or fixed-shape array with the same RK4 stages. The return value becomes `(Ck, Fk, integral)`. This adds only the accumulator to each checkpoint, enabling time-window objectives without a stored trajectory. The callback may capture differentiable parameters from the outer loss. For example:
+
+```python
+Ck, Fk, energy_integral = simulation_final(
+    parameters, steps=1000, Nx=64, Ny=64, Nn=6, Nm=6, Np=6,
+    integrand=lambda t, Ck, Fk: weight(t) * magnetic_energy(Fk),
+)
+```
 
 Run the small reproducible optimization and refinement:
 
 ```bash
-python Examples/2D_phase_control.py --grid 16 --hermite 4 --time 50 \
-    --steps 500 --iterations 30 --output phase-control
-python benchmarks/validate_phase_control.py phase-control
+python Examples/2D_phase_control.py --grid 16 --hermite 4 --time 60 --window 40 60 \
+    --steps 600 --iterations 30 --output phase-control
+python benchmarks/validate_phase_control.py phase-control --reoptimize 20
 python benchmarks/gradient_scaling.py --output gradient-scaling
 ```
 
-For an NVIDIA GPU, install a CUDA-enabled JAX build appropriate to the machine and run with `JAX_PLATFORMS=cuda`. The benchmark records the actual device. An indicative scale-up is:
+For an NVIDIA GPU, install a CUDA-enabled JAX build appropriate to the machine. The complete isolated-worker scaling matrix is reproducible with:
 
 ```bash
-JAX_PLATFORMS=cuda python Examples/2D_phase_control.py \
-    --grid 64 --hermite 6 --time 100 --steps 2000 \
-    --controls 16 --iterations 40 --output phase-control-gpu
-JAX_PLATFORMS=cuda python benchmarks/gradient_scaling.py \
-    --grids 16 32 64 --steps 64 256 1024 --controls 2 8 16 \
-    --hermite 6 --output gradient-scaling-gpu
+STUDY_PYTHON=python bash benchmarks/run_gpu_study.sh results/gpu
 ```
+
+The script selects one GPU and disables preallocation. It varies spatial resolution, Hermite resolution, rollout length, checkpoint budget and control count separately. The long-rollout comparison excludes the oversized taped reference. Each result directory contains a source/package/device manifest; `--resume` rejects a changed environment, and `--plot-only` renders saved measurements without rerunning them.
 
 These are experiment configurations, not assertions of physical resolution or stability. Fixed-step RK4 has no automatic error estimate. Increase the step count as spatial/Hermite resolution and the fastest physical frequency require. If explicit stability dominates total cost, assess an implicit or IMEX method in a separate measured comparison before changing the default.
 
@@ -144,9 +150,9 @@ The publication should show (1) baseline and optimized current maps with one sha
 
 A fair advantage claim is that scalar-objective gradients scale substantially better with control count than black-box finite differences, while checkpointing removes trajectory-tape storage growth. Existing differentiable plasma and spectral codes remain relevant comparators. A nondifferentiable code with a hand-written adjoint can also obtain adjoint complexity; differentiation availability and implementation effort are part of the comparison, not a unique law of JAX.
 
-Longer turbulent horizons introduce additional difficulties: sensitivity to initial conditions, finite-time gradient conditioning, unresolved spatial/velocity cascades, and possible overfitting to one time or numerical truncation. A robust final physics claim should include several initial phase seeds, a nearby terminal-time window, and convergence of the optimization benefit. The present scripts make these experiments straightforward but do not silently substitute small CPU demonstrations for completed GPU or long-time turbulence studies.
+Longer turbulent horizons introduce additional difficulties: sensitivity to initial conditions, finite-time gradient conditioning, unresolved spatial/velocity cascades, and possible overfitting to one time or numerical truncation. A robust final physics claim should include several initial phase seeds, a nearby terminal-time window, and convergence of the optimization benefit. The seed and time-window checks below address some of these issues; they do not establish a long-time turbulent heating result.
 
-## Verified local results and source review
+## Verified results and source review
 
 The checked-in CPU results use float64/complex128, JAX 0.9.2 and SOLVAX 0.20.0. They are numerical-method and finite-time control demonstrations, not NVIDIA GPU measurements. The optimization at 16² spatial resolution, 4³ Hermite modes per species, T=50 and 500 RK4 steps converged in 18 L-BFGS iterations.
 
@@ -170,11 +176,46 @@ The refined cases re-evaluate the same saved controls; they do not re-optimize t
 
 ![Gradient scaling](figures/gradient_scaling.png)
 
-*Memory panels show XLA compiler buffer estimates, not measured GPU peaks. State size includes complex Hermite and field coefficients. The fixed-budget curve uses eight checkpoints; its buffer estimate is 12.57 MiB for 16, 64 and 256 time steps. At 256 steps the taped estimate is 1593.67 MiB, and the SOLVAX estimate is 17.49 MiB. Both replay strategies retain full plasma states; neither makes memory independent of spatial/velocity resolution. CPU timing is illustrative; the publication timing run should use an idle NVIDIA GPU.*
+*Memory panels show XLA compiler buffer estimates, not measured GPU peaks. State size includes complex Hermite and field coefficients. The fixed-budget curve uses eight checkpoints; its buffer estimate is 12.57 MiB for 16, 64 and 256 time steps. At 256 steps the taped estimate is 1593.67 MiB, and the SOLVAX estimate is 17.49 MiB. Both replay strategies retain full plasma states; neither makes memory independent of spatial/velocity resolution. These are the original CPU measurements; the GPU measurements below use a different, explicitly stated matrix.*
 
-The source review covered the coefficient layouts, physical parameter propagation, checkpoint selection, final-time differentiation, complex real-linear derivatives, conserved initial controls, normalization, time convergence, and benchmark timing/memory definitions. All eight repository tests pass, and the repository's fatal lint checks pass. Diffrax emits its general complex-dtype support warning; direct complex-valued plasma tests agree across the tested first-order derivative paths. The fixed-budget path intentionally does not promise JVP support. RK4 remains explicit and requires a converged stable time step.
+The source review covered the coefficient layouts, physical parameter propagation, checkpoint selection, final-time differentiation, complex real-linear derivatives, conserved initial controls, normalization, time convergence, and benchmark timing/memory definitions. All fourteen repository tests pass on CPU; all eleven autodiff and benchmark-planning tests also pass on the NVIDIA GPU. The repository's fatal lint checks pass. Diffrax emits its general complex-dtype support warning; direct complex-valued plasma tests agree across the tested first-order derivative paths. The fixed-budget path intentionally does not promise JVP support. RK4 remains explicit and requires a converged stable time step.
 
-Raw CPU results and the saved control phases are in `benchmarks/results/`. PNG previews and vector PDF versions are in `docs/figures/`. The new numerical module has 112 lines including documentation, plus a shared RHS-argument helper and one public export. Most of the PR consists of examples, tests, research documentation, and reproducible evidence. No new custom plasma derivative, nonlinear solver, or SOLVAX implementation is introduced.
+Raw CPU/GPU results and the saved control phases are in `benchmarks/results/`. PNG previews and vector PDF versions are in `docs/figures/`. The new numerical module has 136 lines including documentation, plus a shared RHS-argument helper and one public export. Most of the PR consists of examples, tests, research documentation, and reproducible evidence. No new custom plasma derivative, nonlinear solver, or SOLVAX implementation is introduced.
+
+### Time-window control and robustness
+
+Three terminal-time optimizations, from seeds 7, 11 and 23, reached the same objective to the reported precision. Their improvements at T=50 were 15.52%, 11.23% and 12.03%. Saved controls also improved the absolute electron gain at T=40 and T=60. However, the baseline gain changes sign across these times: this is oscillatory energy exchange, not sustained heating. Relative improvements are omitted when the baseline gain is nonpositive.
+
+The revised example directly optimizes a smooth average over [40,60], with 600 RK4 steps and eight phases at 16²/4³. It converged in 29 iterations, increasing the normalized averaged gain from 0.00795482842 to 0.00953109336 (**19.815%**). Halving the time step changes the optimized objective by 1.17e-9; the initial integrated energies remain unchanged to the reported precision. The CPU optimization took 376 seconds excluding initial compilation. These values describe the weighted average; at T=60 the electron energy itself is below its initial value.
+
+![Time-window phase control](figures/window_phase_control.png)
+
+*The optimization-history panel shows the time-averaged objective. Current maps and the four energy-transfer bars show the final time T=60, so their electron-energy sign need not match the averaged objective. The native grid is shown without visual smoothing.*
+
+The GPU independently re-evaluated the saved controls with separate space, velocity and time refinements. At 24²/6³ and 1,200 steps, the baseline average is 0.00791404248 and the saved-control average is 0.00949422732, preserving **19.9668%** improvement. Warm-started re-optimization converges in 11 iterations to 0.00949456331 (**19.9711%** improvement). The refined gradient norm is below 1e-8. This small additional optimization gain supports the utility of the coarse controls; it is not a global-optimality result. Relative total-energy drift at the saved refined controls is about 3.64e-11.
+
+![Time-window gradient and refinement validation](figures/window_validation_gpu.png)
+
+*The directional finite-difference sweep was computed on CPU; the five independent resolution evaluations were computed on the GPU. The right panel re-evaluates saved coarse controls, before the separate refined re-optimization. CPU/GPU objective values and the baseline directional gradient agree within the recorded comparison tolerances. Raw refined gradients, Hermite-tail indicators, phases and provenance are included.*
+
+### Single NVIDIA GPU measurements
+
+The study used one NVIDIA RTX A4000 (16,376 MiB), CUDA 12 pip runtime, driver 580.173.02, Python 3.11.16, JAX/jaxlib 0.9.2, Diffrax 0.7.2 and SOLVAX 0.20.0, with float64/complex128. All 38 scaling cases (34 matrix cases plus four long-rollout cases) passed the matched-gradient checks. The base case is 32²/4³, 64 steps and eight controls; each axis varies independently, with final time fixed at T=2 for the scaling study. Device preallocation was disabled. The saved manifest identifies the exact source hashes: these measurements use the terminal-only core at `5b781f1`, before the optional accumulator was added. A CPU before/after check found identical default-path gradients and compiled buffer sizes. These timing results do not profile the optional accumulator. The updated integral path separately passed GPU gradient tests and reproduced the CPU window objective within 3e-16 on the same discretization.
+
+| Comparison | SOLVAX replay | Fixed budget K=8 | Taped AD |
+|---|---:|---:|---:|
+| 64²/4³, 64 steps: peak allocator MiB | 260.1 | 260.1 | 6457.3 |
+| Same case: gradient seconds | 0.944 | 1.160 | 0.570 |
+| 32²/4³, 256 steps: peak allocator MiB | 66.0 | 66.0 | 6385.1 |
+| Same case: gradient seconds | 1.406 | 8.536 | 1.088 |
+
+At 128 controls, SOLVAX reverse AD took 0.768 seconds, batched forward AD 9.102 seconds and serial centered finite differences 17.568 seconds: approximately **22.9× faster than finite differences**. The relative gradient-norm discrepancy against finite differences is 4.76e-7 at 128 controls. Initial-condition construction also depends on the number of controls; reverse timings are not claimed constant in that count. At 64 steps, increasing the binomial budget from 4 to 16 reduced gradient time from 0.391 to 0.278 seconds. Eight checkpoints can cause substantial replay overhead on longer rollouts, so a fixed budget is a memory/time tradeoff, not a universal performance optimum.
+
+The [additional long-rollout figure](figures/long_rollout_gpu.pdf) holds K=16 fixed. At 256 and 1,024 steps its peak allocator usage remains 66 MiB, while default SOLVAX replay grows from 66 to 130 MiB. At 1,024 steps the gradient takes 6.740 seconds with K=16 versus 4.588 seconds with SOLVAX replay. This demonstrates bounded retained-state memory with rollout length on the tested range, while quantifying the recomputation cost. Spatial and velocity DOFs still increase the physical state size.
+
+![Single-GPU gradient scaling](figures/gradient_scaling_gpu.png)
+
+*Memory panels show peak bytes in use reported by the JAX GPU allocator across compilation, warmup and timed executions in each fresh process, not the whole-board memory footprint or XLA's static estimate. Allocation granularity and workspace can obscure theoretical differences at small sizes. Driver/context memory is excluded. The fixed budget is K=8 except on the checkpoint-count axis. Raw results also retain compiler estimates, process RSS, allocator snapshots and individual timings.*
 
 ## Sources
 

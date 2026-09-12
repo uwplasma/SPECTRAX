@@ -36,6 +36,8 @@ def plot_validation(report, rows, directory):
                 xticklabels=[f"{r['grid']}² / {r['hermite']}³\n{r['steps']} steps" for r in rows],
                 ylabel=r"$[K_e(T)-K_e(0)]/W_{B,\perp}(0)$",
                 title="(b) Independent resolution refinement")
+    if report.get("time_window") is not None:
+        axes[1].set_ylabel(r"$\overline{\Delta K_e}/W_{B,\perp}(0)$")
     axes[1].tick_params(axis="x", labelsize=8)
     axes[1].legend(frameon=False, fontsize=8)
     for extension in ("png", "pdf"):
@@ -45,6 +47,8 @@ def plot_validation(report, rows, directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
+    parser.add_argument("--reoptimize", type=int, default=0,
+                        help="L-BFGS iteration limit on the finest discretization (warm start)")
     args = parser.parse_args()
     report = json.loads((args.directory / "results.json").read_text())
     data = np.load(args.directory / "data.npz")
@@ -55,7 +59,8 @@ def main():
                    (grid * 3 // 2, hermite + 2, 2 * steps)]
     rows = []
     for nx, nh, nt in resolutions:
-        objective, terminal = example.problem(nx, nh, report["final_time"], nt)
+        objective, terminal = example.problem(nx, nh, report["final_time"], nt,
+                                                time_window=report.get("time_window"))
         fg = jax.jit(jax.value_and_grad(objective))
         row = dict(grid=nx, hermite=nh, steps=nt)
         for label in ("initial_phase", "optimized_phase"):
@@ -81,6 +86,18 @@ def main():
         (args.directory / "resolution_validation.json").write_text(json.dumps(rows, indent=2) + "\n")
         jax.clear_caches()
     plot_validation(report, rows, args.directory)
+    if args.reoptimize > 0:
+        from scipy.optimize import minimize
+        result = minimize(fg, data["optimized_phase"], jac=True, method="L-BFGS-B",
+                          options=dict(maxiter=args.reoptimize, ftol=1e-12, gtol=1e-9))
+        refined = dict(grid=nx, hermite=nh, steps=nt, time_window=report.get("time_window"),
+                       initial_objective=rows[-1]["initial_phase"]["objective"],
+                       coarse_controls_objective=rows[-1]["optimized_phase"]["objective"],
+                       final_objective=float(result.fun), optimized_phase=result.x.tolist(),
+                       gradient=np.asarray(result.jac).tolist(), success=bool(result.success),
+                       iterations=int(result.nit), message=str(result.message))
+        (args.directory / "refined_optimization.json").write_text(json.dumps(refined, indent=2) + "\n")
+        print(json.dumps(refined), flush=True)
 
 
 if __name__ == "__main__":

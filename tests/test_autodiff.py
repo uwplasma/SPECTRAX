@@ -107,3 +107,36 @@ def test_phase_constraints_and_observables():
 def test_invalid_steps(steps):
     with pytest.raises(ValueError, match="positive integer"):
         simulation_final(steps=steps)
+
+
+def test_streaming_integral_and_time_derivative():
+    # Polynomial integrands have analytic integrals, including endpoint derivatives.
+    def solve(time, checkpoints=None):
+        return simulation_final(dict(t_max=time), Nx=6, Nn=4, steps=7,
+                                 checkpoints=checkpoints,
+                                 integrand=lambda t, C, F: jnp.array([t, t ** 2]))[2]
+    time = jnp.array(0.2)
+    expected = jnp.array([time ** 2 / 2, time ** 3 / 3])
+    for checkpoints in (None, 3):
+        np.testing.assert_allclose(jax.jit(lambda t: solve(t, checkpoints))(time), expected, atol=1e-14)
+        np.testing.assert_allclose(jax.jacrev(lambda t: solve(t, checkpoints))(time),
+                                   jnp.array([time, time ** 2]), atol=1e-13)
+    np.testing.assert_allclose(jax.jacfwd(solve)(time), jnp.array([time, time ** 2]), atol=1e-13)
+
+
+def test_window_objective_gradient():
+    objective, _ = phase_control.problem(grid=12, hermite=3, final_time=0.4,
+                                         steps=8, time_window=(0.1, 0.4))
+    phases = jnp.array([0.2, 0.7, -0.3, 0.6])
+    direction = jnp.array([0.1, -0.3, 0.7, 0.2])
+    gradient = jax.jit(jax.grad(objective))(phases)
+    epsilon = 1e-4
+    scalar = jax.jit(objective)
+    finite_difference = (scalar(phases + epsilon * direction)
+                         - scalar(phases - epsilon * direction)) / (2 * epsilon)
+    np.testing.assert_allclose(gradient @ direction, finite_difference, rtol=3e-5, atol=1e-10)
+    for mode in (dict(checkpointing=False), dict(checkpoints=3)):
+        reference, _ = phase_control.problem(grid=12, hermite=3, final_time=0.4,
+                                             steps=8, time_window=(0.1, 0.4), **mode)
+        np.testing.assert_allclose(jax.jit(jax.grad(reference))(phases), gradient,
+                                   rtol=1e-9, atol=1e-12)

@@ -29,7 +29,7 @@ keywords = ["Plasma",
      "Simulation",
      "JAX"]
  
-dependencies = [ "jax", "jaxlib", "jax_tqdm", "matplotlib", "diffrax", "solvax>=0.20.0,<0.21"]
+dependencies = [ "jax", "jaxlib", "jax_tqdm", "matplotlib", "orthax", "diffrax", "solvax>=0.20.0,<0.21"]
  
 requires-python = ">=3.10"
 

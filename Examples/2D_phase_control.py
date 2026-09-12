@@ -93,16 +93,36 @@ def current_z(state, parameters, grid, hermite):
 
 
 def problem(grid=16, hermite=4, final_time=20.0, steps=400,
-            checkpointing=True, checkpoint_size=None, checkpoints=None):
+            checkpointing=True, checkpoint_size=None, checkpoints=None, time_window=None):
     """Return an ordinary JAX objective and terminal-state function."""
-    def terminal(phases):
+    if time_window is not None:
+        start, end = time_window
+        if not 0 <= start < end <= final_time:
+            raise ValueError("time_window must lie inside [0, final_time]")
+
+    def run(phases):
         parameters = setup(phases, grid, hermite, final_time)
+        integrand = None
+        if time_window is not None:
+            initial = quantities((parameters["Ck_0"], parameters["Fk_0"]), parameters, grid, hermite)
+
+            def integrand(t, C, F):
+                # Compact C1 weight with unit integral over [start, end].
+                z = (2 * t - start - end) / (end - start)
+                weight = jnp.where(jnp.abs(z) < 1, 15 / (8 * (end - start)) * (1 - z ** 2) ** 2, 0)
+                energy = quantities((C, F), parameters, grid, hermite)[2]
+                return weight * (energy - initial[2]) / (initial[1] - 0.125)
         return simulation_final(parameters, steps=steps, Nx=grid, Ny=grid,
                                 Nn=hermite, Nm=hermite, Np=hermite,
                                 checkpointing=checkpointing,
-                                checkpoint_size=checkpoint_size, checkpoints=checkpoints)
+                                checkpoint_size=checkpoint_size, checkpoints=checkpoints, integrand=integrand)
+
+    def terminal(phases):
+        return run(phases)[:2]
 
     def objective(phases):
+        if time_window is not None:
+            return -run(phases)[2]
         parameters = setup(phases, grid, hermite, final_time)
         initial = quantities((parameters["Ck_0"], parameters["Fk_0"]),
                              parameters, grid, hermite)
@@ -119,6 +139,8 @@ def main():
     parser.add_argument("--hermite", type=int, default=4)
     parser.add_argument("--time", type=float, default=20.0)
     parser.add_argument("--steps", type=int, default=400)
+    parser.add_argument("--window", type=float, nargs=2, default=None, metavar=("START", "END"))
+    parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--checkpoints", type=int, default=None,
                         help="Fixed checkpoint count for reverse-only memory budgeting")
     parser.add_argument("--controls", type=int, default=8)
@@ -126,9 +148,9 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("phase-control"))
     options = parser.parse_args()
     options.output.mkdir(parents=True, exist_ok=True)
-    initial_phase = np.random.default_rng(7).uniform(-np.pi, np.pi, options.controls)
+    initial_phase = np.random.default_rng(options.seed).uniform(-np.pi, np.pi, options.controls)
     objective, terminal = problem(options.grid, options.hermite, options.time, options.steps,
-                                  checkpoints=options.checkpoints)
+                                  checkpoints=options.checkpoints, time_window=options.window)
     value_grad = jax.jit(jax.value_and_grad(objective))
     start = perf_counter()
     value0, gradient = jax.block_until_ready(value_grad(initial_phase))
@@ -138,7 +160,7 @@ def main():
     def callback(x):
         value = float(value_grad(x)[0])
         history.append(value)
-        print(f"iteration {len(history)-1}: electron gain / initial magnetic fluctuation energy = {-value:.8g}", flush=True)
+        print(f"iteration {len(history)-1}: objective gain / initial magnetic fluctuation energy = {-value:.8g}", flush=True)
 
     start = perf_counter()
     result = minimize(value_grad, initial_phase, jac=True, method="L-BFGS-B",
@@ -155,7 +177,7 @@ def main():
     q2 = quantities(after, params_opt, options.grid, options.hermite)
     # Independent time refinement at the optimized controls.
     refined_objective, _ = problem(options.grid, options.hermite, options.time, 2 * options.steps,
-                                           checkpoints=options.checkpoints)
+                                           checkpoints=options.checkpoints, time_window=options.window)
     refined_value, refined_gradient = jax.block_until_ready(
         jax.jit(jax.value_and_grad(refined_objective))(result.x))
     final_value, final_gradient = value_grad(result.x)
@@ -169,6 +191,7 @@ def main():
         fd.append([float(epsilon), finite_difference])
     report = dict(
         grid=options.grid, hermite=options.hermite, steps=options.steps,
+        time_window=options.window, seed=options.seed,
         final_time=options.time, controls=options.controls, checkpoints=options.checkpoints,
         device=str(jax.devices()[0]), jax_version=jax.__version__,
         compile_and_first_seconds=compile_and_first, optimization_seconds=optimize_seconds,
@@ -205,6 +228,8 @@ def main():
     axes[1, 0].plot(np.arange(len(history)), -np.asarray(history), "o-", color="#0072B2", ms=3)
     axes[1, 0].set(xlabel="Optimization iteration", ylabel=r"$[K_e(T)-K_e(0)]/W_{B,\perp}(0)$",
                    title="(c) Fixed initial energy and spectrum")
+    if options.window is not None:
+        axes[1, 0].set_ylabel(r"$\overline{\Delta K_e}/W_{B,\perp}(0)$")
     normalization = float(q0[1] - 0.125)
     indices = np.arange(4)
     axes[1, 1].bar(indices - 0.18, (np.asarray(q1[:4]) - np.asarray(q0[:4])) / normalization,
