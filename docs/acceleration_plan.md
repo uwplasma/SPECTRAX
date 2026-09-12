@@ -24,3 +24,9 @@ The initial mechanism runs diagnose the existing energy optimum. A tail-optimize
 ## Collision-normalization audit
 
 The built-in rate is `nu * i(i-1)(i-2)/[(H-1)(H-2)(H-3)]` summed over velocity axes. Therefore fixed nu across H changes the damping of shared modes. Earlier H4→H6 results demonstrate benefit across those settings, not pure fixed-collision-operator refinement. A matched-rate comparison to H4/nu1 uses H6/nu10 and H8/nu35. The largest corner rate at H8/nu35 is105; use dt=0.02 (3500 steps to T70) so its scalar damping stability parameter is2.1, then assess time refinement if results depend on it. This supplements rather than relabels the original fixed-nu measurements. The built-in operator directly preserves the first three moment orders; it can still change transfer indirectly through damped higher moments.
+
+## Response to matched-rate validity failure
+
+The matched H6/nu10 and H8/nu35 pilot converges to nonzero local negative mass at T70 (~2.95e-6 spatial mean for optimized controls). Increasing the Hermite cutoff does not remove this defect at fixed damping. Before optimizing a tail, test the distinct collisionless Vlasov case nu=0 at 24² with H8 and H12, dt=0.05, through T70; retain the same controls and threshold. This removes the non-positivity-preserving high-order filter rather than altering the threshold or tolerance. It is a new physics setting and requires its own tail optimization and resolution/validity checks if it passes. No tail claim is transferred from the damped case.
+
+The collisionless H12 endpoint has mean local negative mass1.8e-9 but maximum cell fraction3.6e-8. Add H16 at the same grid/time step to check the stricter local-cell1e-8 gate before considering a tail optimization; do not relax the gate after observing this result. Physical continuous positivity is not certified by finite quadrature.
