@@ -1,0 +1,17 @@
+{
+  "cpu_device": "TFRT_CPU_0",
+  "gpu_device": "NVIDIA RTX A4000",
+  "grid": 16,
+  "hermite": 4,
+  "steps": 600,
+  "time_window": [
+    40,
+    60
+  ],
+  "cpu_initial_objective": -0.007954828418943296,
+  "gpu_initial_objective": -0.007954828418943074,
+  "cpu_optimized_objective": -0.00953109336116604,
+  "gpu_optimized_objective": -0.009531093361166153,
+  "cpu_directional_gradient": -0.00010529038205090715,
+  "gpu_directional_gradient": -0.00010529038205090444
+}
