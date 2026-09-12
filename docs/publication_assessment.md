@@ -22,7 +22,7 @@ Provenance: `window_control_cpu.json`, `window_refined_optimization_gpu.json`, `
 
 Panels combine explicitly separate studies, not a common fresh benchmark revision: (a) `initial-vectorized/results.json`, (b) `window_control_cpu.json`, (c) `gpu_scaling_results.json`, (d) `gpu_long_rollout_results.json`. Each numerical study has source/environment provenance in the main report. Memory excludes driver/context and is not a whole-device footprint. FD uses the same solver and scalar objective; there is no cross-code or optimal batched-FD comparison. This supports superiority in the measured many-control gradient workload, not universal superiority over all nondifferentiable codes or hand-coded adjoints.
 
-## Recommended scientific next steps, in order
+## Original follow-up plan (implementation status below)
 
 1. Diagnose the saved control before a new solver project. Separate electron bulk and internal kinetic energy; reconstruct velocity distributions with quadrature and quantify negative distribution mass. Add time histories of all energy channels and species-integrated J·E, checking the exact collision operator's energy contribution. Determine whether the gain is phase timing, bulk-flow changes, or increased random energy. Existing energy conservation and small Hermite tails are insufficient to establish these distinctions.
 2. If acceleration is the scientific target, predefine a smooth suprathermal energy-fraction objective relative to a fixed initial energy threshold, and report the distribution/tail rather than only its second moment. Increase Hermite resolution until that tail, objective, gradient and positivity diagnostics converge. A few low moments cannot certify a nonthermal tail. Keep initial energy constraints; test threshold sensitivity, collision sensitivity and a held-out time interval. Do not choose a threshold after seeing which one maximizes the claimed gain.
@@ -35,3 +35,21 @@ For a SPECTRAX software/methods paper, these figures support a defensible differ
 Joglekar and Thomas already demonstrated optimization/discovery with differentiable kinetic simulations ([JPP 2022](https://doi.org/10.1017/S0022377822000939)); differentiable plasma optimization itself is not novel. Skene and Burns provide automated adjoints for sparse spectral PDE solvers ([2025 preprint](https://arxiv.org/abs/2506.14792)); automated spectral gradients are also established. SPECTRAX's contribution here is their practical application to its kinetic representation, constrained phase control, a small composable JVP/VJP/streamed-objective API and quantified checkpoint-memory tradeoffs. A claim of priority would require a broader novelty review.
 
 TenBarge and Howes ([2013](https://arxiv.org/abs/1304.2958)) and Zhou, Liu and Loureiro ([2022 preprint](https://arxiv.org/abs/2208.02441)) connect kinetic current structures, collisionless damping and velocity-space transfer. These motivate mechanism-sensitive diagnostics; a Jz map or total electron kinetic-energy increase does not establish the same physics. The existing report further explains why the block-local reverse sweep in “Differentiate the Solver, Not the Equation” is not directly implemented by this global spectral RK4 replay path.
+
+## Follow-up evidence
+
+The original plan above is retained for provenance. The implementation and new
+results are now in [the acceleration assessment](acceleration_results.md), with
+[reproduction and PR handoff](acceleration_handoff.md). Bulk/internal and exact
+field-work diagnostics are implemented; the original extra kinetic gain splits
+approximately 51.3%/48.7%. A collision-normalization audit shows that the original
+fixed-nu Hermite comparison changes the filter on shared modes, so it is not a
+pure fixed-operator refinement. New collisionless tail controls are evaluated
+separately. Complete matched T60 energy optimization is now measured: AD 73.48 s
+versus FD 221.39 s, including compilation and FD calibration, with the same final
+objective to 2.03e-14. This 3.01× result is a single paired trial and is separate
+from the 60.4× short-horizon, 128-control gradient comparison.
+
+Use the follow-up assessment for current tail validity and remaining scientific
+questions; none of these results alone establishes local nonthermal acceleration
+or a new acceleration mechanism.

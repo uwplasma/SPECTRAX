@@ -1,0 +1,152 @@
+{
+  "case": "tail-mechanism-fine",
+  "grid": 24,
+  "hermite": 16,
+  "nu": 0.0,
+  "steps": 1400,
+  "runs": {
+    "initial_phase": {
+      "kinetic_energy": 4.274617156366883e-05,
+      "bulk_energy": 1.6726431002952257e-06,
+      "internal_energy": 4.1073528463375244e-05,
+      "tail_gain": 0.0001528025992844625,
+      "maximum_work_residual": 1.8444989459409644e-17,
+      "q48_q96_relative_change": 9.885711607093839e-06,
+      "local_negativity": {
+        "0.0": {
+          "24": {
+            "max_cell_fraction": 0.0,
+            "mean_negative_mass": 0.0,
+            "min_density": 1.0
+          },
+          "48": {
+            "max_cell_fraction": 0.0,
+            "mean_negative_mass": 0.0,
+            "min_density": 1.0
+          }
+        },
+        "40.0": {
+          "24": {
+            "max_cell_fraction": 4.874863104299589e-14,
+            "mean_negative_mass": 1.3394030751307573e-15,
+            "min_density": 0.9615987582160083
+          },
+          "48": {
+            "max_cell_fraction": 4.023899007921498e-14,
+            "mean_negative_mass": 1.4213181542997977e-15,
+            "min_density": 0.9615987582160083
+          }
+        },
+        "50.0": {
+          "24": {
+            "max_cell_fraction": 5.539817587701422e-12,
+            "mean_negative_mass": 2.186628189894862e-13,
+            "min_density": 0.9480321158027982
+          },
+          "48": {
+            "max_cell_fraction": 5.515349979624043e-12,
+            "mean_negative_mass": 2.1166584860725953e-13,
+            "min_density": 0.9480321158027982
+          }
+        },
+        "60.0": {
+          "24": {
+            "max_cell_fraction": 4.8302287872624105e-11,
+            "mean_negative_mass": 3.72931093569383e-12,
+            "min_density": 0.934278446777455
+          },
+          "48": {
+            "max_cell_fraction": 5.567198864810228e-11,
+            "mean_negative_mass": 3.836492069365428e-12,
+            "min_density": 0.934278446777455
+          }
+        },
+        "70.0": {
+          "24": {
+            "max_cell_fraction": 1.584850000348511e-09,
+            "mean_negative_mass": 4.838002650033048e-11,
+            "min_density": 0.9219389650087029
+          },
+          "48": {
+            "max_cell_fraction": 1.5621937406944242e-09,
+            "mean_negative_mass": 5.073692669441137e-11,
+            "min_density": 0.9219389650087029
+          }
+        }
+      },
+      "worst_local_fraction": 1.5621937406944242e-09
+    },
+    "optimized_phase": {
+      "kinetic_energy": 4.821714070999373e-05,
+      "bulk_energy": 1.152326183853575e-05,
+      "internal_energy": 3.669387887145813e-05,
+      "tail_gain": 0.00017968426387086965,
+      "maximum_work_residual": 1.7387892341236277e-17,
+      "q48_q96_relative_change": 1.0001777933865696e-05,
+      "local_negativity": {
+        "0.0": {
+          "24": {
+            "max_cell_fraction": 0.0,
+            "mean_negative_mass": 0.0,
+            "min_density": 1.0
+          },
+          "48": {
+            "max_cell_fraction": 0.0,
+            "mean_negative_mass": 0.0,
+            "min_density": 1.0
+          }
+        },
+        "40.0": {
+          "24": {
+            "max_cell_fraction": 1.3610202200216146e-14,
+            "mean_negative_mass": 6.42921606509337e-16,
+            "min_density": 0.9696354618224214
+          },
+          "48": {
+            "max_cell_fraction": 1.9169570179558607e-14,
+            "mean_negative_mass": 7.562006041882572e-16,
+            "min_density": 0.9696354618224214
+          }
+        },
+        "50.0": {
+          "24": {
+            "max_cell_fraction": 2.7509169762803306e-12,
+            "mean_negative_mass": 1.5224558858765093e-13,
+            "min_density": 0.9571760760274344
+          },
+          "48": {
+            "max_cell_fraction": 3.0434160658104387e-12,
+            "mean_negative_mass": 1.4589194723922214e-13,
+            "min_density": 0.9571760760274344
+          }
+        },
+        "60.0": {
+          "24": {
+            "max_cell_fraction": 2.549307732179572e-10,
+            "mean_negative_mass": 3.687837460206856e-12,
+            "min_density": 0.9451412117042167
+          },
+          "48": {
+            "max_cell_fraction": 2.467333328670468e-10,
+            "mean_negative_mass": 3.834266801279729e-12,
+            "min_density": 0.9451412117042167
+          }
+        },
+        "70.0": {
+          "24": {
+            "max_cell_fraction": 2.8706505804581802e-09,
+            "mean_negative_mass": 3.931198746707498e-11,
+            "min_density": 0.9361937315045351
+          },
+          "48": {
+            "max_cell_fraction": 4.663774732054902e-09,
+            "mean_negative_mass": 4.42732937794246e-11,
+            "min_density": 0.9361937315045351
+          }
+        }
+      },
+      "worst_local_fraction": 4.663774732054902e-09
+    }
+  },
+  "integration": "Simpson integration of unit-spaced saved samples, not RK-stage objective"
+}

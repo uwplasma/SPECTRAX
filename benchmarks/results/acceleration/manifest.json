@@ -14,7 +14,9 @@
       "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
       "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
       "benchmarks/energization_mechanism.py": "95595582d695ed7ffb24627f1129df49b039152f56d83a93d01f3d67869770ef"
-    }
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
   },
   "mechanism-24h12-collisionless.json.gz": {
     "sha256_uncompressed": "57041ae0dd7fa7cc7b4670ffa2f4f0174be0ec4d8c36f892b9fc284c228a39a7",
@@ -32,7 +34,9 @@
       "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
       "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
       "benchmarks/energization_mechanism.py": "225f50345640cf3ca5972433f25ecedb2adc548259fe55cc9f23a0c103701039"
-    }
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
   },
   "mechanism-24h16-collisionless.json.gz": {
     "sha256_uncompressed": "c82a6e6fe47397828164fdc9605021ecdab44c48cf2cf40c8bb1aecc7bc170e6",
@@ -50,7 +54,9 @@
       "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
       "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
       "benchmarks/energization_mechanism.py": "225f50345640cf3ca5972433f25ecedb2adc548259fe55cc9f23a0c103701039"
-    }
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
   },
   "mechanism-24h6.json.gz": {
     "sha256_uncompressed": "581fbab76b2c1de9ff4c3a58bc2e3be173769104bc75f94fb6c6301b9c830dc9",
@@ -67,7 +73,9 @@
       "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
       "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
       "benchmarks/energization_mechanism.py": "95595582d695ed7ffb24627f1129df49b039152f56d83a93d01f3d67869770ef"
-    }
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
   },
   "mechanism-24h6-matched.json.gz": {
     "sha256_uncompressed": "f81a23599cb243be1dfef03ced6aaef9382e5b30d1b31163538ce212d576cbf0",
@@ -85,7 +93,9 @@
       "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
       "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
       "benchmarks/energization_mechanism.py": "225f50345640cf3ca5972433f25ecedb2adc548259fe55cc9f23a0c103701039"
-    }
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
   },
   "mechanism-24h8.json.gz": {
     "sha256_uncompressed": "4c3860c1b300cd6baaac9ffa2e24f6a79dc364c60d5d3b265a1f1c6c7ade9137",
@@ -102,7 +112,9 @@
       "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
       "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
       "benchmarks/energization_mechanism.py": "95595582d695ed7ffb24627f1129df49b039152f56d83a93d01f3d67869770ef"
-    }
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
   },
   "mechanism-24h8-collisionless.json.gz": {
     "sha256_uncompressed": "c287c5f34b51118a9ce9d4a000fac183231a5c731c2d07b514dad883a3ea63bb",
@@ -120,7 +132,9 @@
       "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
       "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
       "benchmarks/energization_mechanism.py": "225f50345640cf3ca5972433f25ecedb2adc548259fe55cc9f23a0c103701039"
-    }
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
   },
   "mechanism-24h8-matched.json.gz": {
     "sha256_uncompressed": "ddcbb84eec9bca2206567936b45c3ffc5b325cdce714cfd6b5794ebedda6116c",
@@ -138,7 +152,9 @@
       "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
       "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
       "benchmarks/energization_mechanism.py": "225f50345640cf3ca5972433f25ecedb2adc548259fe55cc9f23a0c103701039"
-    }
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
   },
   "mechanism-cpu-smoke.json.gz": {
     "sha256_uncompressed": "3e3cf297a1f5f86a1cbea7041fe49f3d87baa405db07536cbaf93da5033bc58b",
@@ -155,7 +171,9 @@
       "spectrax/_velocity_observables.py": "42976bcd1f938ba7f65673e03ee0f15b93e7969183ec390e9d214c068b9bc64b",
       "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
       "benchmarks/energization_mechanism.py": "fb0d010f005e67a50ca5f16eb062a37ab52e56c25b19974234c4f99e695e22e9"
-    }
+    },
+    "jax_version": "0.9.2",
+    "device": "cpu"
   },
   "mechanism-gpu-smoke.json.gz": {
     "sha256_uncompressed": "e7f9f9ac1354a2cb5f3dbaa6454ab993e6dfb113cf6c7a235ee91665bf7136f5",
@@ -172,6 +190,156 @@
       "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
       "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
       "benchmarks/energization_mechanism.py": "95595582d695ed7ffb24627f1129df49b039152f56d83a93d01f3d67869770ef"
-    }
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
+  },
+  "optimization-cpu-smoke-v2-ad-seed7.json.gz": {
+    "sha256_uncompressed": "1eb26bf0d5e06af981f01b82d907884cb9ff77caf7e05db273bcaad51aba226c",
+    "status": "complete"
+  },
+  "optimization-cpu-smoke-v2-fd-seed7.json.gz": {
+    "sha256_uncompressed": "77b5d6f3131f4a2ac14b1cd7a9c1f2cc27e46cdfd2066c66df1a866f7fada321",
+    "status": "complete"
+  },
+  "optimization-gpu-smoke-ad-seed7.json.gz": {
+    "sha256_uncompressed": "c7ad76eab58dc3c40abdb26c585928d6e3b94ecd46787c98df14dfe807b7a1d5",
+    "status": "complete"
+  },
+  "optimization-gpu-smoke-fd-seed7.json.gz": {
+    "sha256_uncompressed": "8a26fafc555b6464cd0e3f8c72dfb0ad5fb35542237034062146c04a2003adf8",
+    "status": "complete"
+  },
+  "optimization-t60-ad-seed7.json.gz": {
+    "sha256_uncompressed": "3d1c16aec03ebf9445f449fa0a63e24d97f0dfa616201655aa79ce7389cc182d",
+    "status": "complete"
+  },
+  "optimization-t60-fd-seed7.json.gz": {
+    "sha256_uncompressed": "1f948998695956a2fab5ec2357fbbf3e9e70a3098babb442aa37fa8d354978a1",
+    "status": "complete"
+  },
+  "optimization-t60-standalone-ad-seed7.json.gz": {
+    "sha256_uncompressed": "67a2d50dcb00bcd3844d9bb0fabf63da8afaf1cd3fb5a062145c8a902eb31ae2",
+    "status": "complete"
+  },
+  "optimization-t60-standalone-fd-seed7.json.gz": {
+    "sha256_uncompressed": "0eb43e4441f52bb678ef21fb0ba8de8e7ea2092f032241d57d2485a3bd65af95",
+    "status": "complete"
+  },
+  "tail-control-coarse-history.json.gz": {
+    "sha256_uncompressed": "8a3b8a383ce2349a543e186169cae683c13f9a01aacf8501917669e0ea4e2c10"
+  },
+  "tail-control-coarse-results.json.gz": {
+    "sha256_uncompressed": "942f0d56996f7170630451a0a3afbcb10cad37212069612565bccdc88cd426e1",
+    "source_sha256": {
+      "Examples/2D_tail_control.py": "8c8824a6b1374fb405060970f9193337bd1fbd2417c9013f6027df80fc771274",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994"
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
+  },
+  "tail-pilot-coarse-results.json.gz": {
+    "sha256_uncompressed": "05fc9c8ba0e7d94e14c586b823719c4bd4ff1f98d816103363fc006a5a2beeb7",
+    "source_sha256": {
+      "Examples/2D_tail_control.py": "8c8824a6b1374fb405060970f9193337bd1fbd2417c9013f6027df80fc771274",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994"
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
+  },
+  "tail-pilot-h12-results.json.gz": {
+    "sha256_uncompressed": "17aa3f3db0b0ddc1a724613739ee3ed640f24c366b6c9ee3a70ca873a5e641e4",
+    "source_sha256": {
+      "Examples/2D_tail_control.py": "58012ee245156e7eb23814d616d78873e089ebc6c8e70761d8ab0038e7237f3e",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85"
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
+  },
+  "tail-pilot-h16-results.json.gz": {
+    "sha256_uncompressed": "ae598be966ccf28a80e321d93c6c3d3b782dc12f6042ca1f2c9e9cce600607c6",
+    "source_sha256": {
+      "Examples/2D_tail_control.py": "58012ee245156e7eb23814d616d78873e089ebc6c8e70761d8ab0038e7237f3e",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85"
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
+  },
+  "tail-validator-cpu-smoke-results.json.gz": {
+    "sha256_uncompressed": "05e3cc3a53c10713144ae1a97b0d4576724798f2c0a8c04fe76fc25f44bc4452",
+    "source_sha256": {
+      "benchmarks/validate_tail_control.py": "54f60edee7577c1e8decaac2c1d0dedfc29785de9fc05412f945df95c72d001c",
+      "Examples/2D_tail_control.py": "8c8824a6b1374fb405060970f9193337bd1fbd2417c9013f6027df80fc771274",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+      "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
+      "spectrax/_initialize_maxwellian.py": "04e6aaf0a9531df797f91fc6571da5f1c3ac96a875ba4fbc7e3146d236f7db16"
+    },
+    "jax_version": "0.9.2",
+    "devices": [
+      "TFRT_CPU_0"
+    ],
+    "status": "complete"
+  },
+  "energy-control-spectrum.json.gz": {
+    "sha256_uncompressed": "b5a1efd00d051a85fcfeb3be0ca2a1b326ed07eeddb4feb05b53b1f5f84d0e2e"
+  },
+  "tail-mechanism-fine.json.gz": {
+    "sha256_uncompressed": "69426e45a68b7fe125357232ceb2f7e746a44c6c7d0f084bb38d8444f6f2573f",
+    "source_sha256": {
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+      "spectrax/_energization.py": "8292997f56d5f38567804016585547221125b7cc11286f2f3a5c97ec1c58ccf2",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "benchmarks/energization_mechanism.py": "225f50345640cf3ca5972433f25ecedb2adc548259fe55cc9f23a0c103701039"
+    },
+    "jax_version": "0.9.2",
+    "device": "NVIDIA RTX A4000"
+  },
+  "tail-sensitivity.json.gz": {
+    "sha256_uncompressed": "7928c572edff0d5f03e40c579aab6a6ebb443bec333487eaa3d034ceb0f12799",
+    "source_sha256": "8d28c64c1de00cd94f25639c31a8532715c3708ea224a0625883a6f7e31e9d2c"
+  },
+  "tail-spectrum.json.gz": {
+    "sha256_uncompressed": "91f12f62e6743c1c5bca1dc44c99108cba87958ff367f38eeb4dfcc7a61fe089"
+  },
+  "tail-validation-results.json.gz": {
+    "sha256_uncompressed": "84d651b84f3d80e1d752f01c11b3b775e30545468e8b515cdc0c469533fb10b0",
+    "source_sha256": {
+      "benchmarks/validate_tail_control.py": "54f60edee7577c1e8decaac2c1d0dedfc29785de9fc05412f945df95c72d001c",
+      "Examples/2D_tail_control.py": "8c8824a6b1374fb405060970f9193337bd1fbd2417c9013f6027df80fc771274",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+      "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
+      "spectrax/_initialize_maxwellian.py": "04e6aaf0a9531df797f91fc6571da5f1c3ac96a875ba4fbc7e3146d236f7db16"
+    },
+    "jax_version": "0.9.2",
+    "devices": [
+      "cuda:0"
+    ],
+    "status": "complete"
   }
 }
