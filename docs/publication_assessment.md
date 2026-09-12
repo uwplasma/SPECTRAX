@@ -1,5 +1,10 @@
 # Publication candidates and scientific readiness
 
+**Current closeout:** see [the complete gallery and claim audit](publication_closeout.md)
+and [local flow-relative results](local_tail_results.md). The original figures below
+are retained for provenance; the collision-normalization correction in the follow-up
+applies to their refinement interpretation.
+
 The implemented methods and planned finite-time control validation are complete. A particle-acceleration or irreversible-heating claim is not complete. These two figures support a methods-paper demonstration of constrained electron energization and scalable discrete gradients. They do not establish a nonthermal population or new acceleration mechanism.
 
 Regenerate without simulation: `python benchmarks/publication_panels.py`.

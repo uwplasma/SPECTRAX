@@ -107,3 +107,10 @@ covariance. `Examples/2D_local_tail_control.py` uses sampled time weights with
 nested replay, and `benchmarks/local_tail_snapshot.py` provides the matched
 reference and validity checks. Raw evidence is under `benchmarks/results/local-tail`.
 Local source and office remain on PR43; no SPECTRAX merge is authorized.
+
+## Final closeout
+
+See [publication closeout](publication_closeout.md) for the complete figure gallery,
+current manuscript selection, final archive audit and explicit unresolved physics
+goals. [Reconnection follow-up](reconnection_followup.md) is a future baseline plan,
+not a completed acceleration result.
