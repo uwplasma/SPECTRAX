@@ -22,6 +22,29 @@ example = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(example)
 
 
+def plot_results(output):
+    """Render saved native-grid fields without rerunning the plasma solver."""
+    report = json.loads((output / "results.json").read_text())
+    with np.load(output / "maps.npz") as maps:
+        target, before, after = (maps[key] for key in ("target", "initial", "recovered"))
+    history = report["cost_history"]
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({"font.size": 9, "axes.spines.top": False,
+                         "axes.spines.right": False, "pdf.fonttype": 42})
+    fig, axes = plt.subplots(1, 4, figsize=(12, 3.2), layout="constrained")
+    limit = max(float(np.max(np.abs(x))) for x in (target, before, after))
+    for ax, field, title in zip(axes[:3], (target, before, after),
+                                ("(a) Synthetic target", "(b) Initial phases", "(c) Recovered phases")):
+        im = ax.imshow(field, origin="lower", extent=(0, 50, 0, 50), cmap="RdBu_r", interpolation="nearest", vmin=-limit, vmax=limit)
+        ax.set(xlabel=r"$x/d_e$", ylabel=r"$y/d_e$", title=title)
+    fig.colorbar(im, ax=axes[:3].tolist(), label=r"$J_z(T)$", shrink=0.75)
+    axes[3].semilogy(np.arange(len(history)), np.maximum(history, 1e-30), "o-", color="#0072B2")
+    axes[3].set(xlabel="Iteration", ylabel="Normalized least-squares cost", title="(d) Convergence")
+    for extension in ("png", "pdf"):
+        fig.savefig(output / f"current_inverse.{extension}", dpi=300)
+    plt.close(fig)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--grid", type=int, default=16)
@@ -30,9 +53,12 @@ def main():
     parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--controls", type=int, default=8)
     parser.add_argument("--iterations", type=int, default=20)
-    parser.add_argument("--preconditioner", choices=("none", "spectrum"), default="none")
     parser.add_argument("--output", type=Path, default=Path("current-inverse"))
+    parser.add_argument("--plot-only", action="store_true", help="Render saved results without solving")
     args = parser.parse_args()
+    if args.plot_only:
+        plot_results(args.output)
+        return
     if min(args.steps, args.controls, args.iterations) < 1 or args.time <= 0:
         parser.error("Time, steps, controls and iterations must be positive")
     args.output.mkdir(parents=True, exist_ok=True)
@@ -53,17 +79,9 @@ def main():
 
     config = LeastSquaresConfig(rtol=1e-9, max_steps=args.iterations,
                                 linear_rtol=1e-5, linear_max_steps=max(16, 2 * args.controls))
-    precond = None
-    if args.preconditioner == "spectrum":
-        # For independent Fourier phase modes, derivative power equals mode
-        # power. Nonlinear mode coupling makes this an approximation to diag(J.T J).
-        i, j = np.asarray(example.control_modes(args.grid, args.controls)).T
-        spectrum = jnp.fft.fft2(target, norm="ortho")
-        diagonal = jnp.maximum(2 * jnp.abs(spectrum[j % args.grid, i]) ** 2 / normalization ** 2, 1e-12)
-        precond = lambda x, rhs, damping: rhs / (diagonal + damping)
     # Both actions are supplied by AD of the checkpointed plasma solve; no
     # current-pixel-by-control Jacobian or state Jacobian is assembled.
-    solve = jax.jit(lambda x: gauss_newton_least_squares(residual, x, config=config, precond=precond))
+    solve = jax.jit(lambda x: gauss_newton_least_squares(residual, x, config=config))
     start = perf_counter()
     executable = solve.lower(initial).compile()
     compile_seconds = perf_counter() - start
@@ -94,12 +112,12 @@ def main():
                                                       parameters, args.grid, args.hermite)[:4]))
     report = dict(grid=args.grid, hermite=args.hermite, final_time=args.time, steps=args.steps,
                   controls=args.controls, device=jax.devices()[0].device_kind, jax_version=jax.__version__,
-                  preconditioner=args.preconditioner,
                   solvax_version=solvax.__version__,
                   source_sha256={name: hashlib.sha256(Path(path).read_bytes()).hexdigest() for name, path in
                                  dict(example=__file__, phase_control=example.__file__,
                                       plasma_solver=Path(__file__).parents[1] / "spectrax/_autodiff.py",
-                                      least_squares=inspect.getsourcefile(gauss_newton_least_squares)).items()},
+                                      least_squares=inspect.getsourcefile(gauss_newton_least_squares),
+                                      replay=inspect.getsourcefile(solvax.checkpointed_fori_loop)).items()},
                   compile_seconds=compile_seconds, solve_seconds=solve_seconds,
                   xla_buffer_bytes=memory.argument_size_in_bytes + memory.output_size_in_bytes
                                    + memory.temp_size_in_bytes - memory.alias_size_in_bytes,
@@ -116,20 +134,7 @@ def main():
                   cost_history=history.tolist())
     (args.output / "results.json").write_text(json.dumps(report, indent=2) + "\n")
     np.savez(args.output / "maps.npz", target=target, initial=before, recovered=after)
-    import matplotlib.pyplot as plt
-    plt.rcParams.update({"font.size": 9, "axes.spines.top": False,
-                         "axes.spines.right": False, "pdf.fonttype": 42})
-    fig, axes = plt.subplots(1, 4, figsize=(12, 3.2), layout="constrained")
-    limit = max(float(jnp.max(jnp.abs(x))) for x in (target, before, after))
-    for ax, field, title in zip(axes[:3], (target, before, after),
-                                ("(a) Synthetic target", "(b) Initial phases", "(c) Recovered phases")):
-        im = ax.imshow(field, origin="lower", extent=(0, 50, 0, 50), cmap="RdBu_r", vmin=-limit, vmax=limit)
-        ax.set(xlabel=r"$x/d_e$", ylabel=r"$y/d_e$", title=title)
-    fig.colorbar(im, ax=axes[:3].tolist(), label=r"$J_z(T)$", shrink=0.75)
-    axes[3].semilogy(np.arange(count + 1), np.maximum(history, 1e-30), "o-", color="#0072B2")
-    axes[3].set(xlabel="Iteration", ylabel="Normalized least-squares cost", title="(d) Matrix-free Gauss–Newton")
-    for extension in ("png", "pdf"):
-        fig.savefig(args.output / f"current_inverse.{extension}", dpi=300)
+    plot_results(args.output)
     print(json.dumps(report), flush=True)
 
 

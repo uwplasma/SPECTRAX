@@ -267,3 +267,9 @@ This project is protected under the MIT License. For more details, refer to the 
 
 
 
+
+The [current-map inverse example](Examples/2D_current_inverse.py) combines checkpointed
+SPECTRAX JVP/VJP actions with SOLVAX's matrix-free Gauss-Newton solver. See the
+[research, validation and performance report](docs/differentiable_control.md) and
+[implementation handoff](docs/differentiable_control_handoff.md) for reproducible
+commands, source provenance and publication figures.

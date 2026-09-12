@@ -5,16 +5,13 @@ import subprocess
 import sys
 
 import numpy as np
-import pytest
 
 
-@pytest.mark.parametrize("preconditioner", ["none", "spectrum"])
-def test_small_current_inverse(tmp_path, preconditioner):
+def test_small_current_inverse(tmp_path):
     example = Path(__file__).parents[1] / "Examples/2D_current_inverse.py"
     subprocess.run([sys.executable, str(example), "--grid", "12", "--hermite", "3",
                     "--time", "0.2", "--steps", "4", "--controls", "4", "--iterations", "12",
-                    "--preconditioner", preconditioner, "--output", str(tmp_path)],
-                   check=True, capture_output=True, timeout=120)
+                    "--output", str(tmp_path)], check=True, capture_output=True, timeout=120)
     report = json.loads((tmp_path / "results.json").read_text())
     assert report["converged"]
     assert report["final_relative_current_error"] < 1e-6

@@ -249,6 +249,39 @@ The [additional long-rollout figure](figures/long_rollout_gpu.pdf) holds K=16 fi
 
 *Memory panels show peak bytes in use reported by the JAX GPU allocator across compilation, warmup and timed executions in each fresh process, not the whole-board memory footprint or XLA's static estimate. Allocation granularity and workspace can obscure theoretical differences at small sizes. Driver/context memory is excluded. The fixed budget is K=8 except on the checkpoint-count axis. Raw results also retain compiler estimates, process RSS, allocator snapshots and individual timings.*
 
+## Matrix-free current-map inverse problem
+
+`Examples/2D_current_inverse.py` demonstrates a second objective family: recover phase controls from a synthetic final out-of-plane current map. The residual is `(Jz(theta,T) - target) / ||target||`. SOLVAX 0.20.0's `gauss_newton_least_squares` applies damped normal equations through JVP/VJP actions and PCG, without assembling a pixel-by-control Jacobian. This uses the default replay path because the fixed-budget Diffrax path supports reverse mode only. It requires no additional core SPECTRAX solver code.
+
+At 24²/6³, T=20 and 200 steps, eight controls converge in four outer and 16 PCG iterations. Relative current error falls from 0.148994 to 1.67e-9; phase RMS error is 4.8e-9 and the measured initial integrated-energy change is zero. The real-linear adjoint dot-product error is 4.2e-18. The run records 65.05 s compilation, 58.64 s solve and 258.1 MiB peak JAX allocator use immediately after the solve. This peak excludes later derivative verification and figure generation; it is not a whole-device measurement. With 32 controls, five outer and 27 PCG iterations reduce relative error from 0.300657 to 9.92e-12. The 32-control run overlaps an unrelated GPU0 workload and supplies correctness/iteration evidence, not an uncontended timing comparison.
+
+![Synthetic current-map inversion](figures/current_inverse_gpu.png)
+
+*Native 24² current maps share a color scale; the fourth panel is the normalized least-squares cost. The target and fit use the same discretization and synthetic phase family. This is an inverse-problem/API verification, not an observational reconstruction, uniqueness proof, or new heating result. Noise, incomplete observations and model mismatch require separate identifiability/regularization studies.*
+
+The small 12²/3³, T=0.2, four-step CPU/GPU runs both converge in four outer/eight PCG iterations. Relative-error differences are below 3e-17 and the AD directional-derivative difference is 8.7e-19. Centered finite differences and a real-linear adjoint dot test are included in the example and integration test. Raw reports, maps and comparison data are under `benchmarks/results/current-*` and `current_inverse_cpu_gpu_agreement.json`. Baseline source is preserved at `7ac745c`; reports contain source hashes. Later figure-only changes do not relabel these measurements.
+
+```bash
+python Examples/2D_current_inverse.py --grid 24 --hermite 6 --time 20 --steps 200 --output current-inverse
+python Examples/2D_current_inverse.py --plot-only --output current-inverse
+```
+
+A spectral-power approximation to the normal-equation diagonal was tested and rejected. It increased PCG work from 8 to 12 iterations in the small case, 16 to 21 with eight controls at T=20, and 27 to 40 with 32 controls, at comparable final errors. The last comparison shares GPU0 with another workload, so only iteration counts and accuracy inform this decision. The optional knob was removed to keep the example simple. Experimental source remains at `1a6171e`, with reports in `current-spectrum-*` and `current-32-spectrum-gpu`; no improvement is claimed from this negative experiment.
+
+## Measured performance follow-up
+
+The phase initializer now constructs all sinusoidal modes with array operations. Primal and JVP comparisons against the original loop for 0, 8 and 128 controls differ by at most 6.5e-16. Fresh paired GPU runs at 32²/4³, 64 steps and 128 controls give:
+
+| Method | Compile before / after (s) | Warm execution before / after (s) |
+|---|---:|---:|
+| Replay reverse AD | 29.31 / 18.46 | 0.2833 / 0.2818 |
+| Batched forward AD | 23.09 / 10.35 | 8.796 / 6.129 |
+| Serial centered differences | 14.89 / 4.25 | 17.317 / 17.014 |
+
+Allocator peaks are unchanged. The principal benefits are compilation and forward-mode execution; reverse execution is essentially unchanged in this pair. The updated pair gives approximately 60× reverse-versus-finite-difference speedup. Do not attribute the difference from the earlier 22.9× study to vectorization: the fresh unvectorized reverse baseline is already faster than that historical run. Both studies retain their own raw samples and source/environment manifests. Paired data are in `benchmarks/results/initial-loop-baseline` and `initial-vectorized`.
+
+The separate [SOLVAX PR #103](https://github.com/uwplasma/SOLVAX/pull/103) removes per-step bound guards from full replay segments and handles the partial tail separately. Six additional complex-state/JVP/VJP/index-bound cases join 44 passing CPU/GPU autodiff tests. Interleaving ten warm plasma gradients per version gives 0.28146 → 0.27190 s (3.40% reduction), while compilation increases 16.38 → 18.39 s: roughly 210 calls to amortize in this case. Separate fresh-process runs retain 66 MiB peak allocator use, and some static buffer estimates increase. This is a modest repeated-solve tradeoff, not a universal cold-start or memory improvement. Source, raw samples and reproduction script are in that PR at `cd67665`. SPECTRAX continues to depend on released SOLVAX 0.20.x; unpublished candidate measurements are not release behavior.
+
 ## Sources
 
 [^1]: UW Plasma, [SPECTRAX repository](https://github.com/uwplasma/SPECTRAX), `main` revision above; [existing differentiability PR #36](https://github.com/uwplasma/SPECTRAX/pull/36). Supplied local Orszag–Tang Python and TOML files are additional configuration references.

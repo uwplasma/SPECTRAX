@@ -21,27 +21,21 @@ from scipy.optimize import minimize
 from spectrax import compute_C_nmp, plasma_current, simulation_final
 
 
-def control_modes(grid, count):
-    """Distinct resolved oblique modes, ordered consistently for all examples."""
-    modes = [(i, j) for i in range(1, grid // 3)
-             for j in range(-grid // 3 + 1, grid // 3) if j]
-    modes.sort(key=lambda k: (k[0] ** 2 + k[1] ** 2, k))
-    if count > len(modes):
-        raise ValueError("Too many controls for the dealiased spatial grid.")
-    return modes[:count]
-
-
 def setup(phases, grid=16, hermite=4, final_time=20.0):
     """Fix every mode amplitude; vary only phases of distinct oblique modes."""
     if hermite < 3:
         raise ValueError("At least three Hermite modes are needed for energy.")
-    modes = control_modes(grid, len(phases))
+    modes = [(i, j) for i in range(1, grid // 3)
+             for j in range(-grid // 3 + 1, grid // 3) if j]
+    modes.sort(key=lambda k: (k[0] ** 2 + k[1] ** 2, k))
+    if len(phases) > len(modes):
+        raise ValueError("Too many controls for the dealiased spatial grid.")
     x = 2 * jnp.pi * jnp.arange(grid) / grid
     X, Y = jnp.meshgrid(x, x, indexing="xy")
     k = 2 * jnp.pi / 50.0
     bx, by = -0.2 * jnp.sin(Y), 0.2 * jnp.sin(2 * X)
     curl = 0.2 * k * (jnp.cos(Y) + 2 * jnp.cos(2 * X))
-    i, j = np.asarray(modes, dtype=float).reshape(-1, 2).T[:, :, None, None]
+    i, j = np.asarray(modes[:len(phases)], dtype=float).reshape(-1, 2).T[:, :, None, None]
     radius = np.hypot(i, j)
     amplitude = 0.06 / radius
     angle = i * X + j * Y + jnp.asarray(phases)[:, None, None]
