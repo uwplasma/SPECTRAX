@@ -74,8 +74,16 @@ Use fresh output directories after source/environment changes. Benchmark `--resu
 
 1. Review the public API, explicit RK4 choice and dependency boundary against #36; retain the draft until maintainer review. CI status is visible on the PR.
 2. Review the physics interpretation and choose the paper's target regime. The demonstrated result is finite-time, time-averaged energy control, not irreversible heating, solely magnetic-to-electron transfer, or certified resolved turbulence. Endpoint electron energy can be negative while the average is positive.
-3. Extend multi-seed and shifted-window checks to the revised averaged objective; existing multi-seed optimizations concern the endpoint objective. Increase spatial/velocity resolution to the paper's desired tolerance. Current small Hermite tails and energy conservation do not certify distribution positivity or global optimality.
+3. The three-seed, five-window check of the averaged objective is now complete at both 16²/4³ and 24²/6³: all 30 frozen-control cases show positive benefit. Broaden physical parameters or horizons only as required by the paper, and increase resolution to the chosen scientific tolerance. Current small Hermite tails and energy conservation do not certify distribution positivity or global optimality.
 4. If a longer nonlinear regime is required, profile it on GPU before changing solvers. Add an implicit/IMEX method or specialized adjoint only for a measured advantage, and validate its executed numerical algorithm.
 5. Select final panels/captions from the checked-in vector figures and report exact hardware, precision, controls, discretization, checkpoint budget and memory metric.
 
 At this handoff all simulations, benchmarks and test jobs belonging to this task have completed; no local or remote simulation was left running. No automation or scheduled continuation exists. Other users' workloads were not stopped. No additional long local simulation is needed to reconstruct these results.
+
+## Subsequent robustness checkpoint
+
+Seeds 11 and 23 optimized the averaged [40,60] objective in 16 and 28 iterations and matched seed 7 within 3e-13. Five width-20 windows centered at 40,45,50,55,60 were specified before evaluation. Frozen controls improve every baseline: 13.748–21.929% at 16²/4³, and 13.813–22.085% at 24²/6³ with half dt. The 30 cases are overlapping-window evaluations, not independent statistical trials. All runs completed on office GPU0. A three-window small CPU/GPU smoke check agrees within 6.8e-21; resume and control reuse were exercised locally without long CPU runs.
+
+The report contains reproduction commands and figures; raw data and manifests are `window_seed_optimizations_gpu.json`, `window_shifts_gpu.json`, `window_shifts_refined_gpu.json`, `window_robustness*_manifest.json`, and `window_robustness_cpu_gpu_smoke.json`. The exact coarse runner is in commit `c578481`; refinement/reuse is in `6baaf72`. Subsequent plotting changes only shorten a figure title. Full run directories are `results/window-robustness-gpu` and `results/window-robustness-refined-gpu` on office, with copies in the local output directory.
+
+The user explicitly requested continued autonomous implementation of remaining goals, including measured performance bottlenecks and relevant SOLVAX solvers. The next active work is profiling the replay loop and initial-condition construction. No new implicit method should be substituted without a measured benefit and correctness/stability evidence.

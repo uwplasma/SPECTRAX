@@ -132,7 +132,7 @@ def plot_window(rows, output):
         ax.set_xlabel(f"Window center (width {width:g})")
         ax.legend(frameon=False)
     axes[0].set(title="(a) Dashed: baseline; solid: optimized", ylabel="Normalized averaged electron gain")
-    axes[1].set(title="(b) Benefit away from the training window", ylabel="Optimized minus baseline gain")
+    axes[1].set(title="(b) Frozen controls, shifted windows", ylabel="Optimized minus baseline gain")
     for extension in ("png", "pdf"):
         fig.savefig(output / f"window_robustness.{extension}", dpi=300)
 

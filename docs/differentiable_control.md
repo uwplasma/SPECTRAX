@@ -124,6 +124,16 @@ python benchmarks/validate_phase_control.py phase-control --reoptimize 20
 python benchmarks/gradient_scaling.py --output gradient-scaling
 ```
 
+Test additional phase seeds and evaluate frozen optimized controls on shifted windows:
+
+```bash
+python benchmarks/phase_robustness.py --window 40 60 \
+    --shifts -10 -5 0 5 10 --seeds 11 23 --iterations 40 \
+    --output window-robustness
+```
+
+Seed 7 reuses the saved coarse reference controls; the other seeds are optimized on the specified training window. All shifted windows reuse those controls without re-optimization. The script records signed gains, omits ratios for nonpositive baselines and saves each completed optimization/window batch. `--resume` accepts only the same settings, source and environment. A different training window still reuses the original seed-7 reference, so its source window must be distinguished from newly trained controls.
+
 For an NVIDIA GPU, install a CUDA-enabled JAX build appropriate to the machine. The complete isolated-worker scaling matrix is reproducible with:
 
 ```bash
@@ -197,6 +207,28 @@ The GPU independently re-evaluated the saved controls with separate space, veloc
 ![Time-window gradient and refinement validation](figures/window_validation_gpu.png)
 
 *The directional finite-difference sweep was computed on CPU; the five independent resolution evaluations were computed on the GPU. The right panel re-evaluates saved coarse controls, before the separate refined re-optimization. CPU/GPU objective values and the baseline directional gradient agree within the recorded comparison tolerances. Raw refined gradients, Hermite-tail indicators, phases and provenance are included.*
+
+### Additional seeds and shifted windows
+
+The averaged objective was also optimized from seeds 11 and 23 on GPU, converging in 16 and 28 iterations. Together with the saved seed-7 run, all three reach 0.00953109336 within 3e-13. The improvements relative to their own baselines on [40,60] are 19.815%, 14.910% and 21.929%, respectively. This is evidence from three specified starts, not a proof of global optimality.
+
+Without re-optimizing, all three control sets improve their respective baselines on five width-20 windows centered at 40, 45, 50, 55 and 60. All 15 coarse evaluations have positive gain and positive control benefit; relative improvements range from 13.748% to 21.929%. Shifted windows were selected before these evaluations. They overlap and are not independent statistical trials.
+
+![Frozen-control window robustness](figures/window_robustness_gpu.png)
+
+*16²/4³, dt=0.1. Solid optimized curves overlap because the three starts converge to almost the same controls. Dashed curves are the corresponding initial-phase baselines. Controls are trained only on [40,60]; the other windows are evaluations of frozen controls. The gain is normalized by initial fluctuating magnetic energy, and the right panel plots the signed difference rather than a potentially misleading ratio.*
+
+The same 15 evaluations were repeated at 24²/6³ and dt=0.05 with the coarse controls frozen. **All 15 refined cases retain positive benefit**, ranging from 13.813% to 22.085%. The smallest absolute normalized benefit is 0.00095609. This closes the initial three-seed/nearby-window check at both discretizations; it does not establish robustness at arbitrary horizons or across a broader physical parameter distribution. [Refined vector figure](figures/window_robustness_refined_gpu.pdf).
+
+Reproduce the refinement without re-optimizing:
+
+```bash
+python benchmarks/phase_robustness.py --window 40 60 --grid 24 --hermite 6 \
+    --dt 0.05 --reuse window-robustness/optimizations.json \
+    --output window-robustness-refined
+```
+
+The new study runner is preserved at `c578481`; the frozen-control refinement option is at `6baaf72`. Manifests record exact script, physics-source and input-control hashes. A three-window 12²/3³ CPU/GPU smoke comparison passed with maximum absolute difference 6.8e-21. Same-setting resume was exercised, changed-setting resume was rejected before simulation, and the reuse path was checked with a two-step local CPU smoke run. These small checks avoid repeating long local simulations. The public numerical solver is unchanged.
 
 ### Single NVIDIA GPU measurements
 
