@@ -1,0 +1,12 @@
+{
+  "initial_phase/kinetic_energy": 1.3877787807814457e-17,
+  "initial_phase/bulk_energy": 2.6020852139652106e-18,
+  "initial_phase/internal_energy": 2.7755575615628914e-17,
+  "initial_phase/electric_power": 2.1017005003747327e-20,
+  "initial_phase/integrated_power": 2.094421310984266e-21,
+  "optimized_phase/kinetic_energy": 1.3877787807814457e-17,
+  "optimized_phase/bulk_energy": 2.710505431213761e-19,
+  "optimized_phase/internal_energy": 2.7755575615628914e-17,
+  "optimized_phase/electric_power": 2.710505431213761e-20,
+  "optimized_phase/integrated_power": 2.809105360230082e-21
+}
