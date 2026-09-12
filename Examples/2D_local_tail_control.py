@@ -29,7 +29,7 @@ module.loader.exec_module(phase)
 
 
 def problem(reference, *, grid=16, hermite=8, steps=600, window=(40., 60.),
-            intervals=20, quadrature=24, nu=0.):
+            intervals=20, quadrature=48, nu=0.):
     """Nested replay stores sublinear time states, not a velocity trajectory.
 
     Simpson weights times the smooth window are normalized to sum one. The
@@ -79,7 +79,7 @@ def problem(reference, *, grid=16, hermite=8, steps=600, window=(40., 60.),
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name, default in [('grid',16), ('hermite',8), ('steps',600), ('intervals',20),
-                          ('quadrature',24), ('iterations',20), ('seed',7)]:
+                          ('quadrature',48), ('iterations',20), ('seed',7)]:
         parser.add_argument('--'+name, type=int, default=default)
     parser.add_argument('--window', nargs=2, type=float, default=[40.,60.])
     parser.add_argument('--controls-file', type=Path)
@@ -98,7 +98,11 @@ def main():
     hashes = lambda: {p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in paths}
     report = dict(settings=settings, source_sha256=hashes(), initial_phase=theta.tolist(),
         versions={k:importlib.metadata.version(k) for k in ['jax','jaxlib','solvax','diffrax','numpy','scipy']},
-        controls_key=args.controls_key, status='running', device=jax.devices()[0].device_kind,
+        controls_key=args.controls_key,
+        controls_sha256=hashlib.sha256(args.controls_file.read_bytes()).hexdigest() if args.controls_file else None,
+        evaluate_only=args.evaluate_only, optimizer_options=dict(maxiter=args.iterations,ftol=1e-12,gtol=1e-9),
+        sample_times=np.linspace(*args.window,args.intervals+1).tolist(), nu=0.,
+        status='running', device=jax.devices()[0].device_kind,
         jax_version=jax.__version__, jax_enable_x64=bool(jax.config.jax_enable_x64),
         interpretation='Local flow-relative signed tail gain, sampled normalized Simpson time weights; not nonthermal proof')
     def save():
