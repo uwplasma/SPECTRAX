@@ -29,7 +29,7 @@ module.loader.exec_module(phase)
 
 
 def problem(reference, *, grid=16, hermite=8, steps=600, window=(40., 60.),
-            intervals=20, quadrature=48, nu=0.):
+            intervals=20, quadrature=96, nu=0.):
     """Nested replay stores sublinear time states, not a velocity trajectory.
 
     Simpson weights times the smooth window are normalized to sum one. The
@@ -79,7 +79,7 @@ def problem(reference, *, grid=16, hermite=8, steps=600, window=(40., 60.),
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name, default in [('grid',16), ('hermite',8), ('steps',600), ('intervals',20),
-                          ('quadrature',48), ('iterations',20), ('seed',7)]:
+                          ('quadrature',96), ('iterations',20), ('seed',7)]:
         parser.add_argument('--'+name, type=int, default=default)
     parser.add_argument('--window', nargs=2, type=float, default=[40.,60.])
     parser.add_argument('--controls-file', type=Path)

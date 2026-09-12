@@ -97,3 +97,13 @@ Regenerate the tail figure entirely from committed JSON archives:
 ```sh
 python benchmarks/tail_control_panels.py --coarse benchmarks/results/acceleration/tail-control-coarse-results.json.gz --validation benchmarks/results/acceleration/tail-validation-results.json.gz --mechanism benchmarks/results/acceleration/tail-mechanism-fine.json.gz --output docs/figures/tail_control
 ```
+
+## Local-frame extension
+
+`local_tail_results.md` and `local_tail_plan.md` record the extension motivated by
+the old lab-frame optimum's bulk/internal partition. The private local objective
+differentiates the cellwise mean; the Gaussian diagnostic matches full local
+covariance. `Examples/2D_local_tail_control.py` uses sampled time weights with
+nested replay, and `benchmarks/local_tail_snapshot.py` provides the matched
+reference and validity checks. Raw evidence is under `benchmarks/results/local-tail`.
+Local source and office remain on PR43; no SPECTRAX merge is authorized.

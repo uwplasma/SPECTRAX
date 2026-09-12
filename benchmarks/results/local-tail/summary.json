@@ -1,0 +1,85 @@
+{
+  "coarse_gain": 0.00023895997319855534,
+  "fine_baseline_gain": 0.00021736481165366233,
+  "fine_candidate_gain": 0.0002397109152617707,
+  "fine_added_gain": 2.234610360810836e-05,
+  "fine_relative_improvement": 0.10280460502371214,
+  "coarse_optimizer_success": false,
+  "coarse_iterations": 20,
+  "coarse_optimization_seconds": 152.17636087792926,
+  "comparisons": {
+    "baseline_quadrature24_48": {
+      "coarser": "local-tail-q24",
+      "reference": "local-tail-q48",
+      "value_relative_error": 0.0033216690978441488,
+      "gradient_absolute_error": 5.515490455981297e-08,
+      "gradient_reference_norm": 1.1757965958043783e-05,
+      "gradient_tolerance": 5.879982979021892e-07,
+      "gradient_passed": true
+    },
+    "baseline_quadrature48_96": {
+      "coarser": "local-tail-q48",
+      "reference": "local-tail-q96",
+      "value_relative_error": 0.00012392458355015012,
+      "gradient_absolute_error": 2.0529508093034164e-09,
+      "gradient_reference_norm": 1.1758448128032026e-05,
+      "gradient_tolerance": 5.880224064016013e-07,
+      "gradient_passed": true
+    },
+    "baseline_sampling20_40": {
+      "coarser": "local-tail-q48",
+      "reference": "local-tail-q48-i40",
+      "value_relative_error": 8.581705730370537e-06,
+      "gradient_absolute_error": 1.2087722954687585e-10,
+      "gradient_reference_norm": 1.1757994365901538e-05,
+      "gradient_tolerance": 5.87999718295077e-07,
+      "gradient_passed": true
+    },
+    "baseline_coarse_fine": {
+      "coarser": "local-tail-q48",
+      "reference": "local-tail-fine-q48",
+      "value_relative_error": 0.0014801219936055876,
+      "gradient_absolute_error": 4.4747063273178965e-07,
+      "gradient_reference_norm": 1.215846866209778e-05,
+      "gradient_tolerance": 6.080234331048891e-07,
+      "gradient_passed": true
+    },
+    "candidate_quadrature48_96": {
+      "coarser": "local-tail-optimization",
+      "reference": "local-tail-optimized-q96",
+      "value_relative_error": 0.00013823086249886707,
+      "gradient_absolute_error": 3.267469161156792e-09,
+      "gradient_reference_norm": 4.0339334044148286e-09,
+      "gradient_tolerance": 3.016966702207414e-10,
+      "gradient_passed": false
+    },
+    "candidate_quadrature96_128": {
+      "coarser": "local-tail-optimized-q96",
+      "reference": "local-tail-optimized-q128",
+      "value_relative_error": 7.428836802381156e-07,
+      "gradient_absolute_error": 1.1730608981253356e-10,
+      "gradient_reference_norm": 3.993481114341476e-09,
+      "gradient_tolerance": 2.9967405571707386e-10,
+      "gradient_passed": true
+    },
+    "candidate_sampling20_40": {
+      "coarser": "local-tail-optimization",
+      "reference": "local-tail-optimized-i40",
+      "value_relative_error": 8.534591842801476e-06,
+      "gradient_absolute_error": 5.65193954237769e-11,
+      "gradient_reference_norm": 2.092032568020965e-09,
+      "gradient_tolerance": 2.0460162840104826e-10,
+      "gradient_passed": true
+    },
+    "candidate_fine_quadrature48_96": {
+      "coarser": "local-tail-optimized-fine",
+      "reference": "local-tail-optimized-fine-q96",
+      "value_relative_error": 0.00013664736695639945,
+      "gradient_absolute_error": 3.484822212704489e-09,
+      "gradient_reference_norm": 2.4193638866349307e-07,
+      "gradient_tolerance": 1.2196819433174653e-08,
+      "gradient_passed": true
+    }
+  },
+  "interpretation": "Fixed controls, finite sampled quadrature; candidate is not fine-stationary or a nonthermal discovery. Fine gain pair uses q48; q96 fine candidate is a separate gradient/value check."
+}
