@@ -23,13 +23,16 @@ def metadata():
     import hashlib
     import importlib.metadata
     import platform
+    import inspect
     import jax
+    import solvax
     root = Path(__file__).parents[1]
     files = [str(p.relative_to(root)) for p in sorted((root / "spectrax").glob("*.py"))
              if p.name != "version.py"] + ["Examples/2D_phase_control.py", "benchmarks/gradient_scaling.py"]
     info = dict(source_sha256={name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in files},
                 packages={name: importlib.metadata.version(name) for name in
                           ("jax", "jaxlib", "diffrax", "solvax", "numpy", "scipy", "equinox")},
+                solvax_autodiff_sha256=hashlib.sha256(Path(inspect.getsourcefile(solvax.checkpointed_fori_loop)).read_bytes()).hexdigest(),
                 python=platform.python_version(), platform=platform.platform(),
                 devices=[dict(kind=d.device_kind, platform=d.platform) for d in jax.devices()],
                 allocator_environment={key: os.environ.get(key) for key in
