@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--controls", type=int, default=8)
     parser.add_argument("--iterations", type=int, default=20)
+    parser.add_argument("--preconditioner", choices=("none", "spectrum"), default="none")
     parser.add_argument("--output", type=Path, default=Path("current-inverse"))
     args = parser.parse_args()
     if min(args.steps, args.controls, args.iterations) < 1 or args.time <= 0:
@@ -52,9 +53,17 @@ def main():
 
     config = LeastSquaresConfig(rtol=1e-9, max_steps=args.iterations,
                                 linear_rtol=1e-5, linear_max_steps=max(16, 2 * args.controls))
+    precond = None
+    if args.preconditioner == "spectrum":
+        # For independent Fourier phase modes, derivative power equals mode
+        # power. Nonlinear mode coupling makes this an approximation to diag(J.T J).
+        i, j = np.asarray(example.control_modes(args.grid, args.controls)).T
+        spectrum = jnp.fft.fft2(target, norm="ortho")
+        diagonal = jnp.maximum(2 * jnp.abs(spectrum[j % args.grid, i]) ** 2 / normalization ** 2, 1e-12)
+        precond = lambda x, rhs, damping: rhs / (diagonal + damping)
     # Both actions are supplied by AD of the checkpointed plasma solve; no
     # current-pixel-by-control Jacobian or state Jacobian is assembled.
-    solve = jax.jit(lambda x: gauss_newton_least_squares(residual, x, config=config))
+    solve = jax.jit(lambda x: gauss_newton_least_squares(residual, x, config=config, precond=precond))
     start = perf_counter()
     executable = solve.lower(initial).compile()
     compile_seconds = perf_counter() - start
@@ -85,6 +94,7 @@ def main():
                                                       parameters, args.grid, args.hermite)[:4]))
     report = dict(grid=args.grid, hermite=args.hermite, final_time=args.time, steps=args.steps,
                   controls=args.controls, device=jax.devices()[0].device_kind, jax_version=jax.__version__,
+                  preconditioner=args.preconditioner,
                   solvax_version=solvax.__version__,
                   source_sha256={name: hashlib.sha256(Path(path).read_bytes()).hexdigest() for name, path in
                                  dict(example=__file__, phase_control=example.__file__,
