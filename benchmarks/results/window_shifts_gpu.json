@@ -1,0 +1,212 @@
+[
+  {
+    "seed": 7,
+    "grid": 16,
+    "hermite": 4,
+    "time": 50.0,
+    "time_window": [
+      30.0,
+      50.0
+    ],
+    "baseline_gain": 0.006581800890183314,
+    "optimized_gain": 0.0078029541921435484,
+    "improvement": 0.0012211533019602346,
+    "ratio": 1.1855348288918268
+  },
+  {
+    "seed": 11,
+    "grid": 16,
+    "hermite": 4,
+    "time": 50.0,
+    "time_window": [
+      30.0,
+      50.0
+    ],
+    "baseline_gain": 0.006847838111144194,
+    "optimized_gain": 0.007802954611091964,
+    "improvement": 0.0009551164999477705,
+    "ratio": 1.139477085241459
+  },
+  {
+    "seed": 23,
+    "grid": 16,
+    "hermite": 4,
+    "time": 50.0,
+    "time_window": [
+      30.0,
+      50.0
+    ],
+    "baseline_gain": 0.006520443689533646,
+    "optimized_gain": 0.007802954637610036,
+    "improvement": 0.0012825109480763897,
+    "ratio": 1.1966907482285332
+  },
+  {
+    "seed": 7,
+    "grid": 16,
+    "hermite": 4,
+    "time": 55.0,
+    "time_window": [
+      35.0,
+      55.0
+    ],
+    "baseline_gain": 0.007519252664611654,
+    "optimized_gain": 0.008921268726848773,
+    "improvement": 0.0014020160622371198,
+    "ratio": 1.1864568361740946
+  },
+  {
+    "seed": 11,
+    "grid": 16,
+    "hermite": 4,
+    "time": 55.0,
+    "time_window": [
+      35.0,
+      55.0
+    ],
+    "baseline_gain": 0.007829421891269683,
+    "optimized_gain": 0.008921269032508108,
+    "improvement": 0.0010918471412384254,
+    "ratio": 1.1394543756105295
+  },
+  {
+    "seed": 23,
+    "grid": 16,
+    "hermite": 4,
+    "time": 55.0,
+    "time_window": [
+      35.0,
+      55.0
+    ],
+    "baseline_gain": 0.00743581677436598,
+    "optimized_gain": 0.008921269035651084,
+    "improvement": 0.0014854522612851037,
+    "ratio": 1.1997698849178222
+  },
+  {
+    "seed": 7,
+    "grid": 16,
+    "hermite": 4,
+    "time": 60.0,
+    "time_window": [
+      40.0,
+      60.0
+    ],
+    "baseline_gain": 0.007954828418943074,
+    "optimized_gain": 0.009531093361166153,
+    "improvement": 0.00157626494222308,
+    "ratio": 1.1981519725138852
+  },
+  {
+    "seed": 11,
+    "grid": 16,
+    "hermite": 4,
+    "time": 60.0,
+    "time_window": [
+      40.0,
+      60.0
+    ],
+    "baseline_gain": 0.00829439195855392,
+    "optimized_gain": 0.009531093361436916,
+    "improvement": 0.0012367014028829958,
+    "ratio": 1.1491009116837791
+  },
+  {
+    "seed": 23,
+    "grid": 16,
+    "hermite": 4,
+    "time": 60.0,
+    "time_window": [
+      40.0,
+      60.0
+    ],
+    "baseline_gain": 0.007816892844169289,
+    "optimized_gain": 0.009531093361439275,
+    "improvement": 0.0017142005172699863,
+    "ratio": 1.219294360488596
+  },
+  {
+    "seed": 7,
+    "grid": 16,
+    "hermite": 4,
+    "time": 65.0,
+    "time_window": [
+      45.0,
+      65.0
+    ],
+    "baseline_gain": 0.009644960174096459,
+    "optimized_gain": 0.011415498491617973,
+    "improvement": 0.0017705383175215146,
+    "ratio": 1.1835713456108055
+  },
+  {
+    "seed": 11,
+    "grid": 16,
+    "hermite": 4,
+    "time": 65.0,
+    "time_window": [
+      45.0,
+      65.0
+    ],
+    "baseline_gain": 0.010035760530187746,
+    "optimized_gain": 0.011415498779720031,
+    "improvement": 0.0013797382495322856,
+    "ratio": 1.1374821813834646
+  },
+  {
+    "seed": 23,
+    "grid": 16,
+    "hermite": 4,
+    "time": 65.0,
+    "time_window": [
+      45.0,
+      65.0
+    ],
+    "baseline_gain": 0.009481373438607419,
+    "optimized_gain": 0.011415498728206405,
+    "improvement": 0.0019341252895989855,
+    "ratio": 1.2039921011573467
+  },
+  {
+    "seed": 7,
+    "grid": 16,
+    "hermite": 4,
+    "time": 70.0,
+    "time_window": [
+      50.0,
+      70.0
+    ],
+    "baseline_gain": 0.010519457786630285,
+    "optimized_gain": 0.012453823949551862,
+    "improvement": 0.0019343661629215771,
+    "ratio": 1.1838845881752633
+  },
+  {
+    "seed": 11,
+    "grid": 16,
+    "hermite": 4,
+    "time": 70.0,
+    "time_window": [
+      50.0,
+      70.0
+    ],
+    "baseline_gain": 0.010939769250976812,
+    "optimized_gain": 0.01245382412986464,
+    "improvement": 0.0015140548788878279,
+    "ratio": 1.138399160361873
+  },
+  {
+    "seed": 23,
+    "grid": 16,
+    "hermite": 4,
+    "time": 70.0,
+    "time_window": [
+      50.0,
+      70.0
+    ],
+    "baseline_gain": 0.01032057770590944,
+    "optimized_gain": 0.012453824026436135,
+    "improvement": 0.0021332463205266956,
+    "ratio": 1.2066983439604573
+  }
+]

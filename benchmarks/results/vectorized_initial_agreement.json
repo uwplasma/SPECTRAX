@@ -1,0 +1,23 @@
+{
+  "rows": [
+    {
+      "grid": 12,
+      "controls": 0,
+      "max_absolute_difference": 0.0
+    },
+    {
+      "grid": 16,
+      "controls": 8,
+      "max_absolute_difference": 4.440892098500626e-16
+    },
+    {
+      "grid": 32,
+      "controls": 128,
+      "max_absolute_difference": 6.497413668604471e-16
+    }
+  ],
+  "source_sha256": [
+    "4ebe902c08ddf91334d9aab9197f509bbbff62d59d17e76021b6c4bd2ae629b6",
+    "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70"
+  ]
+}

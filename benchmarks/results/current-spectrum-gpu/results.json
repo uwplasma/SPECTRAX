@@ -1,0 +1,71 @@
+{
+  "grid": 24,
+  "hermite": 6,
+  "final_time": 20.0,
+  "steps": 200,
+  "controls": 8,
+  "device": "NVIDIA RTX A4000",
+  "jax_version": "0.9.2",
+  "preconditioner": "spectrum",
+  "solvax_version": "0.20.0",
+  "source_sha256": {
+    "example": "0e3cc41a29eb5bd77b1228c31b5225d2c20daaf84ddd2199a884c43f6952b89e",
+    "phase_control": "c44b2cb5f86d2b24583b06d3466efff4e306f65b998a5414ece6a78f500972ad",
+    "plasma_solver": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+    "least_squares": "a9cf144746a264170873d35e23e59b2418a48c63d1df80ab8eec7db162cf96ea"
+  },
+  "compile_seconds": 68.6216988149099,
+  "solve_seconds": 67.7216701360885,
+  "xla_buffer_bytes": 144034485,
+  "gpu_peak_after_solve_bytes": 270618112,
+  "converged": true,
+  "iterations": 4,
+  "accepted_steps": 4,
+  "rejected_steps": 0,
+  "linear_iterations": 21,
+  "gradient_norm": 2.0520641624398908e-10,
+  "initial_relative_current_error": 0.14899442300330903,
+  "final_relative_current_error": 1.6668954018365987e-09,
+  "phase_rms_error": 4.796519793862855e-09,
+  "adjoint_dot_error": 4.228388472693467e-18,
+  "directional_ad": -0.007372810693190058,
+  "directional_fd": -0.007372810686950143,
+  "initial_energy_constraint_error": 0.0,
+  "reference_phase": [
+    -0.5002747808138528,
+    2.675816010130509,
+    -1.420816769549856,
+    -2.76429614645049,
+    -1.190390559076112,
+    1.370898406505023,
+    1.7653588151890123,
+    0.24315824144555664
+  ],
+  "initial_phase": [
+    -0.4797591204619423,
+    3.4916645343164863,
+    -0.6859841223982965,
+    -3.0704803925230904,
+    -1.36917226573998,
+    1.0544678906849678,
+    2.1071946297321884,
+    0.2095195780181861
+  ],
+  "optimized_phase": [
+    -0.5002747806084047,
+    2.6758160195798175,
+    -1.4208167610686777,
+    -2.764296148129457,
+    -1.1903905603388052,
+    1.3708984080524789,
+    1.7653588191867051,
+    0.24315824148162854
+  ],
+  "cost_history": [
+    0.011099669043044491,
+    0.00023612901787171774,
+    7.915130308018014e-08,
+    1.3146620807609947e-12,
+    1.389270140331998e-18
+  ]
+}

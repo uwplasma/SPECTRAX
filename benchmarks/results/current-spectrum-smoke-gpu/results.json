@@ -1,0 +1,59 @@
+{
+  "grid": 12,
+  "hermite": 3,
+  "final_time": 0.2,
+  "steps": 4,
+  "controls": 4,
+  "device": "NVIDIA RTX A4000",
+  "jax_version": "0.9.2",
+  "preconditioner": "spectrum",
+  "solvax_version": "0.20.0",
+  "source_sha256": {
+    "example": "0e3cc41a29eb5bd77b1228c31b5225d2c20daaf84ddd2199a884c43f6952b89e",
+    "phase_control": "c44b2cb5f86d2b24583b06d3466efff4e306f65b998a5414ece6a78f500972ad",
+    "plasma_solver": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+    "least_squares": "a9cf144746a264170873d35e23e59b2418a48c63d1df80ab8eec7db162cf96ea"
+  },
+  "compile_seconds": 51.64938589395024,
+  "solve_seconds": 0.6811222909018397,
+  "xla_buffer_bytes": 2105677,
+  "gpu_peak_after_solve_bytes": 83898112,
+  "converged": true,
+  "iterations": 4,
+  "accepted_steps": 4,
+  "rejected_steps": 0,
+  "linear_iterations": 12,
+  "gradient_norm": 1.6335012883155948e-10,
+  "initial_relative_current_error": 0.1439697916336827,
+  "final_relative_current_error": 1.2620792040343094e-09,
+  "phase_rms_error": 4.875575018946911e-09,
+  "adjoint_dot_error": 4.7704895589362195e-18,
+  "directional_ad": -0.006875970176605437,
+  "directional_fd": -0.006875970167755097,
+  "initial_energy_constraint_error": 0.0,
+  "reference_phase": [
+    -0.5002747808138528,
+    2.675816010130509,
+    -1.420816769549856,
+    -2.76429614645049
+  ],
+  "initial_phase": [
+    -0.4797591204619423,
+    3.4916645343164863,
+    -0.6859841223982965,
+    -3.0704803925230904
+  ],
+  "optimized_phase": [
+    -0.5002747807676257,
+    2.6758160178894186,
+    -1.4208167637510867,
+    -2.764296147571377
+  ],
+  "cost_history": [
+    0.010363650451523005,
+    0.00022992949337328008,
+    6.637741776069365e-08,
+    9.171732084958982e-13,
+    7.964219586279378e-19
+  ]
+}

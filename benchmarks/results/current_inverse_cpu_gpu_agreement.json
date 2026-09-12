@@ -1,0 +1,14 @@
+{
+  "cpu": "current-inverse-smoke-cpu/results.json",
+  "gpu": "current-inverse-smoke-gpu/results.json",
+  "absolute_differences": {
+    "initial_relative_current_error": 2.7755575615628914e-17,
+    "final_relative_current_error": 6.501007235088501e-18,
+    "phase_rms_error": 2.5334178907489174e-17,
+    "directional_ad": 8.673617379884035e-19,
+    "directional_fd": 2.6020852139652106e-14,
+    "initial_energy_constraint_error": 0.0
+  },
+  "iterations_equal": true,
+  "linear_iterations_equal": true
+}

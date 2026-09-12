@@ -1,0 +1,177 @@
+{
+  "mechanism-16h4.json.gz": {
+    "sha256_uncompressed": "3ceb557c13a19a5d519c32900ab14b5f02dc78ecd70baedb2ac8597d9e435326",
+    "grid": 16,
+    "hermite": 4,
+    "nu": 1.0,
+    "time": 70.0,
+    "steps": 700,
+    "source_sha256": {
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+      "spectrax/_energization.py": "8292997f56d5f38567804016585547221125b7cc11286f2f3a5c97ec1c58ccf2",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "benchmarks/energization_mechanism.py": "95595582d695ed7ffb24627f1129df49b039152f56d83a93d01f3d67869770ef"
+    }
+  },
+  "mechanism-24h12-collisionless.json.gz": {
+    "sha256_uncompressed": "57041ae0dd7fa7cc7b4670ffa2f4f0174be0ec4d8c36f892b9fc284c228a39a7",
+    "grid": 24,
+    "hermite": 12,
+    "nu": 0.0,
+    "time": 70.0,
+    "steps": 1400,
+    "source_sha256": {
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+      "spectrax/_energization.py": "8292997f56d5f38567804016585547221125b7cc11286f2f3a5c97ec1c58ccf2",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "benchmarks/energization_mechanism.py": "225f50345640cf3ca5972433f25ecedb2adc548259fe55cc9f23a0c103701039"
+    }
+  },
+  "mechanism-24h16-collisionless.json.gz": {
+    "sha256_uncompressed": "c82a6e6fe47397828164fdc9605021ecdab44c48cf2cf40c8bb1aecc7bc170e6",
+    "grid": 24,
+    "hermite": 16,
+    "nu": 0.0,
+    "time": 70.0,
+    "steps": 1400,
+    "source_sha256": {
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+      "spectrax/_energization.py": "8292997f56d5f38567804016585547221125b7cc11286f2f3a5c97ec1c58ccf2",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "benchmarks/energization_mechanism.py": "225f50345640cf3ca5972433f25ecedb2adc548259fe55cc9f23a0c103701039"
+    }
+  },
+  "mechanism-24h6.json.gz": {
+    "sha256_uncompressed": "581fbab76b2c1de9ff4c3a58bc2e3be173769104bc75f94fb6c6301b9c830dc9",
+    "grid": 24,
+    "hermite": 6,
+    "nu": 1.0,
+    "time": 70.0,
+    "steps": 1400,
+    "source_sha256": {
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+      "spectrax/_energization.py": "8292997f56d5f38567804016585547221125b7cc11286f2f3a5c97ec1c58ccf2",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "benchmarks/energization_mechanism.py": "95595582d695ed7ffb24627f1129df49b039152f56d83a93d01f3d67869770ef"
+    }
+  },
+  "mechanism-24h6-matched.json.gz": {
+    "sha256_uncompressed": "f81a23599cb243be1dfef03ced6aaef9382e5b30d1b31163538ce212d576cbf0",
+    "grid": 24,
+    "hermite": 6,
+    "nu": 10.0,
+    "time": 70.0,
+    "steps": 1400,
+    "source_sha256": {
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+      "spectrax/_energization.py": "8292997f56d5f38567804016585547221125b7cc11286f2f3a5c97ec1c58ccf2",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "benchmarks/energization_mechanism.py": "225f50345640cf3ca5972433f25ecedb2adc548259fe55cc9f23a0c103701039"
+    }
+  },
+  "mechanism-24h8.json.gz": {
+    "sha256_uncompressed": "4c3860c1b300cd6baaac9ffa2e24f6a79dc364c60d5d3b265a1f1c6c7ade9137",
+    "grid": 24,
+    "hermite": 8,
+    "nu": 1.0,
+    "time": 70.0,
+    "steps": 1400,
+    "source_sha256": {
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+      "spectrax/_energization.py": "8292997f56d5f38567804016585547221125b7cc11286f2f3a5c97ec1c58ccf2",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "benchmarks/energization_mechanism.py": "95595582d695ed7ffb24627f1129df49b039152f56d83a93d01f3d67869770ef"
+    }
+  },
+  "mechanism-24h8-collisionless.json.gz": {
+    "sha256_uncompressed": "c287c5f34b51118a9ce9d4a000fac183231a5c731c2d07b514dad883a3ea63bb",
+    "grid": 24,
+    "hermite": 8,
+    "nu": 0.0,
+    "time": 70.0,
+    "steps": 1400,
+    "source_sha256": {
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+      "spectrax/_energization.py": "8292997f56d5f38567804016585547221125b7cc11286f2f3a5c97ec1c58ccf2",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "benchmarks/energization_mechanism.py": "225f50345640cf3ca5972433f25ecedb2adc548259fe55cc9f23a0c103701039"
+    }
+  },
+  "mechanism-24h8-matched.json.gz": {
+    "sha256_uncompressed": "ddcbb84eec9bca2206567936b45c3ffc5b325cdce714cfd6b5794ebedda6116c",
+    "grid": 24,
+    "hermite": 8,
+    "nu": 35.0,
+    "time": 70.0,
+    "steps": 3500,
+    "source_sha256": {
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+      "spectrax/_energization.py": "8292997f56d5f38567804016585547221125b7cc11286f2f3a5c97ec1c58ccf2",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "benchmarks/energization_mechanism.py": "225f50345640cf3ca5972433f25ecedb2adc548259fe55cc9f23a0c103701039"
+    }
+  },
+  "mechanism-cpu-smoke.json.gz": {
+    "sha256_uncompressed": "3e3cf297a1f5f86a1cbea7041fe49f3d87baa405db07536cbaf93da5033bc58b",
+    "grid": 12,
+    "hermite": 3,
+    "nu": 1.0,
+    "time": 0.2,
+    "steps": 4,
+    "source_sha256": {
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+      "spectrax/_energization.py": "8292997f56d5f38567804016585547221125b7cc11286f2f3a5c97ec1c58ccf2",
+      "spectrax/_velocity_observables.py": "42976bcd1f938ba7f65673e03ee0f15b93e7969183ec390e9d214c068b9bc64b",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "benchmarks/energization_mechanism.py": "fb0d010f005e67a50ca5f16eb062a37ab52e56c25b19974234c4f99e695e22e9"
+    }
+  },
+  "mechanism-gpu-smoke.json.gz": {
+    "sha256_uncompressed": "e7f9f9ac1354a2cb5f3dbaa6454ab993e6dfb113cf6c7a235ee91665bf7136f5",
+    "grid": 12,
+    "hermite": 3,
+    "nu": 1.0,
+    "time": 0.2,
+    "steps": 4,
+    "source_sha256": {
+      "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+      "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+      "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+      "spectrax/_energization.py": "8292997f56d5f38567804016585547221125b7cc11286f2f3a5c97ec1c58ccf2",
+      "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+      "Examples/2D_phase_control.py": "ce96c34a72d289cba0a0680c7461c0bfbcdb6ba78951c33843bd855589846a70",
+      "benchmarks/energization_mechanism.py": "95595582d695ed7ffb24627f1129df49b039152f56d83a93d01f3d67869770ef"
+    }
+  }
+}

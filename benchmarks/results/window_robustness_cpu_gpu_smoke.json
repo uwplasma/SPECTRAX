@@ -1,0 +1,93 @@
+{
+  "cpu": [
+    {
+      "seed": 7,
+      "grid": 12,
+      "hermite": 3,
+      "time": 0.35000000000000003,
+      "time_window": [
+        0.05,
+        0.35000000000000003
+      ],
+      "baseline_gain": -4.050170738805694e-06,
+      "optimized_gain": -4.0406730123566534e-06,
+      "improvement": 9.497726449040206e-09,
+      "ratio": null
+    },
+    {
+      "seed": 7,
+      "grid": 12,
+      "hermite": 3,
+      "time": 0.4,
+      "time_window": [
+        0.1,
+        0.4
+      ],
+      "baseline_gain": -8.625395428628894e-06,
+      "optimized_gain": -8.6112210589601e-06,
+      "improvement": 1.4174369668792962e-08,
+      "ratio": null
+    },
+    {
+      "seed": 7,
+      "grid": 12,
+      "hermite": 3,
+      "time": 0.45,
+      "time_window": [
+        0.15000000000000002,
+        0.45
+      ],
+      "baseline_gain": -1.6436645348259054e-05,
+      "optimized_gain": -1.6418393643970425e-05,
+      "improvement": 1.8251704288629476e-08,
+      "ratio": null
+    }
+  ],
+  "gpu": [
+    {
+      "seed": 7,
+      "grid": 12,
+      "hermite": 3,
+      "time": 0.35000000000000003,
+      "time_window": [
+        0.05,
+        0.35000000000000003
+      ],
+      "baseline_gain": -4.050170738805693e-06,
+      "optimized_gain": -4.040673012356653e-06,
+      "improvement": 9.497726449040206e-09,
+      "ratio": null
+    },
+    {
+      "seed": 7,
+      "grid": 12,
+      "hermite": 3,
+      "time": 0.4,
+      "time_window": [
+        0.1,
+        0.4
+      ],
+      "baseline_gain": -8.625395428628888e-06,
+      "optimized_gain": -8.611221058960097e-06,
+      "improvement": 1.4174369668791268e-08,
+      "ratio": null
+    },
+    {
+      "seed": 7,
+      "grid": 12,
+      "hermite": 3,
+      "time": 0.45,
+      "time_window": [
+        0.15000000000000002,
+        0.45
+      ],
+      "baseline_gain": -1.6436645348259047e-05,
+      "optimized_gain": -1.641839364397042e-05,
+      "improvement": 1.8251704288626088e-08,
+      "ratio": null
+    }
+  ],
+  "max_absolute_difference": 6.776263578034403e-21,
+  "rtol": 1e-08,
+  "atol": 1e-13
+}

@@ -5,3 +5,4 @@ diffrax
 orthax
 matplotlib
 pandas
+solvax>=0.20.0,<0.21
