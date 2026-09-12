@@ -107,6 +107,17 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
 
     return dy_dt
 
+def _solver_args(parameters, Nx, Ny, Nz, Nn, Nm, Np, Ns):
+    """Share the physical RHS arguments between trajectory and terminal solves."""
+    return (Nx, Ny, Nz, Nn, Nm, Np, Ns, parameters["qs"], parameters["nu"], parameters["D"],
+            parameters["Omega_cs"], parameters["alpha_s"], parameters["u_s"],
+            parameters["Lx"], parameters["Ly"], parameters["Lz"],
+            parameters["kx_grid"], parameters["ky_grid"], parameters["kz_grid"],
+            parameters["k2_grid"], parameters["nabla"], parameters["collision_matrix"],
+            parameters["sqrt_n_plus"], parameters["sqrt_n_minus"],
+            parameters["sqrt_m_plus"], parameters["sqrt_m_minus"],
+            parameters["sqrt_p_plus"], parameters["sqrt_p_minus"])
+
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
                timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True):
@@ -148,14 +159,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     time = jnp.linspace(0, parameters["t_max"], timesteps)
     
     # Arguments for the ODE system.
-    args = (Nx, Ny, Nz, Nn, Nm, Np, Ns, parameters["qs"], parameters["nu"], parameters["D"],
-            parameters["Omega_cs"], parameters["alpha_s"], parameters["u_s"], 
-            parameters["Lx"], parameters["Ly"], parameters["Lz"],
-            parameters["kx_grid"], parameters["ky_grid"], parameters["kz_grid"], 
-            parameters["k2_grid"], parameters["nabla"], parameters["collision_matrix"], 
-            parameters["sqrt_n_plus"], parameters["sqrt_n_minus"],
-            parameters["sqrt_m_plus"], parameters["sqrt_m_minus"],
-            parameters["sqrt_p_plus"], parameters["sqrt_p_minus"])
+    args = _solver_args(parameters, Nx, Ny, Nz, Nn, Nm, Np, Ns)
     
 
     controllers = {

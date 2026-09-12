@@ -1,0 +1,190 @@
+# Differentiable plasma control in SPECTRAX
+
+SPECTRAX can expose useful gradients without introducing a separate plasma adjoint implementation. The recommended first showcase is **phase-only control of electron energization in a two-species, 2D3V Orszag–Tang-type plasma**, with identical initial magnetic spectra and initial energies. It combines a constrained, interpretable inverse-design problem with a demanding velocity-space discretization, while keeping the numerical addition small.
+
+The implementation adds `simulation_final`, a terminal-state API using the existing Vlasov–Maxwell RHS and classical fixed-step RK4. The default uses SOLVAX's checkpointed recurrence, with JVP and VJP support. An optional fixed checkpoint count selects Diffrax's binomial reverse scheduler for the same RK4 scheme. A small uncheckpointed path provides a reference. Neither changes the collision operator, Fourier transforms, Maxwell equations, or Hermite coupling.
+
+This is an exact discrete-gradient implementation up to floating-point error. It is not an implementation of the local block-sweep adjoint of Shu et al., and it does not claim resolution-independent memory or a globally optimal optimizer. The distinction is essential to a defensible publication.
+
+## Repository and example context
+
+The implementation starts from SPECTRAX `main` at `2afb1f621378d990940feed5222accf377279c07`. The existing open PR #36 exposes Diffrax adjoint selection and a small 1D inverse problem. The new terminal solve complements that work rather than changing its branch. Multiple open midpoint and SOLVAX PRs are relevant to future implicit integration but are not prerequisites for this example.[^1]
+
+The supplied `2D_Orszag_Tang.py` and TOML use DG/Legendre coefficients, `Omega_ce`, species masses, and `N_DG`. Current main uses a real Fourier transform in x, Fourier transforms in y/z, `Omega_cs`, and `mi_me`. The new example therefore reconstructs the same type of electron-ion vortex using main's coefficient layout. It preserves the supplied domain lengths, mass ratio, thermal scales, guide field, and perturbation scale, with smaller numerical defaults for reproducibility. The supplied 128² × 6³ × two-species, long-time case remains a target for accelerator runs, not a completed local benchmark.
+
+## Method selection
+
+Let the stored plasma state have size S, the number of time steps be N, the number of controls be P, and the number of inner nonlinear iterations be M. These are different scaling axes. A full reverse tape can grow with S, N, and M simultaneously. Returning a full trajectory also costs O(NS), even if its adjoint is otherwise memory efficient.
+
+| Method | Differentiated object | Retained state/workspace | Decision for this PR |
+|---|---|---|---|
+| Ordinary reverse AD through fixed RK4 | Executed discrete steps | O(NS), with substantial stage/RHS factors | Small reference only |
+| SOLVAX segmented replay | Same discrete RK4 map | O(S(ceil(N/C)+C)) plus one-step workspace | Default; supports JVP and VJP |
+| Fixed-budget binomial replay | Same discrete RK4 map | O(KS) plus one-step workspace | `checkpoints=K`; reverse mode |
+| Forward AD | Same discrete RK4 map | One tangent per direction; batched Jacobian grows with P | Verification and small P |
+| Continuous backsolve adjoint | Discretized continuous sensitivity equations | Small state footprint, but different gradient | Not selected |
+| Implicit differentiation per time step | Converged discrete step equation | No nonlinear-iteration tape; matrix-free Krylov workspace | Appropriate future implicit path |
+| Reverse local block sweeps | Executed ordered block-update algorithm | Depends on replay and block locality | Requires a new suitable primal decomposition |
+| Localized SOLVAX Hermite/block adjoint | Selected outputs under structural/localization assumptions | Potentially small retained window | No general validity for nonlinear transient plasma |
+
+SOLVAX 0.20.0 already supplies `checkpointed_fori_loop`; no SOLVAX source modification is necessary here. Its segment width C defaults to ceil(sqrt(N)). `jax.checkpoint` around each RK4 step prevents a segment from retaining all the FFT and force-evaluation intermediates of all its stages. Those intermediates are rebuilt locally when needed. This implementation retains full physical states, not dense state Jacobians.[^2][^3]
+
+A two-level schedule is not a hard memory bound in N. For that requirement, `checkpoints=K` uses Diffrax's existing scheduler, with a terminal-only save. Increasing K trades memory for fewer replays. An integer integration clock executes exactly N updates; physical time and time-step factors remain differentiable inside the vector field. The fixed-budget path supports reverse mode; the default SOLVAX path supplies forward mode as well.[^4]
+
+### What “differentiate the solver” means here
+
+Shu et al. study ordered local implicit updates, concretely vertex block descent. Their finite-depth reverse construction must account for the dependence of local systems on the state and for the derivatives of safeguards. The lesson that transfers is to differentiate the actual finite numerical algorithm. Their local-block construction and reported speedups do not transfer automatically to a global spectral Vlasov–Maxwell RHS or an explicit Runge–Kutta integrator. Equation-level implicit differentiation can also be matrix-free; dense assembly is not an inherent requirement.[^5]
+
+SPECTRAX's nonlinear force evaluation uses real-space multiplication and Fourier transforms, while Hermite coupling connects velocity moments. Merely declaring velocity modes to be “blocks” does not produce the paper's primal update structure. An efficient block-implicit split would require a new consistency/stability study and an adjoint of each executed solve. That is a larger numerical-method contribution than the minimal API requested here.
+
+For a nonlinear implicit midpoint step, an eventual SOLVAX integration could differentiate
+
+`R(y_next, y, theta) = y_next - y - dt*f((y+y_next)/2, theta) = 0`.
+
+The reverse action solves the transposed linearized step residual and propagates its dependence on the previous state and parameters. SOLVAX `root_solve` with an explicitly supplied matrix-free tangent solver is relevant. Its default dense tangent solve is inappropriate for this plasma state size. A root derivative is only the intended derivative when the step root is converged; it is not automatically the derivative of a Newton iteration stopped after a fixed budget. Complex Fourier coefficients must also be treated as real-linear unknowns because inverse real FFTs and nonlinear products are not holomorphic. These are reasons to avoid introducing an unverified custom VJP merely to make a dynamic Newton loop traceable.[^2]
+
+Skene and Burns provide a closer spectral-PDE precedent: high-level discrete adjoints composed with efficient transform and structured-solve derivatives. Their work also illustrates why a differentiable spectral solver is not itself a claim of scientific novelty. Here the useful contribution is the combination of a kinetic plasma model, constrained physical optimization, a small API, and controlled memory measurements.[^6]
+
+## Physics design
+
+Start from a periodic 50 × 50 domain, guide field Bz=1, in-plane field amplitude 0.2, electron cyclotron normalization 0.5, and mass ratio 25. Both species have an Orszag–Tang in-plane flow of amplitude 0.02. Electrons carry the initial out-of-plane current; ions have zero out-of-plane drift. Initial electric fields vanish and both densities are uniform and equal.
+
+The control adds distinct oblique magnetic-potential modes. For a wavevector `(i,j)`, write
+
+`A_z^(i,j) = a_(i,j)/|k_(i,j)| * cos(k_(i,j)·x + theta_(i,j))`,
+
+with fixed `a_(i,j)=0.06/sqrt(i²+j²)`. Construct `B_perp=(d_y A_z,-d_x A_z)` and `Jz/Omega_ce=-laplacian(A_z)`. Set the electron z drift to `-Jz` at unit density. Mode amplitudes, the guide field, and the original vortex flow do not change during optimization. Only the phases theta change.
+
+Distinct resolved Fourier modes are orthogonal. Phase changes therefore preserve every added magnetic-mode power and the volume integral of B_perp². They also preserve the current spectrum and the volume integral of the squared electron z drift. Since the thermal scales, uniform density, and in-plane flows are fixed, the integrated initial kinetic energies of both species are fixed as well. The tests verify these energy constraints, the Fourier spectrum, solenoidal magnetic fields, and the initial Ampere relation. Initial electric Gauss consistency follows from E=0 and equal species density.
+
+This prevents the easiest unphysical optimization shortcut: injecting more initial energy. The control is still deliberately broad. Phase changes alter the spatial placement of structures, local stresses, and alignment with the fixed vortex. They do not preserve every higher-order spatial statistic or all cross correlations. Those changes are the physical mechanism available to the optimizer.
+
+The objective is
+
+`L(theta) = -[K_e(T;theta)-K_e(0;theta)] / W_B,perp(0;theta)`.
+
+It maximizes **net electron kinetic-energy gain**, normalized by the initial fluctuating magnetic energy. The guide-field energy is excluded from the denominator. Electric, magnetic, electron, and ion energy changes must be plotted together, because ion flow and electric fields can participate in the transfer. The objective does not establish that all electron energy came from magnetic energy; nor is it an entropy-production or irreversible-heating diagnostic.
+
+Kinetic current sheets and particle energization are physically connected, but their association alone does not identify the dissipation mechanism. TenBarge and Howes studied self-consistent current sheets and collisionless damping in kinetic turbulence; Zhou, Liu, and Loureiro emphasize the role of electron kinetics and Hermite-space transfer. These motivate current and velocity-space diagnostics, rather than equating a strong Jz structure with heating.[^7][^8]
+
+### Alternative objectives
+
+The final-state API does not encode an energy loss. Any differentiable real scalar functional of `(Ck,Fk)` is admissible: electric energy, magnetic energy, species kinetic energy, regional current energy, a smooth weighted shape mismatch, or current intermittency such as `<Jz^4>`. Use correct Parseval weights for real FFTs; the last stored x mode receives weight one only on even grids.
+
+For a current-shape showcase, use a physically specified region or a smooth target and compare initial as well as final current maps. A short-horizon target-matching problem can be solved mostly by arranging the initial structure. Avoid presenting that as nonlinear control unless the final evolution adds a demonstrated benefit. A current-concentration ratio can also be manipulated through its denominator, so report the constituent numerator and denominator separately.
+
+Phase-only electron energization is preferable for the first example because it keeps the initial energy constraints transparent and the outcome scalar. An inverse problem recovering synthetic parameters is excellent for API verification, but is less compelling as a lead physics result. A reconnection-control example could be more application-specific, at the cost of additional equilibrium, boundary-condition, and reconnection-rate validation. Differentiable wavepacket discovery is already established prior art and should not be claimed as a new category of capability.[^9]
+
+## API and reproduction
+
+Install the repository and example dependencies:
+
+```bash
+python -m pip install -e .
+python -m pip install scipy pytest
+```
+
+A scalar loss is an ordinary JAX function:
+
+```python
+import jax
+import jax.numpy as jnp
+from spectrax import simulation_final
+
+def loss(theta):
+    parameters = make_initial_conditions(theta)
+    Ck, Fk = simulation_final(
+        parameters, steps=1000, Nx=64, Ny=64,
+        Nn=6, Nm=6, Np=6, checkpoints=16,
+    )
+    return my_real_scalar_observable(Ck, Fk, parameters)
+
+value, gradient = jax.jit(jax.value_and_grad(loss))(theta)
+```
+
+`make_initial_conditions` and `my_real_scalar_observable` are application functions, not new SPECTRAX APIs. Remove `checkpoints=16` to use the SOLVAX path and enable `jax.jvp` as well. `checkpoint_size` tunes the SOLVAX segment width. `checkpointing=False` selects the taped reference for small cases. Static resolutions and step counts should be captured in a closure or marked static in an outer JIT.
+
+The solver returns only one coefficient snapshot, with no leading time dimension and no diagnostic dictionary. It does not retain or return the initial conditions again. A large dense Jacobian is unnecessary for scalar optimization: use `value_and_grad`. For a few outputs and many inputs, use VJPs or reverse mode; for one or two input directions and many outputs, use JVPs. To optimize a trajectory integral, the appropriate extension is to accumulate a small quadrature state during integration rather than saving all full states. That extension is not part of this terminal-only PR.
+
+Run the small reproducible optimization and refinement:
+
+```bash
+python Examples/2D_phase_control.py --grid 16 --hermite 4 --time 50 \
+    --steps 500 --iterations 30 --output phase-control
+python benchmarks/validate_phase_control.py phase-control
+python benchmarks/gradient_scaling.py --output gradient-scaling
+```
+
+For an NVIDIA GPU, install a CUDA-enabled JAX build appropriate to the machine and run with `JAX_PLATFORMS=cuda`. The benchmark records the actual device. An indicative scale-up is:
+
+```bash
+JAX_PLATFORMS=cuda python Examples/2D_phase_control.py \
+    --grid 64 --hermite 6 --time 100 --steps 2000 \
+    --controls 16 --iterations 40 --output phase-control-gpu
+JAX_PLATFORMS=cuda python benchmarks/gradient_scaling.py \
+    --grids 16 32 64 --steps 64 256 1024 --controls 2 8 16 \
+    --hermite 6 --output gradient-scaling-gpu
+```
+
+These are experiment configurations, not assertions of physical resolution or stability. Fixed-step RK4 has no automatic error estimate. Increase the step count as spatial/Hermite resolution and the fastest physical frequency require. If explicit stability dominates total cost, assess an implicit or IMEX method in a separate measured comparison before changing the default.
+
+## Verification and publication evidence
+
+There are three independent questions: whether the derivative matches the finite algorithm; whether that algorithm approximates the chosen plasma model adequately; and whether the optimized physical outcome survives refinement and reasonable perturbations.
+
+The derivative tests compare SOLVAX segment sizes, including a non-dividing segment length, against a taped reverse reference; compare fixed-budget reverse mode against the same reference; compare JVP/VJP results; and test finite differences through initial coefficients, collisionality, and terminal time. Random complex coefficients exercise both real and imaginary dependencies. A separate test checks RK4 convergence against high-accuracy Dopri8. The 2D example checks all four energy classes and a nonlinear current functional. These checks support first-order discrete gradients; they do not certify higher-order derivatives of every scheduler.
+
+The example records a finite-difference step-size sweep. Agreement should improve as truncation error decreases and eventually worsen as cancellation appears. The refinement script independently increases spatial resolution, Hermite resolution, and time steps at the saved baseline and optimized controls. It records objective values, gradients, energy errors, and a Hermite-tail indicator. A small tail indicator is useful evidence, not a proof of convergence or positivity of a truncated distribution.
+
+The benchmark compares identical equations, initial states, RK4 step counts, and control vectors. Every fresh worker compiles once, warms up, synchronizes, and reports the median of three runs. Finite differences are serial centered differences, requiring 2P primal solves; the forward baseline uses `jacfwd`, which may trade additional memory for batching. No universal factor-P speedup is assumed. Gradient agreement is checked before a comparison is accepted.
+
+Three memory quantities are kept separate: XLA's compiled buffer estimate; whole-process peak resident memory, which includes compilation and host allocations; and a GPU allocator peak when available. JAX's profiling documentation explains why live device buffers and process memory are distinct; a device-memory snapshot alone is not a peak-in-time measurement.[^10] Run timing experiments on an otherwise idle machine and report hardware, precision, package versions, and source hashes. Repeat across GPU sizes only when actual hardware is available.
+
+The publication should show (1) baseline and optimized current maps with one shared color scale; (2) optimization history and all energy-transfer channels; (3) gradient agreement against finite differences; and (4) separate state-size, rollout-length, and control-count scaling. Report the selected checkpoint count in the figure caption. Avoid a memory-axis label that suggests measured GPU peak when the plotted quantity is XLA's static buffer estimate.
+
+A fair advantage claim is that scalar-objective gradients scale substantially better with control count than black-box finite differences, while checkpointing removes trajectory-tape storage growth. Existing differentiable plasma and spectral codes remain relevant comparators. A nondifferentiable code with a hand-written adjoint can also obtain adjoint complexity; differentiation availability and implementation effort are part of the comparison, not a unique law of JAX.
+
+Longer turbulent horizons introduce additional difficulties: sensitivity to initial conditions, finite-time gradient conditioning, unresolved spatial/velocity cascades, and possible overfitting to one time or numerical truncation. A robust final physics claim should include several initial phase seeds, a nearby terminal-time window, and convergence of the optimization benefit. The present scripts make these experiments straightforward but do not silently substitute small CPU demonstrations for completed GPU or long-time turbulence studies.
+
+## Verified local results and source review
+
+The checked-in CPU results use float64/complex128, JAX 0.9.2 and SOLVAX 0.20.0. They are numerical-method and finite-time control demonstrations, not NVIDIA GPU measurements. The optimization at 16² spatial resolution, 4³ Hermite modes per species, T=50 and 500 RK4 steps converged in 18 L-BFGS iterations.
+
+| Resolution | Baseline electron gain / initial fluctuating magnetic energy | Optimized gain | Relative improvement |
+|---|---:|---:|---:|
+| 16², 4³, 500 steps | 0.00872138 | 0.01007511 | 15.522% |
+| 16², 4³, 1000 steps | 0.00871894 | 0.01007263 | 15.526% |
+| 24², 4³, 1000 steps | 0.00873132 | 0.01009057 | 15.568% |
+| 16², 6³, 1000 steps | 0.00865428 | 0.01000272 | 15.581% |
+| 24², 6³, 1000 steps | 0.00866430 | 0.01001854 | 15.630% |
+
+The refined cases re-evaluate the same saved controls; they do not re-optimize them. The best directional finite-difference agreement in the saved sweep is about 2.5e-9 relative. Initial-energy differences between the baseline and optimized controls are zero to the reported floating-point precision. Total-energy error is about 1.2e-9 relative on the optimization discretization and 3.4e-11 after time refinement. These conservation errors are not bounds on the physical-model error.
+
+![Phase-only energy control](figures/phase_control.png)
+
+*Finite-time control at the native 16² plotting resolution. Shared color limits permit a direct current comparison. The energy-transfer panel includes ions and electric fields so that electron energization is not misidentified as exclusively magnetic conversion.*
+
+![Gradient and resolution validation](figures/gradient_validation.png)
+
+*The finite-difference sweep concerns one normalized random direction at the initial controls. Independent spatial, velocity and time refinement preserves the benefit, while changing the individual objective values and leaving a nonzero refined gradient at the coarse-grid optimum.*
+
+![Gradient scaling](figures/gradient_scaling.png)
+
+*Memory panels show XLA compiler buffer estimates, not measured GPU peaks. State size includes complex Hermite and field coefficients. The fixed-budget curve uses eight checkpoints; its buffer estimate is 12.57 MiB for 16, 64 and 256 time steps. At 256 steps the taped estimate is 1593.67 MiB, and the SOLVAX estimate is 17.49 MiB. Both replay strategies retain full plasma states; neither makes memory independent of spatial/velocity resolution. CPU timing is illustrative; the publication timing run should use an idle NVIDIA GPU.*
+
+The source review covered the coefficient layouts, physical parameter propagation, checkpoint selection, final-time differentiation, complex real-linear derivatives, conserved initial controls, normalization, time convergence, and benchmark timing/memory definitions. All eight repository tests pass, and the repository's fatal lint checks pass. Diffrax emits its general complex-dtype support warning; direct complex-valued plasma tests agree across the tested first-order derivative paths. The fixed-budget path intentionally does not promise JVP support. RK4 remains explicit and requires a converged stable time step.
+
+Raw CPU results and the saved control phases are in `benchmarks/results/`. PNG previews and vector PDF versions are in `docs/figures/`. The new numerical module has 112 lines including documentation, plus a shared RHS-argument helper and one public export. Most of the PR consists of examples, tests, research documentation, and reproducible evidence. No new custom plasma derivative, nonlinear solver, or SOLVAX implementation is introduced.
+
+## Sources
+
+[^1]: UW Plasma, [SPECTRAX repository](https://github.com/uwplasma/SPECTRAX), `main` revision above; [existing differentiability PR #36](https://github.com/uwplasma/SPECTRAX/pull/36). Supplied local Orszag–Tang Python and TOML files are additional configuration references.
+[^2]: UW Plasma, [SOLVAX](https://github.com/uwplasma/SOLVAX), release 0.20.0; inspected `src/solvax/autodiff.py` and `src/solvax/implicit.py` at `5a49926`. See [`checkpointed_fori_loop`](https://github.com/uwplasma/SOLVAX/blob/5a49926/src/solvax/autodiff.py) and [`root_solve`](https://github.com/uwplasma/SOLVAX/blob/5a49926/src/solvax/implicit.py).
+[^3]: JAX authors, [Gradient checkpointing with `jax.checkpoint`](https://docs.jax.dev/en/latest/gradient-checkpointing.html), official documentation.
+[^4]: Diffrax authors, [Adjoints](https://docs.kidger.site/diffrax/api/adjoints/) and [SaveAt](https://docs.kidger.site/diffrax/api/saveat/), official documentation. References include Griewank and Walther, Algorithm 799: Revolve (2000), DOI [10.1145/347837.347846](https://doi.org/10.1145/347837.347846), and Stumm and Walther, New Algorithms for Optimal Online Checkpointing (2010), DOI [10.1137/080742439](https://doi.org/10.1137/080742439).
+[^5]: Lei Shu et al., [Differentiate the Solver, Not the Equation: Reverse-Sweep Adjoints for Block Implicit Simulation](https://arxiv.org/html/2608.08559v1), arXiv:2608.08559v1, 9 August 2026. Preprint; scoped to the solver structures described in the paper.
+[^6]: Calum S. Skene and Keaton J. Burns, [Fast automated adjoints for spectral PDE solvers](https://arxiv.org/html/2506.14792v1), arXiv:2506.14792v1, 2025; arXiv also links the related journal DOI [10.1073/pnas.2530440123](https://doi.org/10.1073/pnas.2530440123).
+[^7]: J. M. TenBarge and G. G. Howes, [Current Sheets and Collisionless Damping in Kinetic Plasma Turbulence](https://arxiv.org/abs/1304.2958), 2013.
+[^8]: Muni Zhou, Zhuo Liu, and Nuno F. Loureiro, [Intermittency and electron heating in kinetic-Alfvén-wave turbulence](https://arxiv.org/abs/2208.02441), 2022.
+[^9]: A. S. Joglekar and A. G. R. Thomas, [Unsupervised discovery of nonlinear plasma physics using differentiable kinetic simulations](https://doi.org/10.1017/S0022377822000939), Journal of Plasma Physics 88, 905880608 (2022); [accessible preprint](https://arxiv.org/html/2206.01637v2). See also Joglekar et al., [Differentiable Programming for Plasma Physics: From Diagnostics to Discovery and Design](https://arxiv.org/abs/2603.11231), 2026 preprint.
+[^10]: JAX authors, [Profiling device memory](https://docs.jax.dev/en/latest/device_memory_profiling.html), official documentation.
