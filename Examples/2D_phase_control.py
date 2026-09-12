@@ -35,13 +35,13 @@ def setup(phases, grid=16, hermite=4, final_time=20.0):
     k = 2 * jnp.pi / 50.0
     bx, by = -0.2 * jnp.sin(Y), 0.2 * jnp.sin(2 * X)
     curl = 0.2 * k * (jnp.cos(Y) + 2 * jnp.cos(2 * X))
-    for phase, (i, j) in zip(phases, modes):
-        radius = np.hypot(i, j)
-        amplitude = 0.06 / radius
-        angle = i * X + j * Y + phase
-        bx = bx - amplitude * j / radius * jnp.sin(angle)
-        by = by + amplitude * i / radius * jnp.sin(angle)
-        curl = curl + amplitude * k * radius * jnp.cos(angle)
+    i, j = np.asarray(modes[:len(phases)], dtype=float).reshape(-1, 2).T[:, :, None, None]
+    radius = np.hypot(i, j)
+    amplitude = 0.06 / radius
+    angle = i * X + j * Y + jnp.asarray(phases)[:, None, None]
+    bx = bx - jnp.sum(amplitude * j / radius * jnp.sin(angle), axis=0)
+    by = by + jnp.sum(amplitude * i / radius * jnp.sin(angle), axis=0)
+    curl = curl + jnp.sum(amplitude * k * radius * jnp.cos(angle), axis=0)
     zeros = jnp.zeros_like(X)
     velocity = jnp.stack((-0.02 * jnp.sin(Y), 0.02 * jnp.sin(X), zeros))
     velocities = jnp.stack((velocity.at[2].set(-0.5 * curl), velocity))[..., None]
