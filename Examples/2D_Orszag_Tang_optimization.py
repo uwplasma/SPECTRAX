@@ -341,12 +341,10 @@ def plot(paths, output):
             r = report["memory_resolution"]; S = [x["state_MiB"] for x in r]; ax = axes[1, 0]
             ax.loglog(S, [x["reverse_MiB"] for x in r], "o-", color=COLORS["initial"], label="reverse-mode gradient")
             ax.loglog(S, [x["forward_MiB"] for x in r], "o-", color=COLORS["muted"], label="forward solve")
-            for i, x in enumerate(r):   # alternate below the forward line and above the gradient line so neighbours never collide
-                below = i % 2 == 0
-                ax.annotate(f"{x['grid']}²×{x['hermite']}³, ×{x['reverse_MiB']/x['forward_MiB']:.1f}",
-                            (x["state_MiB"], x["forward_MiB"] if below else x["reverse_MiB"]), textcoords="offset points",
-                            xytext=(0, -6 if below else 6), ha="center", va="top" if below else "bottom", fontsize=6)
-            ax.set_ylim(min(x["forward_MiB"] for x in r) / 4, max(x["reverse_MiB"] for x in r) * 4)
+            for i, x in enumerate(r):   # above the gradient curve, at alternating heights, so no label crosses a line or a neighbour
+                ax.annotate(f"{x['grid']}²×{x['hermite']}³, ×{x['reverse_MiB']/x['forward_MiB']:.1f}", (x["state_MiB"], x["reverse_MiB"]),
+                            textcoords="offset points", xytext=(0, 7 if i % 2 == 0 else 17), ha="center", va="bottom", fontsize=6)
+            ax.set_ylim(min(x["forward_MiB"] for x in r) / 2, max(x["reverse_MiB"] for x in r) * 8)
             ax.set(title="(c) Workspace vs. state size (gradient/forward ratio)", xlabel="state size, MiB", ylabel="MiB"); ax.legend(frameon=False, fontsize=7)
             f = report["fd_step"]; ax = axes[1, 1]
             ax.loglog([x["step"] for x in f], [x["relative_error"] for x in f], "o-", color=COLORS["optimized"])
