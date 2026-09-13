@@ -319,7 +319,7 @@ def plot(paths, output):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from matplotlib.ticker import FixedLocator, NullLocator, ScalarFormatter
+    from matplotlib.ticker import FixedLocator, NullLocator, ScalarFormatter, StrMethodFormatter
 
     def data_ticks(ax, values):
         """Label a log x-axis at the measured values only, so minor-tick labels cannot collide."""
@@ -344,7 +344,7 @@ def plot(paths, output):
                             color=COLORS[run], label=f"{run} controls")
                 ax.axvline(0, color=COLORS["muted"], lw=0.8)
                 ax.set(title=f"'{name}'", xlabel="d ln|objective| / d ln(parameter)"); ax.grid(axis="y", visible=False)
-                ax.locator_params(axis="x", nbins=4); ax.ticklabel_format(axis="x", style="sci", scilimits=(-2, 2))
+                ax.locator_params(axis="x", nbins=4); ax.xaxis.set_major_formatter(StrMethodFormatter("{x:.2g}"))
             axes[0].set_yticks(y, labels); axes[0].invert_yaxis(); axes[0].legend(frameon=False, fontsize=7)
             s = report["source_settings"]
             fig.suptitle(f"Sensitivities at the '{s['objective']}' controls, {s['grid']}² × {s['hermite']}³, {report['snapshots']} snapshots"
