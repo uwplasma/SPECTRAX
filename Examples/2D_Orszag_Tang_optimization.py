@@ -57,7 +57,7 @@ def wavevectors(M):
     return jnp.array(pairs, dtype=float) * 2 * jnp.pi / Lx
 
 
-def setup(theta, grid, hermite, t_max, nu=1.0, fixed_amplitudes=False):
+def setup(theta, grid, hermite, t_max, nu=1.0, fixed_amplitudes=False, tolerance=1e-7):
     """Initial condition from controls ``theta = (log amplitudes, phases)``, or phases only, at fixed in-plane magnetic energy."""
     M = theta.size if fixed_amplitudes else theta.size // 2
     k = wavevectors(M)
@@ -75,7 +75,7 @@ def setup(theta, grid, hermite, t_max, nu=1.0, fixed_amplitudes=False):
     F = jnp.concatenate([jnp.zeros((3, grid, grid)), jnp.stack([Bx, By, jnp.ones_like(X)])])[..., None]
     Ck_0 = compute_C_nmp(Us, alpha_s, u_s, hermite, hermite, hermite, 2).reshape(2 * hermite**3, grid, grid // 2 + 1, 1)
     return dict(Lx=Lx, Ly=Ly, Lz=1.0, mi_me=mi_me, qs=jnp.array([-1.0, 1.0]), Omega_cs=jnp.array([Omega_ce, Omega_ce / mi_me]),
-                alpha_s=alpha_s, u_s=u_s, nu=nu, D=0.0, t_max=t_max, ode_tolerance=1e-7,
+                alpha_s=alpha_s, u_s=u_s, nu=nu, D=0.0, t_max=t_max, ode_tolerance=tolerance,
                 Ck_0=Ck_0, Fk_0=jnp.fft.rfftn(F, axes=(-1, -3, -2), norm="forward"))
 
 
@@ -111,7 +111,7 @@ OBJECTIVES = {
 
 def make_loss(args):
     objective = OBJECTIVES[args.objective]
-    return lambda theta: objective(solve(setup(theta, args.grid, args.hermite, args.t_max, fixed_amplitudes=args.fixed_amplitudes),
+    return lambda theta: objective(solve(setup(theta, args.grid, args.hermite, args.t_max, fixed_amplitudes=args.fixed_amplitudes, tolerance=args.tolerances[0]),
                                          args.grid, args.hermite, args.checkpoints))
 
 
@@ -174,7 +174,7 @@ def optimize(args):
                   evaluations=int(result.nfev), message=str(result.message), history=history, accepted=accepted,
                   compile_seconds=compile_seconds, seconds=time.perf_counter() - start, runs={})
     for name, theta in (("initial", theta0), ("optimized", jnp.asarray(result.x))):
-        output = solve(setup(theta, args.grid, args.hermite, args.t_max, fixed_amplitudes=args.fixed_amplitudes),
+        output = solve(setup(theta, args.grid, args.hermite, args.t_max, fixed_amplitudes=args.fixed_amplitudes, tolerance=args.tolerances[0]),
                        args.grid, args.hermite, timesteps=41)
         report["runs"][name] = dict(
             time=np.asarray(output["time"]).tolist(),
@@ -200,8 +200,9 @@ def validate(args):
         for tolerance in args.tolerances:
             values = {}
             for label in ("initial", "optimized"):
-                parameters = setup(jnp.asarray(source[label]), grid, hermite, s["t_max"], fixed_amplitudes=s.get("fixed_amplitudes", False))
-                output = solve(parameters | dict(ode_tolerance=tolerance), grid, hermite)
+                parameters = setup(jnp.asarray(source[label]), grid, hermite, s["t_max"], fixed_amplitudes=s.get("fixed_amplitudes", False),
+                                   tolerance=tolerance)
+                output = solve(parameters, grid, hermite)
                 energy = np.asarray(output["total_energy"])
                 values[label] = float(OBJECTIVES[s["objective"]](output))
                 rows.append(dict(grid=grid, hermite=hermite, tolerance=tolerance, controls=label, objective=values[label],
@@ -255,7 +256,7 @@ def benchmark(args):
         report["memory_steps"].append(row)
         print("memory vs steps:", row)
     for grid, hermite in args.resolutions:
-        loss = lambda th: OBJECTIVES[args.objective](solve(setup(th, grid, hermite, args.t_max, fixed_amplitudes=args.fixed_amplitudes),
+        loss = lambda th: OBJECTIVES[args.objective](solve(setup(th, grid, hermite, args.t_max, fixed_amplitudes=args.fixed_amplitudes, tolerance=args.tolerances[0]),
                                                            grid, hermite, args.checkpoints))
         row = dict(grid=grid, hermite=hermite, state_MiB=(2 * hermite**3 + 6) * grid * (grid // 2 + 1) * 16 / 2**20,
                    forward_MiB=workspace(loss, theta), reverse_MiB=workspace(jax.value_and_grad(loss), theta))
@@ -299,7 +300,7 @@ def plot(paths, output):
                     axes[1, 0].plot(t, np.array(r["jz_peak"]) / r["jz_peak"][0], color=color, ls=":", label=f"{run}: peak $J_z$")
                 axes[1, 1].plot(t, np.array(r["kinetic"])[:, 0] - r["kinetic"][0][0], color=color, label=f"{run}, electrons")
                 axes[1, 1].plot(t, np.array(r["kinetic"])[:, 1] - r["kinetic"][0][1], color=color, ls="--", label=f"{run}, ions")
-            axes[1, 0].set(title="(d) In-plane magnetic energy and peak $J_z$, relative to $t=0$", xlabel="$t\\,\\omega_{pe}$")
+            axes[1, 0].set(title="(d) Relative to $t=0$", xlabel="$t\\,\\omega_{pe}$")
             axes[1, 1].set(title="(e) Kinetic energy change", xlabel="$t\\,\\omega_{pe}$")
             h, ax = report["history"], axes[1, 2]
             evaluations = [r.get("evaluation", r.get("iteration")) for r in h]
@@ -313,7 +314,7 @@ def plot(paths, output):
             axes[1, 1].legend(frameon=False, fontsize=7)
             controls = len(report["initial"])
             fig.suptitle(f"Orszag–Tang inverse design: {controls} {'phase ' if s.get('fixed_amplitudes') else ''}controls, "
-                         f"{s['grid']}² × {s['hermite']}³, {runs['optimized']['steps']} Dopri8 steps, {report['seconds']:.0f} s, {device}", fontsize=10)
+                         f"{s['grid']}² × {s['hermite']}³, {runs['optimized']['steps']} Dopri8 steps, {report['seconds']:.0f} s" + (f", {device}" if device else ""), fontsize=10)
         else:
             fig, axes = plt.subplots(2, 2, figsize=(8.5, 6.4), layout="constrained")
             c = report["cost"]; P = [r["controls"] for r in c]
@@ -338,7 +339,7 @@ def plot(paths, output):
             f = report["fd_step"]; ax = axes[1, 1]
             ax.loglog([x["step"] for x in f], [x["relative_error"] for x in f], "o-", color=COLORS["optimized"])
             ax.set(title="(d) Finite-difference error vs. step", xlabel="finite-difference step", ylabel="relative error to AD")
-            fig.suptitle(f"Gradient cost and memory, {report['settings']['grid']}² × {report['settings']['hermite']}³, {device}", fontsize=10)
+            fig.suptitle(f"Gradient cost and memory, {report['settings']['grid']}² × {report['settings']['hermite']}³" + (f", {device}" if device else ""), fontsize=10)
         for ext in ("png", "pdf"):
             fig.savefig(f"{stem}.{ext}")
         plt.close(fig)
@@ -358,7 +359,7 @@ def main():
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--checkpoints", type=int, default=32)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--tolerances", type=float, nargs="+", default=[1e-7], help="ODE tolerances for validate")
+    parser.add_argument("--tolerances", type=float, nargs="+", default=[1e-7], help="ODE tolerance; optimize and benchmark use the first, validate loops over all")
     parser.add_argument("--control-counts", type=int, nargs="+", default=[2, 4, 8, 16, 32], metavar="M")
     parser.add_argument("--step-counts", type=int, nargs="+", default=[25, 50, 100, 200, 400], metavar="N")
     parser.add_argument("--resolutions", type=lambda s: tuple(map(int, s.split("x"))), nargs="+", default=[(16, 4), (32, 4), (32, 6), (64, 6)],
