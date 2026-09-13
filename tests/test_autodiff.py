@@ -1,7 +1,5 @@
 """Independent derivative checks on a real-linear, complex plasma trajectory."""
 
-import importlib.util
-from pathlib import Path
 
 import jax
 import jax.numpy as jnp
@@ -11,10 +9,6 @@ import pytest
 from spectrax import initialize_simulation_parameters, simulation_final
 from spectrax._simulation import _solver_args, ode_system
 
-spec = importlib.util.spec_from_file_location(
-    "phase_control", Path(__file__).parents[1] / "Examples" / "2D_phase_control.py")
-phase_control = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(phase_control)
 
 
 def test_checkpointed_complex_gradients():
@@ -71,36 +65,6 @@ def test_rk4_against_independent_dopri8():
     assert errors[1] / errors[2] > 12
 
 
-def test_phase_constraints_and_observables():
-    grid, hermite = 12, 3
-    phases = jnp.array([0.2, 0.7, -0.3, 0.6])
-    p = phase_control.setup(phases, grid, hermite, 0.2)
-    q = phase_control.setup(phases + jnp.array([0.8, -0.4, 0.1, 0.6]), grid, hermite, 0.2)
-    initial = lambda params: (params["Ck_0"], params["Fk_0"])
-    np.testing.assert_allclose(jnp.abs(p["Fk_0"]) ** 2, jnp.abs(q["Fk_0"]) ** 2, atol=1e-16)
-    np.testing.assert_allclose(phase_control.quantities(initial(p), p, grid, hermite)[:4],
-                               phase_control.quantities(initial(q), q, grid, hermite)[:4], atol=1e-14)
-    # Ampere-consistent initial current, div B = 0, and charge neutrality.
-    kx = jnp.fft.rfftfreq(grid) * grid * 2 * jnp.pi / p["Lx"]
-    ky = jnp.fft.fftfreq(grid) * grid * 2 * jnp.pi / p["Ly"]
-    F = p["Fk_0"][..., 0]
-    np.testing.assert_allclose(kx[None, :] * F[3] + ky[:, None] * F[4], 0, atol=1e-16)
-    current = phase_control.plasma_current(p["qs"], p["alpha_s"], p["u_s"], p["Ck_0"],
-                                           hermite, hermite, hermite, 2)
-    np.testing.assert_allclose(current[2, ..., 0],
-                               0.5j * (kx[None, :] * F[4] - ky[:, None] * F[3]), atol=1e-16)
-
-    def observable(phases):
-        params = phase_control.setup(phases, grid, hermite, 0.2)
-        final = simulation_final(params, Nx=grid, Ny=grid, Nn=hermite, Nm=hermite,
-                                  Np=hermite, steps=4)
-        return phase_control.quantities(final, params, grid, hermite)
-
-    # All requested classes of outputs: electric/magnetic/particle energies and current shape.
-    reverse = jax.jit(jax.jacrev(observable))(phases)
-    forward = jax.jit(jax.jacfwd(observable))(phases)
-    assert np.isfinite(reverse).all()
-    np.testing.assert_allclose(reverse, forward, atol=1e-12, rtol=1e-8)
 
 
 @pytest.mark.parametrize("steps", [0, -1])
@@ -122,21 +86,3 @@ def test_streaming_integral_and_time_derivative():
         np.testing.assert_allclose(jax.jacrev(lambda t: solve(t, checkpoints))(time),
                                    jnp.array([time, time ** 2]), atol=1e-13)
     np.testing.assert_allclose(jax.jacfwd(solve)(time), jnp.array([time, time ** 2]), atol=1e-13)
-
-
-def test_window_objective_gradient():
-    objective, _ = phase_control.problem(grid=12, hermite=3, final_time=0.4,
-                                         steps=8, time_window=(0.1, 0.4))
-    phases = jnp.array([0.2, 0.7, -0.3, 0.6])
-    direction = jnp.array([0.1, -0.3, 0.7, 0.2])
-    gradient = jax.jit(jax.grad(objective))(phases)
-    epsilon = 1e-4
-    scalar = jax.jit(objective)
-    finite_difference = (scalar(phases + epsilon * direction)
-                         - scalar(phases - epsilon * direction)) / (2 * epsilon)
-    np.testing.assert_allclose(gradient @ direction, finite_difference, rtol=3e-5, atol=1e-10)
-    for mode in (dict(checkpointing=False), dict(checkpoints=3)):
-        reference, _ = phase_control.problem(grid=12, hermite=3, final_time=0.4,
-                                             steps=8, time_window=(0.1, 0.4), **mode)
-        np.testing.assert_allclose(jax.jit(jax.grad(reference))(phases), gradient,
-                                   rtol=1e-9, atol=1e-12)

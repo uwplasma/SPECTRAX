@@ -169,3 +169,6 @@ spectrax/.DS_Store
 *.npy
 *.gif
 spectrax/version.py
+
+# Generated optimization reports and publication figures
+/results/
