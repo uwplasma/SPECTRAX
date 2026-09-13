@@ -155,6 +155,7 @@ def timed(fn, *x, repeat=3):
 
 
 def optimize(args):
+    started = provenance()   # at start: the checkout may change while a long run is in progress
     value_and_grad = jax.jit(jax.value_and_grad(make_loss(args)))
     theta0 = initial_controls(args.modes, args.seed, args.fixed_amplitudes)
     start = time.perf_counter()
@@ -169,7 +170,7 @@ def optimize(args):
 
     result = minimize(fun, np.asarray(theta0), jac=True, method="L-BFGS-B", options=dict(maxiter=args.iterations),
                       callback=lambda *_: accepted.append(len(history) - 1))
-    report = dict(mode="optimize", settings=vars(args) | {"output": str(args.output)}, provenance=provenance(),
+    report = dict(mode="optimize", settings=vars(args) | {"output": str(args.output)}, provenance=started,
                   initial=np.asarray(theta0).tolist(), optimized=np.asarray(result.x).tolist(), iterations=int(result.nit),
                   evaluations=int(result.nfev), message=str(result.message), history=history, accepted=accepted,
                   compile_seconds=compile_seconds, seconds=time.perf_counter() - start, runs={})
@@ -194,7 +195,7 @@ def optimize(args):
 
 def validate(args):
     """Re-evaluate the frozen initial and optimised controls of an optimize report at other resolutions and tolerances."""
-    source = json.loads(Path(args.files[0]).read_text())
+    source, started = json.loads(Path(args.files[0]).read_text()), provenance()
     s, rows = source["settings"], []
     for grid, hermite in args.resolutions:
         for tolerance in args.tolerances:
@@ -212,7 +213,7 @@ def validate(args):
             print(f"{grid}²×{hermite}³, tolerance {tolerance:.0e}: {values['initial']:.5g} -> {values['optimized']:.5g} "
                   f"({change:+.1%}), energy error {rows[-1]['energy_error']:.1e}")
     path = args.output / f"validate_{Path(args.files[0]).stem}.json"
-    path.write_text(json.dumps(dict(mode="validate", source=args.files[0], source_settings=s, provenance=provenance(), rows=rows), indent=1))
+    path.write_text(json.dumps(dict(mode="validate", source=args.files[0], source_settings=s, provenance=started, rows=rows), indent=1))
     print("wrote", path)
     return path
 
