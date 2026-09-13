@@ -1,0 +1,434 @@
+[
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 32,
+  "hermite": 4,
+  "tolerance": 1e-07,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": 0.9380562389054539,
+  "steps": 194,
+  "seconds": 5.742739957997401,
+  "total_energy_rel_error": 1.1082250441834614e-09,
+  "inplane_magnetic": [
+   0.005,
+   0.004690281194527269
+  ],
+  "jz_p8": [
+   0.037290455560370396,
+   0.03870867958246814
+  ],
+  "kinetic_change": [
+   0.00010659290027486418,
+   2.2323292157080954e-05
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 32,
+  "hermite": 4,
+  "tolerance": 1e-07,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": 0.7390558405617398,
+  "steps": 196,
+  "seconds": 4.903605500003323,
+  "total_energy_rel_error": 1.1214202774871596e-09,
+  "inplane_magnetic": [
+   0.005000000000000002,
+   0.0036952792028087005
+  ],
+  "jz_p8": [
+   0.03519603601621783,
+   0.030090769544888752
+  ],
+  "kinetic_change": [
+   0.00025515890481631054,
+   0.0008714661951027131
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 32,
+  "hermite": 6,
+  "tolerance": 1e-07,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": 0.9396018718018706,
+  "steps": 172,
+  "seconds": 15.02227312499599,
+  "total_energy_rel_error": 8.883725706540832e-10,
+  "inplane_magnetic": [
+   0.005,
+   0.004698009359009353
+  ],
+  "jz_p8": [
+   0.03729045556037042,
+   0.0387065662051288
+  ],
+  "kinetic_change": [
+   9.373986937313145e-05,
+   4.173405233786481e-05
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 32,
+  "hermite": 6,
+  "tolerance": 1e-07,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": 0.7405288572353215,
+  "steps": 178,
+  "seconds": 15.159766875003697,
+  "total_energy_rel_error": 1.3536666735650154e-11,
+  "inplane_magnetic": [
+   0.005000000000000002,
+   0.0037026442861766086
+  ],
+  "jz_p8": [
+   0.035196036016217846,
+   0.03004190622681479
+  ],
+  "kinetic_change": [
+   0.00023673492513561628,
+   0.000903887944948216
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 64,
+  "hermite": 4,
+  "tolerance": 1e-07,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": 0.938337605347072,
+  "steps": 268,
+  "seconds": 30.05877304200112,
+  "total_energy_rel_error": 3.4695235210333787e-06,
+  "inplane_magnetic": [
+   0.005000000000000002,
+   0.004691688026735362
+  ],
+  "jz_p8": [
+   0.037290455560370396,
+   0.0386446234498641
+  ],
+  "kinetic_change": [
+   0.00010673719989826025,
+   2.228296506077282e-05
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 64,
+  "hermite": 4,
+  "tolerance": 1e-07,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": 0.7390996537361259,
+  "steps": 267,
+  "seconds": 29.037801457998285,
+  "total_energy_rel_error": 3.638894059828982e-06,
+  "inplane_magnetic": [
+   0.005000000000000001,
+   0.00369549826868063
+  ],
+  "jz_p8": [
+   0.035196036016217826,
+   0.03004396155212401
+  ],
+  "kinetic_change": [
+   0.0002552116840481289,
+   0.0008714288988796934
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 32,
+  "hermite": 4,
+  "tolerance": 1e-07,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": -0.03870867958246814,
+  "steps": 194,
+  "seconds": 4.971886791994621,
+  "total_energy_rel_error": 1.1082250441834614e-09,
+  "inplane_magnetic": [
+   0.005,
+   0.004690281194527269
+  ],
+  "jz_p8": [
+   0.037290455560370396,
+   0.03870867958246814
+  ],
+  "kinetic_change": [
+   0.00010659290027486418,
+   2.2323292157080954e-05
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 32,
+  "hermite": 4,
+  "tolerance": 1e-07,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": -0.06156772832643531,
+  "steps": 193,
+  "seconds": 4.8854108750019805,
+  "total_energy_rel_error": 1.160106454575969e-09,
+  "inplane_magnetic": [
+   0.005000000000000001,
+   0.006017016705773292
+  ],
+  "jz_p8": [
+   0.03739791440204021,
+   0.06156772832643531
+  ],
+  "kinetic_change": [
+   0.00017218790276522095,
+   -0.001380330836154596
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 32,
+  "hermite": 6,
+  "tolerance": 1e-07,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": -0.0387065662051288,
+  "steps": 172,
+  "seconds": 15.96883045899449,
+  "total_energy_rel_error": 8.883725706540832e-10,
+  "inplane_magnetic": [
+   0.005,
+   0.004698009359009353
+  ],
+  "jz_p8": [
+   0.03729045556037042,
+   0.0387065662051288
+  ],
+  "kinetic_change": [
+   9.373986937313145e-05,
+   4.173405233786481e-05
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 32,
+  "hermite": 6,
+  "tolerance": 1e-07,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": -0.060817171386801434,
+  "steps": 183,
+  "seconds": 18.345903125002224,
+  "total_energy_rel_error": 5.905786358772415e-10,
+  "inplane_magnetic": [
+   0.005000000000000001,
+   0.006021007293710387
+  ],
+  "jz_p8": [
+   0.03739791440204023,
+   0.060817171386801434
+  ],
+  "kinetic_change": [
+   0.00016338838645939963,
+   -0.0013638760072698791
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 64,
+  "hermite": 4,
+  "tolerance": 1e-07,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": -0.0386446234498641,
+  "steps": 268,
+  "seconds": 32.82701912500488,
+  "total_energy_rel_error": 3.4695235210333787e-06,
+  "inplane_magnetic": [
+   0.005000000000000002,
+   0.004691688026735362
+  ],
+  "jz_p8": [
+   0.037290455560370396,
+   0.0386446234498641
+  ],
+  "kinetic_change": [
+   0.00010673719989826025,
+   2.228296506077282e-05
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 64,
+  "hermite": 4,
+  "tolerance": 1e-07,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": -0.061620438293370376,
+  "steps": 268,
+  "seconds": 33.522473249999166,
+  "total_energy_rel_error": 3.932102826317069e-06,
+  "inplane_magnetic": [
+   0.005,
+   0.006017801193677996
+  ],
+  "jz_p8": [
+   0.03739791440204021,
+   0.061620438293370376
+  ],
+  "kinetic_change": [
+   0.000172197161353492,
+   -0.0013803396462810646
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 32,
+  "hermite": 4,
+  "tolerance": 1e-09,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": 0.9380562104569831,
+  "steps": 333,
+  "seconds": 10.600537083002564,
+  "total_energy_rel_error": 4.367338940632082e-11,
+  "inplane_magnetic": [
+   0.005,
+   0.004690281052284915
+  ],
+  "jz_p8": [
+   0.037290455560370396,
+   0.03870866794712636
+  ],
+  "kinetic_change": [
+   0.0001065921356046412,
+   2.232392523801585e-05
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 32,
+  "hermite": 4,
+  "tolerance": 1e-09,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": 0.7390558417551836,
+  "steps": 338,
+  "seconds": 10.552245708000555,
+  "total_energy_rel_error": 4.017156026446731e-11,
+  "inplane_magnetic": [
+   0.005000000000000002,
+   0.0036952792087759194
+  ],
+  "jz_p8": [
+   0.03519603601621783,
+   0.030090746138344757
+  ],
+  "kinetic_change": [
+   0.0002551617446024529,
+   0.0008714646136786658
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 32,
+  "hermite": 4,
+  "tolerance": 1e-09,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": -0.03870866794712637,
+  "steps": 333,
+  "seconds": 10.188406041001144,
+  "total_energy_rel_error": 4.367338940632082e-11,
+  "inplane_magnetic": [
+   0.005,
+   0.004690281052284914
+  ],
+  "jz_p8": [
+   0.037290455560370396,
+   0.03870866794712637
+  ],
+  "kinetic_change": [
+   0.0001065921356046412,
+   2.232392523801585e-05
+  ],
+  "device": "TFRT_CPU_0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 32,
+  "hermite": 4,
+  "tolerance": 1e-09,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": -0.06156772209142492,
+  "steps": 332,
+  "seconds": 10.348271374998149,
+  "total_energy_rel_error": 4.482563697794792e-11,
+  "inplane_magnetic": [
+   0.005000000000000001,
+   0.0060170168018712335
+  ],
+  "jz_p8": [
+   0.03739791440204021,
+   0.06156772209142492
+  ],
+  "kinetic_change": [
+   0.00017218644201155708,
+   -0.0013803300938435917
+  ],
+  "device": "TFRT_CPU_0"
+ }
+]
