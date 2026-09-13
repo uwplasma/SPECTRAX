@@ -1,0 +1,6 @@
+/home/rjorge/venvs/vmex-gpu/lib/python3.12/site-packages/equinox/_jit.py:55: UserWarning: Complex dtype support in Diffrax is a work in progress and may not yet produce correct results. Consider splitting your computation into real and imaginary parts instead.
+  out = fun(*args, **kwargs)
+64²×6³, tolerance 1e-09: 0.93958 -> 0.73995 (-21.2%), energy error 1.4e-10
+64²×8³, tolerance 1e-09: 0.94085 -> 0.74088 (-21.3%), energy error 7.2e-11
+128²×6³, tolerance 1e-09: 0.93959 -> 0.73995 (-21.2%), energy error 1.4e-08
+wrote /home/rjorge/spectrax-pub/gpu-64x6/validate_optimize_conversion.json

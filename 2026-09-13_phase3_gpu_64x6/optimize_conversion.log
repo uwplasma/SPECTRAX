@@ -1,0 +1,6 @@
+/home/rjorge/venvs/vmex-gpu/lib/python3.12/site-packages/equinox/_jit.py:55: UserWarning: Complex dtype support in Diffrax is a work in progress and may not yet produce correct results. Consider splitting your computation into real and imaginary parts instead.
+  out = fun(*args, **kwargs)
+/home/rjorge/venvs/vmex-gpu/lib/python3.12/site-packages/equinox/_jit.py:55: UserWarning: Complex dtype support in Diffrax is a work in progress and may not yet produce correct results. Consider splitting your computation into real and imaginary parts instead.
+  out = fun(*args, **kwargs)
+conversion: 0.939585 -> 0.739953 in 30 iterations (2848 s); wrote /home/rjorge/spectrax-pub/gpu-64x6/optimize_conversion.json
+wrote /home/rjorge/spectrax-pub/gpu-64x6/optimize_conversion.png/.pdf
