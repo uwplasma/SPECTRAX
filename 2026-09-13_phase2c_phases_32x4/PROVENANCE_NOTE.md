@@ -1,0 +1,1 @@
+optimize_conversion_phases.json records provenance commit 8380edc, but that process imported the example at 620fd14: provenance() was evaluated when the report was written, not at start (fixed afterwards on the PR branch). The optimize path is numerically identical between 620fd14 and 8380edc. Its figure was re-plotted from the JSON with the 8380edc plotting code.
