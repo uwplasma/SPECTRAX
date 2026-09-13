@@ -28,6 +28,71 @@ which would give O(1) memory in N, is exact for collisionless runs (gradient err
 T = 32 (NaN) and ν = 3, T = 8 (reconstruction error 1e106), which rules it out for collisional
 turbulence.
 
+## Resolution check of the optimised designs (Phase 2a, measured)
+
+Optimised controls obtained at 32²×4³ were frozen and re-simulated at 32²×6³, 64²×4³, 64²×6³, 64²×8³
+and 128²×6³. The conversion objective improved by 21.2 % at every resolution (0.938 → 0.739 at the
+training resolution, 0.945 → 0.745 at 128²×6³), and the current-sheet objective by 57.1–59.5 %,
+retaining 97 % of the gain found at the training resolution. The relative total-energy error at
+t ω_pe = 200 is set by the Dopri8 tolerance and grows with the number of Fourier modes at a fixed
+tolerance of 1e-7 (1e-9 at 32², 4e-6 at 64², 2e-4 at 128²); at a tolerance of 1e-9 it is 1e-10 at 64²,
+while the objective values change by less than 0.05 %. Production optimisations therefore use a
+tolerance of 1e-9.
+
+## Phase-only control isolates the nonlinear effect (Phase 2c, measured, 32²×4³)
+
+With the mode amplitudes fixed and only the eight phases optimised, every Fourier mode keeps its initial
+magnetic energy, current and drift energy, and linear evolution on the uniform background cannot change
+the energy objective. Phase-only control still raises the converted fraction of in-plane magnetic energy
+at t ω_pe = 200 from 6.2 % to 23.9 %, 89 % of the improvement found when amplitudes are also free,
+with the extra energy going mainly to the ions. For the current-sheet objective phase-only control
+partly works by building a larger initial current peak, so the dynamical intensification (1.25×, against
+1.04× at baseline) is smaller than with amplitude and phase control (1.65× with an unchanged initial peak).
+
+## Production optimisation on one GPU (Phase 3a, measured)
+
+At 64²×6³ Fourier–Hermite resolution (two species, 14.1 MiB state) with adaptive Dopri8 at tolerance 1e-9,
+30 L-BFGS-B iterations over 16 controls took 34 gradient evaluations of 77 s each on one NVIDIA RTX A4000,
+47.5 min in total including 95 s of compilation. The optimised initial field converts 26.0 % of the in-plane
+magnetic energy by t ω_pe = 200, against 6.0 % for the reference field, and the extra energy goes mainly to
+the ions (kinetic-energy gain 9.2e-4 against 4.2e-5). The optimum coincides with the one found at
+32²×4³ on a laptop CPU (objective 0.740 against 0.739), and it is unchanged at 64²×8³ (−21.3 %) and
+128²×6³ (−21.2 %), with relative energy errors of at most 1.4e-8. A centred finite-difference gradient
+at this resolution would need 32 forward solves per evaluation, about 8× the cost of the adjoint gradient;
+a full optimisation of this kind is then out of reach for a non-differentiable code of the same speed.
+The magnetic energy is still decreasing at t ω_pe = 200; the objective is defined at this fixed horizon.
+
+## Current-sheet objective on the GPU (Phase 3a, measured)
+
+At 64²×6³ and tolerance 1e-9, 30 iterations (40 gradient evaluations, 51 min) raise the smooth peak of J_z
+at t ω_pe = 200 from 0.0386 to 0.0640, an increase of 66 % that is unchanged at 64²×8³ and 128²×6³. Part of
+the gain comes from rearranging the initial field: the initial peak rises from 0.0373 to 0.0416. The
+dynamical intensification, the ratio of the peak at t ω_pe = 200 to its initial value, is 1.54 against 1.04
+for the reference field. The in-plane magnetic energy grows by 21 % while the ions lose 1.5e-3 of kinetic
+energy, consistent with flow-driven field amplification and current-sheet thinning.
+
+## Gradient cost and memory on one GPU (Phase 3c, measured; RTX A4000, float64)
+
+Cost at 32²×4³, T = 100, adaptive Dopri8, 8 checkpoints: one forward solve takes 0.43 s and one reverse-mode
+gradient 2.8–3.0 s (6.5 forward solves) for P = 4 to 64 controls, while a centred finite-difference
+gradient takes 3.6 s to 59 s, 1.3 to 19.6 times the adjoint cost. Finite differences agree with the
+adjoint gradient to 2e-8 … 2e-7 at their best step.
+
+Peak device memory, one process per configuration (T = 20):
+
+| resolution | state | forward | gradient, K = 8 | ratio | gradient, K = 32 | ratio |
+|---|---|---|---|---|---|---|
+| 32²×4³ | 1.1 MiB | 64 MiB | 176 MiB | 2.75 | 258 MiB | 4.0 |
+| 64²×6³ | 14.1 MiB | 311 MiB | 862 MiB | 2.77 | 1907 MiB | 6.1 |
+| 64²×8³ | 33.2 MiB | 731 MiB | 2112 MiB | 2.89 | 4514 MiB | 6.2 |
+| 128²×6³ | 55.6 MiB | 1226 MiB | 3408 MiB | 2.78 | 7523 MiB | 6.1 |
+
+Compiled reverse-pass workspace against the number of fixed steps N (32²×4³, Tsit5): 54 MiB with 8
+checkpoints and 149 MiB with 32 checkpoints for every N from 50 to 800, against 230 MiB to 3.57 GiB for a
+full trajectory tape. The gradient-to-forward memory ratio is therefore a constant set by the checkpoint
+budget, independent of both resolution and integration length; the price is recomputation, which raises
+the gradient cost from 4.7 (K = 32) to 6.2 (K = 8) forward solves at 128²×6³.
+
 ## Figure: inverse design of the Orszag–Tang vortex
 
 Caption. Gradient-based inverse design of the 2D Orszag–Tang vortex. The controls are the amplitudes and
