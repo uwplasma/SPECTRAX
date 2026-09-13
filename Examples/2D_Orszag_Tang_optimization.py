@@ -287,6 +287,7 @@ def plot(paths, output):
         report = json.loads(Path(path).read_text())
         stem = output / Path(path).stem
         device = report.get("provenance", {}).get("device", report.get("device", ""))
+        device = "CPU" if device.startswith("TFRT_CPU") else device   # reports written before provenance was recorded
         if report["mode"] == "validate":
             continue
         if report["mode"] == "optimize":
@@ -343,7 +344,8 @@ def plot(paths, output):
             ax.loglog(S, [x["forward_MiB"] for x in r], "o-", color=COLORS["muted"], label="forward solve")
             for i, x in enumerate(r):   # above the gradient curve, at alternating heights, so no label crosses a line or a neighbour
                 ax.annotate(f"{x['grid']}²×{x['hermite']}³, ×{x['reverse_MiB']/x['forward_MiB']:.1f}", (x["state_MiB"], x["reverse_MiB"]),
-                            textcoords="offset points", xytext=(0, 7 if i % 2 == 0 else 17), ha="center", va="bottom", fontsize=6)
+                            textcoords="offset points", xytext=(-3 if i == 0 else 0, 7 if i % 2 == 0 else 17),
+                            ha="left" if i == 0 else "center", va="bottom", fontsize=6)
             ax.set_ylim(min(x["forward_MiB"] for x in r) / 2, max(x["reverse_MiB"] for x in r) * 8)
             ax.set(title="(c) Workspace vs. state size (gradient/forward ratio)", xlabel="state size, MiB", ylabel="MiB"); ax.legend(frameon=False, fontsize=7)
             f = report["fd_step"]; ax = axes[1, 1]
