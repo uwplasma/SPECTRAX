@@ -39,3 +39,13 @@ A simplified example is a fallback; a resolved 2D reconnection or acceleration
 showcase remains preferred. Main research context and primary sources are in
 PR43's handoff comment. Keep raw experiments here or in external artifacts, not
 in the small code-review diff.
+
+`landau/reduced_observables.py` is an **unintegrated prototype**, with its focused
+tests alongside it. It exploits the exact fixed transverse Maxwellians in 1D3V:
+longitudinal Gauss–Hermite × perpendicular-energy Gauss–Laguerre quadrature,
+O(q²), including differentiation of local flow and variance. Weighted Hermite
+recurrence avoids high-order overflow. Sixteen tests passed, including high-order
+finiteness at H512/q320, H768/q512 and H1024/q640. These are observable algebra
+checks, not a resolved dynamical baseline or completed optimization. This helper
+is intentionally incompatible with the 2D helper's interface; do not overwrite
+the clean PR's working example without adapting and validating the caller.
