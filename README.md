@@ -295,3 +295,6 @@ initial magnetic field of the Orszag–Tang vortex for magnetic-energy conversio
 intensity, validates the optimum at higher resolution, and benchmarks gradient cost and memory
 against finite differences. At 64²×6³ the optimised field converts 26 % of the in-plane magnetic
 energy by t = 200 instead of 6 %, a result that holds at 128²×6³.
+Objectives may combine several saved snapshots (`timesteps=K`), for example a time average, and
+`adjoint=ForwardMode()` gives sensitivities to a few physical parameters; the example's
+`mean_conversion` objective and `sensitivity` mode show both.

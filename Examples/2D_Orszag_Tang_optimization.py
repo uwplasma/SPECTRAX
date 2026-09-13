@@ -11,17 +11,22 @@ Any real scalar of the ``simulation`` output can be optimised. Two are provided:
                 (minimised: the field configuration that converts magnetic energy fastest)
   peak_current  smooth maximum (p-norm) of the out-of-plane current density at ``t_max``
                 (maximised: the configuration that forms the most intense current sheet)
+  mean_conversion  in-plane magnetic energy averaged over the saved snapshots (``--snapshots K``)
+                over its initial value: a time-window objective built from several snapshots
 
 Modes::
 
   python 2D_Orszag_Tang_optimization.py optimize  --objective peak_current --modes 8 --grid 32 --hermite 4
   python 2D_Orszag_Tang_optimization.py validate  results/optimize_peak_current.json --resolutions 32x6 64x6
+  python 2D_Orszag_Tang_optimization.py sensitivity results/optimize_peak_current.json --snapshots 21
   python 2D_Orszag_Tang_optimization.py benchmark --grid 16 --hermite 4 --t-max 100
   python 2D_Orszag_Tang_optimization.py plot      results/optimize_peak_current.json results/benchmark.json
 
 Every run writes a JSON report, with commit, package versions and device, to ``--output``;
 ``plot`` draws figures from JSON only. ``validate`` re-evaluates the frozen initial and optimised
-controls of an ``optimize`` report at other resolutions and ODE tolerances. The reverse pass uses
+controls of an ``optimize`` report at other resolutions and ODE tolerances. ``sensitivity`` computes
+forward-mode logarithmic derivatives of every objective with respect to physical parameters (collision
+frequency, mass ratio, guide field, in-plane amplitude) at those controls. The reverse pass uses
 Diffrax's binomial checkpointing (``--checkpoints``), so its memory is a fixed multiple of the
 forward solve, independent of the number of time steps.
 """
@@ -38,7 +43,7 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
-from diffrax import Dopri8, Tsit5, NoProgressMeter, RecursiveCheckpointAdjoint
+from diffrax import Dopri8, Tsit5, ForwardMode, NoProgressMeter, RecursiveCheckpointAdjoint
 from scipy.optimize import minimize
 
 from spectrax import simulation, compute_C_nmp, plasma_current
@@ -57,32 +62,33 @@ def wavevectors(M):
     return jnp.array(pairs, dtype=float) * 2 * jnp.pi / Lx
 
 
-def setup(theta, grid, hermite, t_max, nu=1.0, fixed_amplitudes=False, tolerance=1e-7):
+def setup(theta, grid, hermite, t_max, nu=1.0, fixed_amplitudes=False, tolerance=1e-7, mass_ratio=mi_me, guide_field=1.0,
+          amplitude=deltaB):
     """Initial condition from controls ``theta = (log amplitudes, phases)``, or phases only, at fixed in-plane magnetic energy."""
     M = theta.size if fixed_amplitudes else theta.size // 2
     k = wavevectors(M)
     a = jnp.ones(M) if fixed_amplitudes else jnp.exp(theta[:M])
-    a = a * deltaB / jnp.sqrt(0.5 * jnp.sum(a**2 * jnp.sum(k**2, axis=1)))   # <|B_perp|^2> = deltaB^2
+    a = a * amplitude / jnp.sqrt(0.5 * jnp.sum(a**2 * jnp.sum(k**2, axis=1)))   # <|B_perp|^2> = amplitude^2
     x = jnp.arange(grid) * Lx / grid
     X, Y = jnp.meshgrid(x, x, indexing="xy")
     phase = k[:, 0, None, None] * X + k[:, 1, None, None] * Y + theta[-M:, None, None]
     Bx = -jnp.sum(a[:, None, None] * k[:, 1, None, None] * jnp.sin(phase), axis=0)
     By = jnp.sum(a[:, None, None] * k[:, 0, None, None] * jnp.sin(phase), axis=0)
     Jz = jnp.sum(a[:, None, None] * jnp.sum(k**2, axis=1)[:, None, None] * jnp.cos(phase), axis=0)
-    U0, k0 = deltaB * Omega_ce / jnp.sqrt(mi_me), 2 * jnp.pi / Lx
+    U0, k0 = amplitude * Omega_ce / jnp.sqrt(mass_ratio), 2 * jnp.pi / Lx
     flow = jnp.stack([-U0 * jnp.sin(k0 * Y), U0 * jnp.sin(k0 * X), jnp.zeros_like(X)])
     Us = jnp.stack([flow.at[2].set(-Omega_ce * Jz), flow])[..., None]      # electrons carry the current
-    F = jnp.concatenate([jnp.zeros((3, grid, grid)), jnp.stack([Bx, By, jnp.ones_like(X)])])[..., None]
+    F = jnp.concatenate([jnp.zeros((3, grid, grid)), jnp.stack([Bx, By, guide_field * jnp.ones_like(X)])])[..., None]
     Ck_0 = compute_C_nmp(Us, alpha_s, u_s, hermite, hermite, hermite, 2).reshape(2 * hermite**3, grid, grid // 2 + 1, 1)
-    return dict(Lx=Lx, Ly=Ly, Lz=1.0, mi_me=mi_me, qs=jnp.array([-1.0, 1.0]), Omega_cs=jnp.array([Omega_ce, Omega_ce / mi_me]),
+    return dict(Lx=Lx, Ly=Ly, Lz=1.0, mi_me=mass_ratio, qs=jnp.array([-1.0, 1.0]), Omega_cs=jnp.array([Omega_ce, Omega_ce / mass_ratio]),
                 alpha_s=alpha_s, u_s=u_s, nu=nu, D=0.0, t_max=t_max, ode_tolerance=tolerance,
                 Ck_0=Ck_0, Fk_0=jnp.fft.rfftn(F, axes=(-1, -3, -2), norm="forward"))
 
 
 def solve(parameters, grid, hermite, checkpoints=32, timesteps=2, **kwargs):
-    kwargs = dict(dt=0.01, solver=Dopri8(), max_steps=100_000) | kwargs
+    kwargs = dict(dt=0.01, solver=Dopri8(), max_steps=100_000, adjoint=RecursiveCheckpointAdjoint(checkpoints=checkpoints)) | kwargs
     return simulation(parameters, Nx=grid, Ny=grid, Nz=1, Nn=hermite, Nm=hermite, Np=hermite, Ns=2, timesteps=timesteps,
-                      adjoint=RecursiveCheckpointAdjoint(checkpoints=checkpoints), progress_meter=NoProgressMeter(), **kwargs)
+                      progress_meter=NoProgressMeter(), **kwargs)
 
 
 def inplane_magnetic_energy(output, i=-1):
@@ -106,13 +112,17 @@ def peak(J, p=8):
 OBJECTIVES = {
     "conversion": lambda output: inplane_magnetic_energy(output) / inplane_magnetic_energy(output, 0),
     "peak_current": lambda output: -peak(current_density(output)),
+    "mean_conversion": lambda output: jnp.mean(jnp.stack([inplane_magnetic_energy(output, i) for i in range(1, output["Fk"].shape[0])]))
+    / inplane_magnetic_energy(output, 0),
 }
+PHYSICS = {"nu": "collision frequency $\\nu$", "mass_ratio": "mass ratio $m_i/m_e$", "guide_field": "guide field $B_z$",
+           "amplitude": "in-plane field $\\delta B$"}
 
 
 def make_loss(args):
     objective = OBJECTIVES[args.objective]
     return lambda theta: objective(solve(setup(theta, args.grid, args.hermite, args.t_max, fixed_amplitudes=args.fixed_amplitudes, tolerance=args.tolerances[0]),
-                                         args.grid, args.hermite, args.checkpoints))
+                                         args.grid, args.hermite, args.checkpoints, timesteps=args.snapshots))
 
 
 def initial_controls(M, seed, fixed_amplitudes=False):
@@ -185,7 +195,8 @@ def optimize(args):
             kinetic=np.asarray(output["kinetic_energy_species"]).tolist(),
             jz_peak=[float(peak(current_density(output, i))) for i in range(41)],
             Jz_initial=np.asarray(current_density(output, 0)).tolist(), Jz_final=np.asarray(current_density(output, -1)).tolist(),
-            objective=float(OBJECTIVES[args.objective](output)), steps=int(output["solver_stats"]["num_accepted_steps"]))
+            objective=float(result.fun) if name == "optimized" else history[0]["objective"],   # the training objective itself
+            steps=int(output["solver_stats"]["num_accepted_steps"]))
     path = args.output / f"optimize_{args.objective}{'_phases' if args.fixed_amplitudes else ''}.json"
     path.write_text(json.dumps(report, indent=1))
     print(f"{args.objective}: {history[0]['objective']:.6g} -> {report['runs']['optimized']['objective']:.6g} "
@@ -203,7 +214,7 @@ def validate(args):
             for label in ("initial", "optimized"):
                 parameters = setup(jnp.asarray(source[label]), grid, hermite, s["t_max"], fixed_amplitudes=s.get("fixed_amplitudes", False),
                                    tolerance=tolerance)
-                output = solve(parameters, grid, hermite)
+                output = solve(parameters, grid, hermite, timesteps=s.get("snapshots", 2))
                 energy = np.asarray(output["total_energy"])
                 values[label] = float(OBJECTIVES[s["objective"]](output))
                 rows.append(dict(grid=grid, hermite=hermite, tolerance=tolerance, controls=label, objective=values[label],
@@ -214,6 +225,39 @@ def validate(args):
                   f"({change:+.1%}), energy error {rows[-1]['energy_error']:.1e}")
     path = args.output / f"validate_{Path(args.files[0]).stem}.json"
     path.write_text(json.dumps(dict(mode="validate", source=args.files[0], source_settings=s, provenance=started, rows=rows), indent=1))
+    print("wrote", path)
+    return path
+
+
+def sensitivity(args):
+    """Forward-mode logarithmic sensitivities of every objective to physical parameters, at the controls of an optimize report."""
+    source, started = json.loads(Path(args.files[0]).read_text()), provenance()
+    s, base = source["settings"], np.array([1.0, mi_me, 1.0, deltaB])   # order of PHYSICS
+
+    def objectives(physics, theta):
+        parameters = setup(theta, s["grid"], s["hermite"], s["t_max"], nu=physics[0], mass_ratio=physics[1], guide_field=physics[2],
+                           amplitude=physics[3], fixed_amplitudes=s.get("fixed_amplitudes", False), tolerance=s.get("tolerances", [1e-7])[0])
+        output = solve(parameters, s["grid"], s["hermite"], timesteps=args.snapshots, adjoint=ForwardMode())
+        return jnp.stack([OBJECTIVES[name](output) for name in OBJECTIVES])
+
+    evaluate, jacobian = jax.jit(objectives), jax.jit(jax.jacfwd(objectives))
+    report = dict(mode="sensitivity", source=args.files[0], source_settings=s, provenance=started, snapshots=args.snapshots,
+                  objectives=list(OBJECTIVES), parameters=list(PHYSICS), base=base.tolist(), runs={})
+    for label in ("initial", "optimized"):
+        theta = jnp.asarray(source[label])
+        start = time.perf_counter()
+        values, J = np.asarray(evaluate(jnp.asarray(base), theta)), np.asarray(jacobian(jnp.asarray(base), theta))
+        seconds = time.perf_counter() - start
+        fd = np.stack([(np.asarray(evaluate(jnp.asarray(base + h * e), theta)) - np.asarray(evaluate(jnp.asarray(base - h * e), theta))) / (2 * h)
+                       for h, e in zip(1e-4 * base, np.eye(base.size))], axis=1)
+        log_sensitivity = J * base[None, :] / values[:, None]
+        error = np.abs(fd - J) * base[None, :] / np.abs(values)[:, None]   # log-sensitivity units: relative errors mislead near zero
+        report["runs"][label] = dict(values=values.tolist(), jacobian=J.tolist(), finite_difference=fd.tolist(), log_sensitivity=log_sensitivity.tolist(),
+                                     log_sensitivity_error_vs_fd=error.tolist(), seconds_including_compilation=seconds)
+        for name, row, err in zip(OBJECTIVES, log_sensitivity, error):
+            print(f"{label:9s} {name:15s} " + "  ".join(f"{p} {v:+.3g}" for p, v in zip(PHYSICS, row)) + f"  | max |error| vs FD {err.max():.1e}")
+    path = args.output / f"sensitivity_{Path(args.files[0]).stem}.json"
+    path.write_text(json.dumps(report, indent=1))
     print("wrote", path)
     return path
 
@@ -250,7 +294,7 @@ def benchmark(args):
     for steps in args.step_counts:
         fixed = dict(dt=dt, adaptive_time_step=False, solver=Tsit5(), max_steps=steps + 1)
         loss = lambda th, K: OBJECTIVES[args.objective](solve(setup(th, args.grid, args.hermite, steps * dt, fixed_amplitudes=args.fixed_amplitudes),
-                                                              args.grid, args.hermite, K, **fixed))
+                                                              args.grid, args.hermite, K, timesteps=args.snapshots, **fixed))
         row = dict(steps=steps, forward_MiB=workspace(lambda th: loss(th, 1), theta))
         for label, K in (("tape", steps), ("K8", 8), ("K32", 32)):
             row[f"reverse_{label}_MiB"] = workspace(jax.value_and_grad(lambda th, K=K: loss(th, K)), theta)
@@ -258,7 +302,7 @@ def benchmark(args):
         print("memory vs steps:", row)
     for grid, hermite in args.resolutions:
         loss = lambda th: OBJECTIVES[args.objective](solve(setup(th, grid, hermite, args.t_max, fixed_amplitudes=args.fixed_amplitudes, tolerance=args.tolerances[0]),
-                                                           grid, hermite, args.checkpoints))
+                                                           grid, hermite, args.checkpoints, timesteps=args.snapshots))
         row = dict(grid=grid, hermite=hermite, state_MiB=(2 * hermite**3 + 6) * grid * (grid // 2 + 1) * 16 / 2**20,
                    forward_MiB=workspace(loss, theta), reverse_MiB=workspace(jax.value_and_grad(loss), theta))
         report["memory_resolution"].append(row)
@@ -290,7 +334,22 @@ def plot(paths, output):
         device = "CPU" if device.startswith("TFRT_CPU") else device   # reports written before provenance was recorded
         if report["mode"] == "validate":
             continue
-        if report["mode"] == "optimize":
+        if report["mode"] == "sensitivity":
+            names, labels, y = report["objectives"], [PHYSICS[p] for p in report["parameters"]], np.arange(len(report["parameters"]))
+            fig, axes = plt.subplots(1, len(names), figsize=(3.2 * len(names), 2.8), layout="constrained", sharey=True)
+            axes = np.atleast_1d(axes)
+            for j, (ax, name) in enumerate(zip(axes, names)):
+                for k, run in enumerate(("initial", "optimized")):
+                    ax.barh(y + (k - 0.5) * 0.4, np.array(report["runs"][run]["log_sensitivity"])[j], height=0.36,
+                            color=COLORS[run], label=f"{run} controls")
+                ax.axvline(0, color=COLORS["muted"], lw=0.8)
+                ax.set(title=f"'{name}'", xlabel="d ln|objective| / d ln(parameter)"); ax.grid(axis="y", visible=False)
+                ax.locator_params(axis="x", nbins=4); ax.ticklabel_format(axis="x", style="sci", scilimits=(-2, 2))
+            axes[0].set_yticks(y, labels); axes[0].invert_yaxis(); axes[0].legend(frameon=False, fontsize=7)
+            s = report["source_settings"]
+            fig.suptitle(f"Sensitivities at the '{s['objective']}' controls, {s['grid']}² × {s['hermite']}³, {report['snapshots']} snapshots"
+                         + (f", {device}" if device else ""), fontsize=10)
+        elif report["mode"] == "optimize":
             runs, s = report["runs"], report["settings"]
             fig, axes = plt.subplots(2, 3, figsize=(10, 6.2), layout="constrained")
             maps = [("initial", "Jz_initial", "(a) $J_z$, initial controls, $t=0$"),
@@ -360,7 +419,7 @@ def plot(paths, output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("mode", choices=["optimize", "validate", "benchmark", "plot"])
+    parser.add_argument("mode", choices=["optimize", "validate", "sensitivity", "benchmark", "plot"])
     parser.add_argument("files", nargs="*", help="JSON reports to plot, or the optimize report to validate")
     parser.add_argument("--objective", choices=OBJECTIVES, default="conversion")
     parser.add_argument("--modes", type=int, default=4, help="number of stream-function modes M (2M controls, M with --fixed-amplitudes)")
@@ -372,6 +431,7 @@ def main():
     parser.add_argument("--checkpoints", type=int, default=32)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--tolerances", type=float, nargs="+", default=[1e-7], help="ODE tolerance; optimize and benchmark use the first, validate loops over all")
+    parser.add_argument("--snapshots", type=int, default=2, help="saved snapshots per solve, t=0 and t_max included (time-window objectives)")
     parser.add_argument("--control-counts", type=int, nargs="+", default=[2, 4, 8, 16, 32], metavar="M")
     parser.add_argument("--step-counts", type=int, nargs="+", default=[25, 50, 100, 200, 400], metavar="N")
     parser.add_argument("--resolutions", type=lambda s: tuple(map(int, s.split("x"))), nargs="+", default=[(16, 4), (32, 4), (32, 6), (64, 6)],
@@ -383,6 +443,8 @@ def main():
         plot(args.files, args.output)
     elif args.mode == "validate":
         validate(args)
+    elif args.mode == "sensitivity":
+        plot([sensitivity(args)], args.output)
     else:
         plot([optimize(args) if args.mode == "optimize" else benchmark(args)], args.output)
 

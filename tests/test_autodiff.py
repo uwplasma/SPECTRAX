@@ -106,3 +106,16 @@ def test_current_density_functional_gradient():
     gradient = jax.jit(jax.grad(peak_current))(theta0)
     assert jnp.all(jnp.isfinite(gradient)) and abs(gradient[0]) > 0
     assert_matches_finite_differences(gradient, peak_current, theta0)
+
+
+def test_time_window_objective_gradient():
+    """Objectives over several saved snapshots, here time averages, are differentiable through the same solve."""
+    fixed = dict(dt=0.1, solver=Tsit5(), adaptive_time_step=False, max_steps=21, progress_meter=NoProgressMeter())
+
+    def time_averaged_energy(theta):
+        output = simulation(orszag_tang(theta, 2.0), Nx=Nx, Ny=Ny, Nz=1, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns, timesteps=5, **fixed)
+        return jnp.mean(output["EM_energy"][1:]) + jnp.mean(jnp.sum(jnp.abs(output["Ck"][1:]) ** 2, axis=(1, 2, 3, 4)))
+
+    gradient = jax.jit(jax.grad(time_averaged_energy))(theta0)
+    assert jnp.all(jnp.isfinite(gradient))
+    assert_matches_finite_differences(gradient, time_averaged_energy, theta0)
