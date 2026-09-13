@@ -1,0 +1,326 @@
+[
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 64,
+  "hermite": 6,
+  "tolerance": 1e-07,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": 0.9400004292762231,
+  "steps": 237,
+  "seconds": 17.79387663095258,
+  "total_energy_rel_error": 4.552975064049372e-06,
+  "inplane_magnetic": [
+   0.005000000000000001,
+   0.004700002146381116
+  ],
+  "jz_p8": [
+   0.03729045556037041,
+   0.03864566534694922
+  ],
+  "kinetic_change": [
+   9.387227914185031e-05,
+   4.17003601845406e-05
+  ],
+  "device": "cuda:0"
+ },
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 64,
+  "hermite": 6,
+  "tolerance": 1e-07,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": 0.7405541560171418,
+  "steps": 234,
+  "seconds": 12.910880016861483,
+  "total_energy_rel_error": 3.121953773214231e-06,
+  "inplane_magnetic": [
+   0.005000000000000002,
+   0.0037027707800857106
+  ],
+  "jz_p8": [
+   0.03519603601621784,
+   0.029982934121891097
+  ],
+  "kinetic_change": [
+   0.00023676447733447098,
+   0.0009038637426928842
+  ],
+  "device": "cuda:0"
+ },
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 64,
+  "hermite": 8,
+  "tolerance": 1e-07,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": 0.9408535818289279,
+  "steps": 315,
+  "seconds": 61.49309744290076,
+  "total_energy_rel_error": 1.0565761814241766e-12,
+  "inplane_magnetic": [
+   0.005000000000000001,
+   0.0047042679091446405
+  ],
+  "jz_p8": [
+   0.03729045556037041,
+   0.03861516144917381
+  ],
+  "kinetic_change": [
+   8.857113004032136e-05,
+   4.2947194358523844e-05
+  ],
+  "device": "cuda:0"
+ },
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 64,
+  "hermite": 8,
+  "tolerance": 1e-07,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": 0.741415986547695,
+  "steps": 318,
+  "seconds": 97.31711495714262,
+  "total_energy_rel_error": 4.4740005177444223e-13,
+  "inplane_magnetic": [
+   0.005000000000000002,
+   0.0037070799327384766
+  ],
+  "jz_p8": [
+   0.03519603601621784,
+   0.02985394559471967
+  ],
+  "kinetic_change": [
+   0.00022365476562229147,
+   0.0009118534177487772
+  ],
+  "device": "cuda:0"
+ },
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 128,
+  "hermite": 6,
+  "tolerance": 1e-07,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": 0.9451043812962121,
+  "steps": 566,
+  "seconds": 229.26601279107854,
+  "total_energy_rel_error": 0.00016564494097370675,
+  "inplane_magnetic": [
+   0.005000000000000003,
+   0.004725521906481063
+  ],
+  "jz_p8": [
+   0.03729045556037042,
+   0.03864493132825285
+  ],
+  "kinetic_change": [
+   9.387320903829488e-05,
+   4.170027681254379e-05
+  ],
+  "device": "cuda:0"
+ },
+ {
+  "objective": "conversion",
+  "source": "optimize_conversion.json",
+  "trained": "32x4",
+  "grid": 128,
+  "hermite": 6,
+  "tolerance": 1e-07,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": 0.7448311333586112,
+  "steps": 567,
+  "seconds": 215.74376190686598,
+  "total_energy_rel_error": 0.00020752280038591463,
+  "inplane_magnetic": [
+   0.005000000000000003,
+   0.0037241556667930577
+  ],
+  "jz_p8": [
+   0.03519603601621784,
+   0.029982846348603223
+  ],
+  "kinetic_change": [
+   0.00023676554126231958,
+   0.0009038634598781681
+  ],
+  "device": "cuda:0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 64,
+  "hermite": 6,
+  "tolerance": 1e-07,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": -0.03864566534694922,
+  "steps": 237,
+  "seconds": 27.79034451302141,
+  "total_energy_rel_error": 4.552975064049372e-06,
+  "inplane_magnetic": [
+   0.005000000000000001,
+   0.004700002146381116
+  ],
+  "jz_p8": [
+   0.03729045556037041,
+   0.03864566534694922
+  ],
+  "kinetic_change": [
+   9.387227914185031e-05,
+   4.17003601845406e-05
+  ],
+  "device": "cuda:0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 64,
+  "hermite": 6,
+  "tolerance": 1e-07,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": -0.06084413810349465,
+  "steps": 232,
+  "seconds": 32.35095206997357,
+  "total_energy_rel_error": 2.6360952462020376e-08,
+  "inplane_magnetic": [
+   0.005000000000000001,
+   0.0060209762903046735
+  ],
+  "jz_p8": [
+   0.03739791440204021,
+   0.06084413810349465
+  ],
+  "kinetic_change": [
+   0.00016341766695616294,
+   -0.0013638804827890913
+  ],
+  "device": "cuda:0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 64,
+  "hermite": 8,
+  "tolerance": 1e-07,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": -0.03861516144917381,
+  "steps": 315,
+  "seconds": 91.16505000810139,
+  "total_energy_rel_error": 1.0565761814241766e-12,
+  "inplane_magnetic": [
+   0.005000000000000001,
+   0.0047042679091446405
+  ],
+  "jz_p8": [
+   0.03729045556037041,
+   0.03861516144917381
+  ],
+  "kinetic_change": [
+   8.857113004032136e-05,
+   4.2947194358523844e-05
+  ],
+  "device": "cuda:0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 64,
+  "hermite": 8,
+  "tolerance": 1e-07,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": -0.06090296090087031,
+  "steps": 341,
+  "seconds": 87.84397412883118,
+  "total_energy_rel_error": 7.972589901210226e-11,
+  "inplane_magnetic": [
+   0.005000000000000001,
+   0.006021224458545154
+  ],
+  "jz_p8": [
+   0.03739791440204021,
+   0.06090296090087031
+  ],
+  "kinetic_change": [
+   0.0001604747412995433,
+   -0.0013602626805473694
+  ],
+  "device": "cuda:0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 128,
+  "hermite": 6,
+  "tolerance": 1e-07,
+  "controls": "initial",
+  "t_max": 200.0,
+  "value": -0.03864493132825285,
+  "steps": 566,
+  "seconds": 221.3824682009872,
+  "total_energy_rel_error": 0.00016564494097370675,
+  "inplane_magnetic": [
+   0.005000000000000003,
+   0.004725521906481063
+  ],
+  "jz_p8": [
+   0.03729045556037042,
+   0.03864493132825285
+  ],
+  "kinetic_change": [
+   9.387320903829488e-05,
+   4.170027681254379e-05
+  ],
+  "device": "cuda:0"
+ },
+ {
+  "objective": "peak_current",
+  "source": "optimize_peak_current.json",
+  "trained": "32x4",
+  "grid": 128,
+  "hermite": 6,
+  "tolerance": 1e-07,
+  "controls": "optimized",
+  "t_max": 200.0,
+  "value": -0.060844132153277664,
+  "steps": 576,
+  "seconds": 217.34301820583642,
+  "total_energy_rel_error": 8.953656431765064e-05,
+  "inplane_magnetic": [
+   0.005000000000000001,
+   0.006047494036744692
+  ],
+  "jz_p8": [
+   0.03739791440204021,
+   0.060844132153277664
+  ],
+  "kinetic_change": [
+   0.00016341743879256382,
+   -0.0013638803253746418
+  ],
+  "device": "cuda:0"
+ }
+]
