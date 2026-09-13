@@ -275,6 +275,12 @@ def plot(paths, output):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import FixedLocator, NullLocator, ScalarFormatter
+
+    def data_ticks(ax, values):
+        """Label a log x-axis at the measured values only, so minor-tick labels cannot collide."""
+        ax.xaxis.set_major_locator(FixedLocator(values)); ax.xaxis.set_minor_locator(NullLocator())
+        ax.xaxis.set_major_formatter(ScalarFormatter())
     plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False, "axes.grid": True,
                          "grid.color": "#e6e5e1", "grid.linewidth": 0.6, "pdf.fonttype": 42, "savefig.dpi": 300, "lines.linewidth": 1.6})
     for path in paths:
@@ -324,18 +330,23 @@ def plot(paths, output):
             ax.loglog(P, [r["reverse_s"] for r in c], "o-", color=COLORS["initial"], label="reverse-mode AD (one solve + adjoint)")
             ax.loglog(P, [r["forward_s"] for r in c], "--", color=COLORS["muted"], label="one forward solve")
             ax.set(title="(a) Gradient wall time vs. number of controls P", xlabel="controls P", ylabel="seconds"); ax.legend(frameon=False, fontsize=7)
+            data_ticks(ax, P)
             m = report["memory_steps"]; N = [r["steps"] for r in m]; ax = axes[0, 1]
             ax.loglog(N, [r["reverse_tape_MiB"] for r in m], "o-", color=COLORS["optimized"], label="reverse, full tape")
             ax.loglog(N, [r["reverse_K32_MiB"] for r in m], "o-", color=COLORS["initial"], label="reverse, 32 checkpoints")
             ax.loglog(N, [r["reverse_K8_MiB"] for r in m], "o-", color=COLORS["third"], label="reverse, 8 checkpoints")
             ax.loglog(N, [r["forward_MiB"] for r in m], "--", color=COLORS["muted"], label="forward solve")
             ax.set(title="(b) Compiled workspace vs. time steps N", xlabel="time steps N", ylabel="MiB"); ax.legend(frameon=False, fontsize=7)
+            data_ticks(ax, N)
             r = report["memory_resolution"]; S = [x["state_MiB"] for x in r]; ax = axes[1, 0]
             ax.loglog(S, [x["reverse_MiB"] for x in r], "o-", color=COLORS["initial"], label="reverse-mode gradient")
             ax.loglog(S, [x["forward_MiB"] for x in r], "o-", color=COLORS["muted"], label="forward solve")
-            for x in r:
-                ax.annotate(f"{x['grid']}²×{x['hermite']}³\n×{x['reverse_MiB']/x['forward_MiB']:.1f}", (x["state_MiB"], x["reverse_MiB"]),
-                            textcoords="offset points", xytext=(4, -14), fontsize=6.5)
+            for i, x in enumerate(r):   # alternate below the forward line and above the gradient line so neighbours never collide
+                below = i % 2 == 0
+                ax.annotate(f"{x['grid']}²×{x['hermite']}³, ×{x['reverse_MiB']/x['forward_MiB']:.1f}",
+                            (x["state_MiB"], x["forward_MiB"] if below else x["reverse_MiB"]), textcoords="offset points",
+                            xytext=(0, -6 if below else 6), ha="center", va="top" if below else "bottom", fontsize=6)
+            ax.set_ylim(min(x["forward_MiB"] for x in r) / 4, max(x["reverse_MiB"] for x in r) * 4)
             ax.set(title="(c) Workspace vs. state size (gradient/forward ratio)", xlabel="state size, MiB", ylabel="MiB"); ax.legend(frameon=False, fontsize=7)
             f = report["fd_step"]; ax = axes[1, 1]
             ax.loglog([x["step"] for x in f], [x["relative_error"] for x in f], "o-", color=COLORS["optimized"])
