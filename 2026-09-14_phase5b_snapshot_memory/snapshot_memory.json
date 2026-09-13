@@ -1,0 +1,77 @@
+{
+ "grid": 32,
+ "hermite": 4,
+ "t_max": 100.0,
+ "provenance": {
+  "commit": "98f619f6a30569a4e7f46b9412dd24beb682b748",
+  "modified": true,
+  "device": "CPU, Apple M3 Max",
+  "python": "3.11.14",
+  "versions": {
+   "jax": "0.9.2",
+   "jaxlib": "0.9.2",
+   "diffrax": "0.7.2",
+   "equinox": "0.13.6",
+   "numpy": "2.4.6",
+   "scipy": "1.17.1"
+  }
+ },
+ "rows": [
+  {
+   "checkpoints": 8,
+   "snapshots": 2,
+   "state_MiB": 1.1123046875,
+   "forward_MiB": 29.240264892578125,
+   "reverse_MiB": 70.38330078125
+  },
+  {
+   "checkpoints": 8,
+   "snapshots": 11,
+   "state_MiB": 1.1123046875,
+   "forward_MiB": 39.251258850097656,
+   "reverse_MiB": 80.39435577392578
+  },
+  {
+   "checkpoints": 8,
+   "snapshots": 41,
+   "state_MiB": 1.1123046875,
+   "forward_MiB": 91.2118911743164,
+   "reverse_MiB": 114.59729766845703
+  },
+  {
+   "checkpoints": 8,
+   "snapshots": 161,
+   "state_MiB": 1.1123046875,
+   "forward_MiB": 358.1668472290039,
+   "reverse_MiB": 378.55469512939453
+  },
+  {
+   "checkpoints": 32,
+   "snapshots": 2,
+   "state_MiB": 1.1123046875,
+   "forward_MiB": 29.240264892578125,
+   "reverse_MiB": 123.7789306640625
+  },
+  {
+   "checkpoints": 32,
+   "snapshots": 11,
+   "state_MiB": 1.1123046875,
+   "forward_MiB": 39.251258850097656,
+   "reverse_MiB": 133.78998565673828
+  },
+  {
+   "checkpoints": 32,
+   "snapshots": 41,
+   "state_MiB": 1.1123046875,
+   "forward_MiB": 91.2118911743164,
+   "reverse_MiB": 167.99011993408203
+  },
+  {
+   "checkpoints": 32,
+   "snapshots": 161,
+   "state_MiB": 1.1123046875,
+   "forward_MiB": 358.1668472290039,
+   "reverse_MiB": 431.9474563598633
+  }
+ ]
+}
