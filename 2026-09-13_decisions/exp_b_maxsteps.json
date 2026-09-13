@@ -1,0 +1,107 @@
+[
+ {
+  "label": "max_steps scan",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 100,
+  "max_steps": 200,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": null,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 2.760032,
+  "fwd_s": 0.05838298797607422,
+  "grad_s": 0.3095130920410156,
+  "compile_fwd_s": 0.7167532444000244,
+  "compile_grad_s": 2.4672727584838867,
+  "value": 0.13902901213265506,
+  "grad": [
+   0.04654401584361145,
+   0.0
+  ]
+ },
+ {
+  "label": "max_steps scan",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 100,
+  "max_steps": 2000,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": null,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 7.459552,
+  "fwd_s": 0.05762887001037598,
+  "grad_s": 0.2846357822418213,
+  "compile_fwd_s": 0.5659599304199219,
+  "compile_grad_s": 2.263252019882202,
+  "value": 0.13902901213265506,
+  "grad": [
+   0.04654401584361145,
+   0.0
+  ]
+ },
+ {
+  "label": "max_steps scan",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 100,
+  "max_steps": 20000,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": null,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 23.258784,
+  "fwd_s": 0.05579996109008789,
+  "grad_s": 0.23897433280944824,
+  "compile_fwd_s": 0.5859971046447754,
+  "compile_grad_s": 2.2440409660339355,
+  "value": 0.13902901213265506,
+  "grad": [
+   0.04654401584361145,
+   0.0
+  ]
+ },
+ {
+  "label": "max_steps scan",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 100,
+  "max_steps": 200000,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": null,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 73.077216,
+  "fwd_s": 0.055931806564331055,
+  "grad_s": 0.2625260353088379,
+  "compile_fwd_s": 0.5291290283203125,
+  "compile_grad_s": 2.20940899848938,
+  "value": 0.13902901213265506,
+  "grad": [
+   0.04654401584361145,
+   0.0
+  ]
+ },
+ {
+  "label": "max_steps scan",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 100,
+  "max_steps": 1000000,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": null,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 163.25872,
+  "fwd_s": 0.058995962142944336,
+  "grad_s": 0.26471495628356934,
+  "compile_fwd_s": 0.5819258689880371,
+  "compile_grad_s": 2.0751218795776367,
+  "value": 0.13902901213265506,
+  "grad": [
+   0.04654401584361145,
+   0.0
+  ]
+ }
+]

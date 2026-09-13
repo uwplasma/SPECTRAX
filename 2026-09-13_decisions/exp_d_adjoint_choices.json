@@ -1,0 +1,414 @@
+{
+ "continuous_vs_discrete": [
+  {
+   "nu": 0.0,
+   "T": 2.0,
+   "tol": 1e-07,
+   "discrete": [
+    367.7475605028626,
+    0.0
+   ],
+   "error": "ValueError: `body_fun` must have the same input and output structure. Difference is:\n  (\n    i64[],\n    (\n      c128[2400],\n      c128[2400],\n      (\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        c128[2],\n        c128[],\n        None,\n-       f64[2],\n+"
+  },
+  {
+   "nu": 0.0,
+   "T": 2.0,
+   "tol": 1e-10,
+   "discrete": [
+    367.74758888831946,
+    0.0
+   ],
+   "error": "ValueError: `body_fun` must have the same input and output structure. Difference is:\n  (\n    i64[],\n    (\n      c128[2400],\n      c128[2400],\n      (\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        c128[2],\n        c128[],\n        None,\n-       f64[2],\n+"
+  },
+  {
+   "nu": 0.0,
+   "T": 10.0,
+   "tol": 1e-07,
+   "discrete": [
+    488.4715939477376,
+    0.0
+   ],
+   "error": "ValueError: `body_fun` must have the same input and output structure. Difference is:\n  (\n    i64[],\n    (\n      c128[2400],\n      c128[2400],\n      (\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        c128[2],\n        c128[],\n        None,\n-       f64[2],\n+"
+  },
+  {
+   "nu": 0.0,
+   "T": 10.0,
+   "tol": 1e-10,
+   "discrete": [
+    488.4737942845561,
+    0.0
+   ],
+   "error": "ValueError: `body_fun` must have the same input and output structure. Difference is:\n  (\n    i64[],\n    (\n      c128[2400],\n      c128[2400],\n      (\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        c128[2],\n        c128[],\n        None,\n-       f64[2],\n+"
+  },
+  {
+   "nu": 1.0,
+   "T": 2.0,
+   "tol": 1e-07,
+   "discrete": [
+    367.7475605028626,
+    0.0
+   ],
+   "error": "ValueError: `body_fun` must have the same input and output structure. Difference is:\n  (\n    i64[],\n    (\n      c128[2400],\n      c128[2400],\n      (\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        c128[2],\n        c128[],\n        None,\n-       f64[2],\n+"
+  },
+  {
+   "nu": 1.0,
+   "T": 2.0,
+   "tol": 1e-10,
+   "discrete": [
+    367.74758888831946,
+    0.0
+   ],
+   "error": "ValueError: `body_fun` must have the same input and output structure. Difference is:\n  (\n    i64[],\n    (\n      c128[2400],\n      c128[2400],\n      (\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        c128[2],\n        c128[],\n        None,\n-       f64[2],\n+"
+  },
+  {
+   "nu": 1.0,
+   "T": 10.0,
+   "tol": 1e-07,
+   "discrete": [
+    488.4715939477376,
+    0.0
+   ],
+   "error": "ValueError: `body_fun` must have the same input and output structure. Difference is:\n  (\n    i64[],\n    (\n      c128[2400],\n      c128[2400],\n      (\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        c128[2],\n        c128[],\n        None,\n-       f64[2],\n+"
+  },
+  {
+   "nu": 1.0,
+   "T": 10.0,
+   "tol": 1e-10,
+   "discrete": [
+    488.4737942845561,
+    0.0
+   ],
+   "error": "ValueError: `body_fun` must have the same input and output structure. Difference is:\n  (\n    i64[],\n    (\n      c128[2400],\n      c128[2400],\n      (\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        c128[2],\n        c128[],\n        None,\n-       f64[2],\n+"
+  },
+  {
+   "nu": 3.0,
+   "T": 2.0,
+   "tol": 1e-07,
+   "discrete": [
+    367.7475605028626,
+    0.0
+   ],
+   "error": "ValueError: `body_fun` must have the same input and output structure. Difference is:\n  (\n    i64[],\n    (\n      c128[2400],\n      c128[2400],\n      (\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        c128[2],\n        c128[],\n        None,\n-       f64[2],\n+"
+  },
+  {
+   "nu": 3.0,
+   "T": 2.0,
+   "tol": 1e-10,
+   "discrete": [
+    367.74758888831946,
+    0.0
+   ],
+   "error": "ValueError: `body_fun` must have the same input and output structure. Difference is:\n  (\n    i64[],\n    (\n      c128[2400],\n      c128[2400],\n      (\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        c128[2],\n        c128[],\n        None,\n-       f64[2],\n+"
+  },
+  {
+   "nu": 3.0,
+   "T": 10.0,
+   "tol": 1e-07,
+   "discrete": [
+    488.4715939477376,
+    0.0
+   ],
+   "error": "ValueError: `body_fun` must have the same input and output structure. Difference is:\n  (\n    i64[],\n    (\n      c128[2400],\n      c128[2400],\n      (\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        c128[2],\n        c128[],\n        None,\n-       f64[2],\n+"
+  },
+  {
+   "nu": 3.0,
+   "T": 10.0,
+   "tol": 1e-10,
+   "discrete": [
+    488.4737942845561,
+    0.0
+   ],
+   "error": "ValueError: `body_fun` must have the same input and output structure. Difference is:\n  (\n    i64[],\n    (\n      c128[2400],\n      c128[2400],\n      (\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n        c128[2],\n        c128[],\n        None,\n-       f64[2],\n+"
+  }
+ ],
+ "reversible": [
+  {
+   "nu": 0.0,
+   "N": 100,
+   "h": 0.02,
+   "T": 2.0,
+   "lam": 0.999,
+   "value_rev": 64041.805510199614,
+   "value_ref": 64041.805510199614,
+   "value_rk4": 64041.80551019718,
+   "grad_rel_err_rev_vs_ref": 6.627612525326759e-16,
+   "grad_rel_diff_rev_vs_plainrk4": 8.858420566601138e-11,
+   "y0_reconstruction_rel_err": 1.1369754017993344e-14,
+   "yN_minus_zN": 7.242752121561374e-13,
+   "t_rev": 2.144021987915039,
+   "t_ref": 2.224473237991333
+  },
+  {
+   "nu": 0.0,
+   "N": 100,
+   "h": 0.02,
+   "T": 2.0,
+   "lam": 0.99,
+   "value_rev": 64041.80551019891,
+   "value_ref": 64041.80551019891,
+   "value_rk4": 64041.80551019718,
+   "grad_rel_err_rev_vs_ref": 4.7288382053138894e-15,
+   "grad_rel_diff_rev_vs_plainrk4": 8.290022866563406e-11,
+   "y0_reconstruction_rel_err": 1.1938376761289505e-14,
+   "yN_minus_zN": 4.626490606175447e-13,
+   "t_rev": 1.7980608940124512,
+   "t_ref": 2.042663812637329
+  },
+  {
+   "nu": 0.0,
+   "N": 400,
+   "h": 0.02,
+   "T": 8.0,
+   "lam": 0.999,
+   "value_rev": 64043.701287995726,
+   "value_ref": 64043.701287995726,
+   "value_rk4": 64043.70128799023,
+   "grad_rel_err_rev_vs_ref": 1.6690014596041262e-14,
+   "grad_rel_diff_rev_vs_plainrk4": 3.035719247857482e-10,
+   "y0_reconstruction_rel_err": 5.412128953683924e-14,
+   "yN_minus_zN": 6.497549331490335e-13,
+   "t_rev": 2.867464065551758,
+   "t_ref": 2.9686050415039062
+  },
+  {
+   "nu": 0.0,
+   "N": 400,
+   "h": 0.02,
+   "T": 8.0,
+   "lam": 0.99,
+   "value_rev": 64043.70128799375,
+   "value_ref": 64043.70128799375,
+   "value_rk4": 64043.70128799023,
+   "grad_rel_err_rev_vs_ref": 1.6725238585352252e-13,
+   "grad_rel_diff_rev_vs_plainrk4": 3.0715413889304287e-10,
+   "y0_reconstruction_rel_err": 3.6390288078752015e-13,
+   "yN_minus_zN": 3.2331422174683096e-13,
+   "t_rev": 3.091046094894409,
+   "t_ref": 2.9592461585998535
+  },
+  {
+   "nu": 0.0,
+   "N": 1600,
+   "h": 0.02,
+   "T": 32.0,
+   "lam": 0.999,
+   "value_rev": 64096.83451708316,
+   "value_ref": 64096.83451708316,
+   "value_rk4": 64096.83451707143,
+   "grad_rel_err_rev_vs_ref": 4.951921889642329e-13,
+   "grad_rel_diff_rev_vs_plainrk4": 4.155608065307412e-10,
+   "y0_reconstruction_rel_err": 4.886438033656508e-13,
+   "yN_minus_zN": 4.689624802850163e-13,
+   "t_rev": 6.532856225967407,
+   "t_ref": 6.125576972961426
+  },
+  {
+   "nu": 0.0,
+   "N": 1600,
+   "h": 0.02,
+   "T": 32.0,
+   "lam": 0.99,
+   "value_rev": 64096.83451707717,
+   "value_ref": 64096.83451707717,
+   "value_rk4": 64096.83451707143,
+   "grad_rel_err_rev_vs_ref": 1.201856336179237e-08,
+   "grad_rel_diff_rev_vs_plainrk4": 1.1929981014093117e-08,
+   "y0_reconstruction_rel_err": 6.421970574419641e-08,
+   "yN_minus_zN": 3.2134465462163684e-13,
+   "t_rev": 7.15708589553833,
+   "t_ref": 8.815294027328491
+  },
+  {
+   "nu": 1.0,
+   "N": 100,
+   "h": 0.02,
+   "T": 2.0,
+   "lam": 0.999,
+   "value_rev": 64041.805510199614,
+   "value_ref": 64041.805510199614,
+   "value_rk4": 64041.80551019718,
+   "grad_rel_err_rev_vs_ref": 6.627612525326759e-16,
+   "grad_rel_diff_rev_vs_plainrk4": 8.858420566601138e-11,
+   "y0_reconstruction_rel_err": 1.1369754017993344e-14,
+   "yN_minus_zN": 7.242752121561374e-13,
+   "t_rev": 2.836054801940918,
+   "t_ref": 3.09222412109375
+  },
+  {
+   "nu": 1.0,
+   "N": 100,
+   "h": 0.02,
+   "T": 2.0,
+   "lam": 0.99,
+   "value_rev": 64041.80551019891,
+   "value_ref": 64041.80551019891,
+   "value_rk4": 64041.80551019718,
+   "grad_rel_err_rev_vs_ref": 4.7288382053138894e-15,
+   "grad_rel_diff_rev_vs_plainrk4": 8.290022866563406e-11,
+   "y0_reconstruction_rel_err": 1.1938376761289505e-14,
+   "yN_minus_zN": 4.626490606175447e-13,
+   "t_rev": 2.13657808303833,
+   "t_ref": 2.168386220932007
+  },
+  {
+   "nu": 1.0,
+   "N": 400,
+   "h": 0.02,
+   "T": 8.0,
+   "lam": 0.999,
+   "value_rev": 64043.701287995726,
+   "value_ref": 64043.701287995726,
+   "value_rk4": 64043.70128799023,
+   "grad_rel_err_rev_vs_ref": 1.6690014596041262e-14,
+   "grad_rel_diff_rev_vs_plainrk4": 3.035719247857482e-10,
+   "y0_reconstruction_rel_err": 5.412128953683924e-14,
+   "yN_minus_zN": 6.497549331490335e-13,
+   "t_rev": 3.7361929416656494,
+   "t_ref": 3.9262611865997314
+  },
+  {
+   "nu": 1.0,
+   "N": 400,
+   "h": 0.02,
+   "T": 8.0,
+   "lam": 0.99,
+   "value_rev": 64043.70128799375,
+   "value_ref": 64043.70128799375,
+   "value_rk4": 64043.70128799023,
+   "grad_rel_err_rev_vs_ref": 1.6725238585352252e-13,
+   "grad_rel_diff_rev_vs_plainrk4": 3.0715413889304287e-10,
+   "y0_reconstruction_rel_err": 3.6390288078752015e-13,
+   "yN_minus_zN": 3.2331422174683096e-13,
+   "t_rev": 3.78428316116333,
+   "t_ref": 3.914583206176758
+  },
+  {
+   "nu": 1.0,
+   "N": 1600,
+   "h": 0.02,
+   "T": 32.0,
+   "lam": 0.999,
+   "value_rev": 64096.83451708316,
+   "value_ref": 64096.83451708316,
+   "value_rk4": 64096.83451707143,
+   "grad_rel_err_rev_vs_ref": 4.951921889642329e-13,
+   "grad_rel_diff_rev_vs_plainrk4": 4.155608065307412e-10,
+   "y0_reconstruction_rel_err": 4.886438033656508e-13,
+   "yN_minus_zN": 4.689624802850163e-13,
+   "t_rev": 6.737663984298706,
+   "t_ref": 6.504348993301392
+  },
+  {
+   "nu": 1.0,
+   "N": 1600,
+   "h": 0.02,
+   "T": 32.0,
+   "lam": 0.99,
+   "value_rev": 64096.83451707717,
+   "value_ref": 64096.83451707717,
+   "value_rk4": 64096.83451707143,
+   "grad_rel_err_rev_vs_ref": 1.201856336179237e-08,
+   "grad_rel_diff_rev_vs_plainrk4": 1.1929981014093117e-08,
+   "y0_reconstruction_rel_err": 6.421970574419641e-08,
+   "yN_minus_zN": 3.2134465462163684e-13,
+   "t_rev": 6.419967174530029,
+   "t_ref": 6.220014810562134
+  },
+  {
+   "nu": 3.0,
+   "N": 100,
+   "h": 0.02,
+   "T": 2.0,
+   "lam": 0.999,
+   "value_rev": 64041.805510199614,
+   "value_ref": 64041.805510199614,
+   "value_rk4": 64041.80551019718,
+   "grad_rel_err_rev_vs_ref": 6.627612525326759e-16,
+   "grad_rel_diff_rev_vs_plainrk4": 8.858420566601138e-11,
+   "y0_reconstruction_rel_err": 1.1369754017993344e-14,
+   "yN_minus_zN": 7.242752121561374e-13,
+   "t_rev": 1.7314012050628662,
+   "t_ref": 1.9397881031036377
+  },
+  {
+   "nu": 3.0,
+   "N": 100,
+   "h": 0.02,
+   "T": 2.0,
+   "lam": 0.99,
+   "value_rev": 64041.80551019891,
+   "value_ref": 64041.80551019891,
+   "value_rk4": 64041.80551019718,
+   "grad_rel_err_rev_vs_ref": 4.7288382053138894e-15,
+   "grad_rel_diff_rev_vs_plainrk4": 8.290022866563406e-11,
+   "y0_reconstruction_rel_err": 1.1938376761289505e-14,
+   "yN_minus_zN": 4.626490606175447e-13,
+   "t_rev": 1.6676850318908691,
+   "t_ref": 1.8907380104064941
+  },
+  {
+   "nu": 3.0,
+   "N": 400,
+   "h": 0.02,
+   "T": 8.0,
+   "lam": 0.999,
+   "value_rev": 64043.701287995726,
+   "value_ref": 64043.701287995726,
+   "value_rk4": 64043.70128799023,
+   "grad_rel_err_rev_vs_ref": 1.6690014596041262e-14,
+   "grad_rel_diff_rev_vs_plainrk4": 3.035719247857482e-10,
+   "y0_reconstruction_rel_err": 5.412128953683924e-14,
+   "yN_minus_zN": 6.497549331490335e-13,
+   "t_rev": 2.5732388496398926,
+   "t_ref": 2.7385032176971436
+  },
+  {
+   "nu": 3.0,
+   "N": 400,
+   "h": 0.02,
+   "T": 8.0,
+   "lam": 0.99,
+   "value_rev": 64043.70128799375,
+   "value_ref": 64043.70128799375,
+   "value_rk4": 64043.70128799023,
+   "grad_rel_err_rev_vs_ref": 1.6725238585352252e-13,
+   "grad_rel_diff_rev_vs_plainrk4": 3.0715413889304287e-10,
+   "y0_reconstruction_rel_err": 3.6390288078752015e-13,
+   "yN_minus_zN": 3.2331422174683096e-13,
+   "t_rev": 2.6146140098571777,
+   "t_ref": 2.6864590644836426
+  },
+  {
+   "nu": 3.0,
+   "N": 1600,
+   "h": 0.02,
+   "T": 32.0,
+   "lam": 0.999,
+   "value_rev": 64096.83451708316,
+   "value_ref": 64096.83451708316,
+   "value_rk4": 64096.83451707143,
+   "grad_rel_err_rev_vs_ref": 4.951921889642329e-13,
+   "grad_rel_diff_rev_vs_plainrk4": 4.155608065307412e-10,
+   "y0_reconstruction_rel_err": 4.886438033656508e-13,
+   "yN_minus_zN": 4.689624802850163e-13,
+   "t_rev": 6.535123825073242,
+   "t_ref": 5.947856187820435
+  },
+  {
+   "nu": 3.0,
+   "N": 1600,
+   "h": 0.02,
+   "T": 32.0,
+   "lam": 0.99,
+   "value_rev": 64096.83451707717,
+   "value_ref": 64096.83451707717,
+   "value_rk4": 64096.83451707143,
+   "grad_rel_err_rev_vs_ref": 1.201856336179237e-08,
+   "grad_rel_diff_rev_vs_plainrk4": 1.1929981014093117e-08,
+   "y0_reconstruction_rel_err": 6.421970574419641e-08,
+   "yN_minus_zN": 3.2134465462163684e-13,
+   "t_rev": 6.414690971374512,
+   "t_ref": 6.001915693283081
+  }
+ ]
+}

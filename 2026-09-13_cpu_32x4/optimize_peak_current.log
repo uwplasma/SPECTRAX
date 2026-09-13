@@ -1,0 +1,4 @@
+/Users/rogeriojorge/Library/Python/3.11/lib/python/site-packages/equinox/_jit.py:55: UserWarning: Complex dtype support in Diffrax is a work in progress and may not yet produce correct results. Consider splitting your computation into real and imaginary parts instead.
+  out = fun(*args, **kwargs)
+peak_current: -0.0387087 -> -0.0615677 in 20 iterations (1009 s); wrote /Users/rogeriojorge/local/spectrax-autodiff-evidence/pub/optimize_peak_current.json
+wrote /Users/rogeriojorge/local/spectrax-autodiff-evidence/pub/optimize_peak_current.png/.pdf

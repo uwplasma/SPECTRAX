@@ -1,0 +1,233 @@
+[
+ {
+  "label": "N scan K=8",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 50,
+  "max_steps": 58,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 8,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754928,
+  "grad_temp_MB": 1.91428,
+  "fwd_s": 0.029963970184326172,
+  "grad_s": 0.17506098747253418,
+  "compile_fwd_s": 0.9084131717681885,
+  "compile_grad_s": 2.6229331493377686,
+  "value": 0.1393365860495227,
+  "grad": [
+   0.04961597130630039,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan K=8",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 100,
+  "max_steps": 108,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 8,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 1.914208,
+  "fwd_s": 0.059819698333740234,
+  "grad_s": 0.3814537525177002,
+  "compile_fwd_s": 0.5852069854736328,
+  "compile_grad_s": 2.250214099884033,
+  "value": 0.13902901213265506,
+  "grad": [
+   0.04654401584361145,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan K=8",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 200,
+  "max_steps": 208,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 8,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 1.914208,
+  "fwd_s": 0.11625909805297852,
+  "grad_s": 0.9075360298156738,
+  "compile_fwd_s": 0.572073221206665,
+  "compile_grad_s": 2.2065606117248535,
+  "value": 0.13902269014048313,
+  "grad": [
+   0.046490551825915265,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan K=8",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 400,
+  "max_steps": 408,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 8,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 1.914208,
+  "fwd_s": 0.23183798789978027,
+  "grad_s": 1.800002098083496,
+  "compile_fwd_s": 0.6903989315032959,
+  "compile_grad_s": 2.196326971054077,
+  "value": 0.13902827080487468,
+  "grad": [
+   0.04656640892238348,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan K=8",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 800,
+  "max_steps": 808,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 8,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 1.914208,
+  "fwd_s": 0.46781110763549805,
+  "grad_s": 4.074425220489502,
+  "compile_fwd_s": 0.5820517539978027,
+  "compile_grad_s": 2.2332701683044434,
+  "value": 0.13901741948747026,
+  "grad": [
+   0.0464150391437598,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan K=8",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 1600,
+  "max_steps": 1608,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 8,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 1.914208,
+  "fwd_s": 0.9344229698181152,
+  "grad_s": 8.826629161834717,
+  "compile_fwd_s": 0.5861399173736572,
+  "compile_grad_s": 2.591355800628662,
+  "value": 0.13898905244346288,
+  "grad": [
+   0.045784884248279686,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan tape",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 50,
+  "max_steps": 58,
+  "adjoint": "DirectAdjoint",
+  "checkpoints": null,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.909248,
+  "grad_temp_MB": 30.903584,
+  "fwd_s": 0.04157423973083496,
+  "grad_s": 0.17326998710632324,
+  "compile_fwd_s": 0.6043660640716553,
+  "compile_grad_s": 2.434295892715454,
+  "value": 0.1393365860495227,
+  "grad": [
+   0.04961597130630038,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan tape",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 100,
+  "max_steps": 108,
+  "adjoint": "DirectAdjoint",
+  "checkpoints": null,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.909184,
+  "grad_temp_MB": 30.903456,
+  "fwd_s": 0.08097386360168457,
+  "grad_s": 0.4355659484863281,
+  "compile_fwd_s": 0.8184781074523926,
+  "compile_grad_s": 2.0827999114990234,
+  "value": 0.13902901213265506,
+  "grad": [
+   0.04654401584361145,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan tape",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 200,
+  "max_steps": 208,
+  "adjoint": "DirectAdjoint",
+  "checkpoints": null,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.909184,
+  "grad_temp_MB": 30.903456,
+  "fwd_s": 0.21068310737609863,
+  "grad_s": 0.6870582103729248,
+  "compile_fwd_s": 0.6066617965698242,
+  "compile_grad_s": 2.4553370475769043,
+  "value": 0.13902269014048313,
+  "grad": [
+   0.04649055182591527,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan tape",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 400,
+  "max_steps": 408,
+  "adjoint": "DirectAdjoint",
+  "checkpoints": null,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.91028,
+  "grad_temp_MB": 32.143968,
+  "fwd_s": 0.3190481662750244,
+  "grad_s": 1.6351478099822998,
+  "compile_fwd_s": 0.6585259437561035,
+  "compile_grad_s": 2.891043186187744,
+  "value": 0.13902827080487468,
+  "grad": [
+   0.04656640892238347,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan tape",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 800,
+  "max_steps": 808,
+  "adjoint": "DirectAdjoint",
+  "checkpoints": null,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.91028,
+  "grad_temp_MB": 32.143968,
+  "fwd_s": 0.6397020816802979,
+  "grad_s": 3.485741138458252,
+  "compile_fwd_s": 0.6553542613983154,
+  "compile_grad_s": 2.739846706390381,
+  "value": 0.13901741948747026,
+  "grad": [
+   0.04641503914375983,
+   0.0
+  ]
+ }
+]

@@ -1,0 +1,233 @@
+[
+ {
+  "label": "N scan tape(K=N)",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 50,
+  "max_steps": 58,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 50,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754928,
+  "grad_temp_MB": 6.076392,
+  "fwd_s": 0.033709049224853516,
+  "grad_s": 0.21431398391723633,
+  "compile_fwd_s": 1.0648939609527588,
+  "compile_grad_s": 3.9477901458740234,
+  "value": 0.1393365860495227,
+  "grad": [
+   0.04961597130630038,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan tape(K=N)",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 100,
+  "max_steps": 108,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 100,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 11.842208,
+  "fwd_s": 0.05859208106994629,
+  "grad_s": 0.2726771831512451,
+  "compile_fwd_s": 0.6649069786071777,
+  "compile_grad_s": 2.3176629543304443,
+  "value": 0.13902901213265506,
+  "grad": [
+   0.04654401584361145,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan tape(K=N)",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 200,
+  "max_steps": 208,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 200,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 23.373984,
+  "fwd_s": 0.11915802955627441,
+  "grad_s": 0.5263926982879639,
+  "compile_fwd_s": 0.6134359836578369,
+  "compile_grad_s": 2.3389627933502197,
+  "value": 0.13902269014048313,
+  "grad": [
+   0.04649055182591528,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan tape(K=N)",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 400,
+  "max_steps": 408,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 400,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 46.438048,
+  "fwd_s": 0.23654389381408691,
+  "grad_s": 1.028723955154419,
+  "compile_fwd_s": 0.573523998260498,
+  "compile_grad_s": 2.19425892829895,
+  "value": 0.13902827080487468,
+  "grad": [
+   0.04656640892238345,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan tape(K=N)",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 800,
+  "max_steps": 808,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 800,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 92.566368,
+  "fwd_s": 0.4721970558166504,
+  "grad_s": 2.361970901489258,
+  "compile_fwd_s": 0.6807832717895508,
+  "compile_grad_s": 2.375640869140625,
+  "value": 0.13901741948747026,
+  "grad": [
+   0.04641503914375991,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan K=32",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 50,
+  "max_steps": 58,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 32,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754928,
+  "grad_temp_MB": 4.037736,
+  "fwd_s": 0.02981281280517578,
+  "grad_s": 0.14484310150146484,
+  "compile_fwd_s": 0.6439380645751953,
+  "compile_grad_s": 2.315126657485962,
+  "value": 0.1393365860495227,
+  "grad": [
+   0.04961597130630038,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan K=32",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 100,
+  "max_steps": 108,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 32,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 4.037664,
+  "fwd_s": 0.060623884201049805,
+  "grad_s": 0.2999086380004883,
+  "compile_fwd_s": 0.5831198692321777,
+  "compile_grad_s": 2.4569921493530273,
+  "value": 0.13902901213265506,
+  "grad": [
+   0.04654401584361145,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan K=32",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 200,
+  "max_steps": 208,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 32,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 4.037664,
+  "fwd_s": 0.12015581130981445,
+  "grad_s": 0.6171541213989258,
+  "compile_fwd_s": 0.6469128131866455,
+  "compile_grad_s": 2.3612020015716553,
+  "value": 0.13902269014048313,
+  "grad": [
+   0.04649055182591528,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan K=32",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 400,
+  "max_steps": 408,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 32,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 4.037664,
+  "fwd_s": 0.2370457649230957,
+  "grad_s": 1.3136990070343018,
+  "compile_fwd_s": 0.598484992980957,
+  "compile_grad_s": 2.4595091342926025,
+  "value": 0.13902827080487468,
+  "grad": [
+   0.046566408922383465,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan K=32",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 800,
+  "max_steps": 808,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 32,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 4.03824,
+  "fwd_s": 0.47937774658203125,
+  "grad_s": 3.5135459899902344,
+  "compile_fwd_s": 0.604698896408081,
+  "compile_grad_s": 2.427664041519165,
+  "value": 0.13901741948747026,
+  "grad": [
+   0.04641503914375979,
+   0.0
+  ]
+ },
+ {
+  "label": "N scan K=32",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 1600,
+  "max_steps": 1608,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 32,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 4.03824,
+  "fwd_s": 0.957913875579834,
+  "grad_s": 10.116158962249756,
+  "compile_fwd_s": 0.6156537532806396,
+  "compile_grad_s": 2.6385610103607178,
+  "value": 0.13898905244346288,
+  "grad": [
+   0.045784884248279756,
+   0.0
+  ]
+ }
+]

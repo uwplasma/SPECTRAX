@@ -1,0 +1,128 @@
+[
+ {
+  "label": "K scan",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 200,
+  "max_steps": 208,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 1,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 1.37616,
+  "fwd_s": 0.11569786071777344,
+  "grad_s": 13.243767023086548,
+  "compile_fwd_s": 0.7087740898132324,
+  "compile_grad_s": 2.43595290184021,
+  "value": 0.13902269014048313,
+  "grad": [
+   0.046490551825915265,
+   0.0
+  ]
+ },
+ {
+  "label": "K scan",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 200,
+  "max_steps": 208,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 2,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 1.453408,
+  "fwd_s": 0.11810493469238281,
+  "grad_s": 5.0419089794158936,
+  "compile_fwd_s": 0.5925149917602539,
+  "compile_grad_s": 2.349958896636963,
+  "value": 0.13902269014048313,
+  "grad": [
+   0.046490551825915265,
+   0.0
+  ]
+ },
+ {
+  "label": "K scan",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 200,
+  "max_steps": 208,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 4,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 1.607008,
+  "fwd_s": 0.12842774391174316,
+  "grad_s": 1.441864013671875,
+  "compile_fwd_s": 0.5911319255828857,
+  "compile_grad_s": 2.667949914932251,
+  "value": 0.13902269014048313,
+  "grad": [
+   0.046490551825915265,
+   0.0
+  ]
+ },
+ {
+  "label": "K scan",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 200,
+  "max_steps": 208,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 8,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 1.914208,
+  "fwd_s": 0.1266932487487793,
+  "grad_s": 1.165560007095337,
+  "compile_fwd_s": 0.663409948348999,
+  "compile_grad_s": 2.7017242908477783,
+  "value": 0.13902269014048313,
+  "grad": [
+   0.046490551825915265,
+   0.0
+  ]
+ },
+ {
+  "label": "K scan",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 200,
+  "max_steps": 208,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 16,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 2.529312,
+  "fwd_s": 0.12098193168640137,
+  "grad_s": 0.7964699268341064,
+  "compile_fwd_s": 0.6436581611633301,
+  "compile_grad_s": 2.7268338203430176,
+  "value": 0.13902269014048313,
+  "grad": [
+   0.046490551825915286,
+   0.0
+  ]
+ },
+ {
+  "label": "K scan",
+  "Nx": 8,
+  "Nn": 3,
+  "steps": 200,
+  "max_steps": 208,
+  "adjoint": "RecursiveCheckpointAdjoint",
+  "checkpoints": 64,
+  "state_MB": 0.0384,
+  "fwd_temp_MB": 0.754856,
+  "grad_temp_MB": 7.689952,
+  "fwd_s": 0.11561822891235352,
+  "grad_s": 0.6020610332489014,
+  "compile_fwd_s": 0.7178659439086914,
+  "compile_grad_s": 2.040050983428955,
+  "value": 0.13902269014048313,
+  "grad": [
+   0.046490551825915286,
+   0.0
+  ]
+ }
+]
