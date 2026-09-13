@@ -1,0 +1,183 @@
+{
+  "settings": {
+    "grid": 12,
+    "hermite": 3,
+    "steps": 4,
+    "window": [
+      0.0,
+      0.2
+    ],
+    "intervals": 2,
+    "quadrature": 16,
+    "objective": "excess"
+  },
+  "method": "ad",
+  "nu": 0.0,
+  "loss_scale": 10000.0,
+  "loss_definition": "-loss_scale * raw_gain; raw_gain is normalized by tail_spec.normalization",
+  "tail_spec": {
+    "threshold": 0.234375,
+    "width": 0.0234375,
+    "normalization": 0.046875
+  },
+  "initial_phase": [
+    0.7859979977652181,
+    2.4957679180609933,
+    1.7321842783482628,
+    -1.7265741463697049,
+    -1.2555922625248999,
+    2.3471055195601043,
+    -3.1085097693055483,
+    2.0183376786311342
+  ],
+  "optimizer_options": {
+    "maxiter": 20,
+    "ftol": 1e-12,
+    "gtol": 1e-09,
+    "maxls": 20
+  },
+  "fd_step": 0.001,
+  "source_sha256": {
+    "Examples/2D_particle_acceleration.py": "fc7dff61da7a4dca1064676541062302d921088084d366da2d8901d95e768a22",
+    "Examples/_particle_observables.py": "bd5875f9991c36e0dc1e3ba2f444be22c45c64e4f619824b35800b57e8bb3dfb",
+    "spectrax/__init__.py": "e383a9a49090059b04aabb316fdf357ff9b4bfa1a738cf19c82a5c94d07cdced",
+    "spectrax/__main__.py": "3dab05c447f9cddbc09ab3b61baf58a276b2a3cdc4cc2253f5c7ddfb862939e9",
+    "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+    "spectrax/_diagnostics.py": "67c07e56c15eb73489880ffa534f38fdb5741bc64576decd0f71d4a46114ae27",
+    "spectrax/_energization.py": "8292997f56d5f38567804016585547221125b7cc11286f2f3a5c97ec1c58ccf2",
+    "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
+    "spectrax/_initialize_maxwellian.py": "04e6aaf0a9531df797f91fc6571da5f1c3ac96a875ba4fbc7e3146d236f7db16",
+    "spectrax/_inverse_transform.py": "5676c95cbe0627d38ea0705f92245f4c38d0a15a36d689527eda7d924b77267d",
+    "spectrax/_local_tail.py": "0e03dee0180871dd91b50328c1dff8e67f684cb8c8636f9238340f78f72a4eb9",
+    "spectrax/_local_tail_diagnostics.py": "3068110d4a7d3fcc953e2222d128f3a3f1149f1eb656786a17329ce26ff0228e",
+    "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+    "spectrax/_plot.py": "e57fef82aa9d365eda955636aa649449166aafbe59b49acd2d0198e0c3a6b0f1",
+    "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+    "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+    "spectrax/midpoint_solver.py": "e5f430c32376389797ffcdb853bac69931f97e40449a793492b77d4a075350ae"
+  },
+  "versions": {
+    "jax": "0.9.2",
+    "jaxlib": "0.9.2",
+    "solvax": "0.20.0",
+    "diffrax": "0.7.2",
+    "numpy": "2.4.6",
+    "scipy": "1.17.1"
+  },
+  "controls_key": "initial_phase",
+  "controls_sha256": null,
+  "device": "cuda:0",
+  "jax_enable_x64": true,
+  "sample_times": [
+    0.0,
+    0.1,
+    0.2
+  ],
+  "evaluate_only": true,
+  "interpretation": "Phase control of sampled, local flow-relative electron tail gain (nu=0).\n\nAD and centered FD minimize the SAME loss: -1e4 * normalized physical gain.\nTail includes heating; excess subtracts a full covariance-matched local Gaussian.\nNeither proves nonthermal acceleration: candidates need q96+ convergence,\nRK4/Hermite/grid refinement, energy balance, density/covariance and negativity\nchecks. Small runs demonstrate optimization, not resolved turbulence.\n",
+  "candidate_checks": "not run; parent must validate candidates",
+  "status": "complete",
+  "compile_seconds": 20.440216624876484,
+  "fg_calls": 1,
+  "objective_calls": 33,
+  "fd_check_objective_calls": 32,
+  "call_count_note": "Includes warm and callbacks; objective calls exclude AD reverse replay and compilation",
+  "warm_seconds": 0.5731430049054325,
+  "initial_loss": -0.0008951493145337164,
+  "initial_raw_gain": 8.951493145337164e-08,
+  "initial_gradient": [
+    0.0002588817191994682,
+    -0.00015603190627261755,
+    -0.00021412690613701273,
+    -0.00013845977534280096,
+    6.058133416102847e-06,
+    3.185332959581621e-05,
+    -4.946774841678556e-05,
+    -3.3226641703883874e-05
+  ],
+  "history": [
+    {
+      "seconds": 23.558074591914192,
+      "loss": -0.0008951493145337164,
+      "raw_gain": 8.951493145337164e-08,
+      "energy_density_gain": 4.1960124118767955e-09
+    }
+  ],
+  "fd_check": [
+    {
+      "step": 0.001,
+      "gradient": [
+        0.00025888164875698116,
+        -0.00015603192349278316,
+        -0.0002141268412580999,
+        -0.00013845979918158946,
+        6.0580880589800046e-06,
+        3.185332206334657e-05,
+        -4.9467721585649826e-05,
+        -3.3226650597573126e-05
+      ],
+      "reference_method": "ad",
+      "max_absolute_error": 7.044248702143402e-11
+    },
+    {
+      "step": 0.0005,
+      "gradient": [
+        0.00025888170079868544,
+        -0.00015603188879831364,
+        -0.00021412691064703893,
+        -0.00013845983387605898,
+        6.058105406214764e-06,
+        3.185333941058133e-05,
+        -4.9467756280119346e-05,
+        -3.322658120863409e-05
+      ],
+      "reference_method": "ad",
+      "max_absolute_error": 6.049524978722111e-11
+    }
+  ],
+  "fd_check_seconds": 23.309497229987755,
+  "optimization_seconds": 1.7259735614061356e-06,
+  "initial_energies": [
+    0.0,
+    0.13046125,
+    0.047300816548696924,
+    0.051875000000000004
+  ],
+  "optimized_initial_energies": [
+    0.0,
+    0.13046125,
+    0.047300816548696924,
+    0.051875000000000004
+  ],
+  "initial_energy_constraint_error": 0.0,
+  "optimized_phase": [
+    0.7859979977652181,
+    2.4957679180609933,
+    1.7321842783482628,
+    -1.7265741463697049,
+    -1.2555922625248999,
+    2.3471055195601043,
+    -3.1085097693055483,
+    2.0183376786311342
+  ],
+  "final_loss": -0.0008951493145337164,
+  "final_raw_gain": 8.951493145337164e-08,
+  "raw_gain_improvement": 0.0,
+  "initial_energy_density_gain": 4.1960124118767955e-09,
+  "final_energy_density_gain": 4.1960124118767955e-09,
+  "success": null,
+  "message": "evaluated only",
+  "iterations": 0,
+  "final_gradient": [
+    0.0002588817191994682,
+    -0.00015603190627261755,
+    -0.00021412690613701273,
+    -0.00013845977534280096,
+    6.058133416102847e-06,
+    3.185332959581621e-05,
+    -4.946774841678556e-05,
+    -3.3226641703883874e-05
+  ],
+  "source_unchanged": true,
+  "total_seconds": 48.01490836404264
+}

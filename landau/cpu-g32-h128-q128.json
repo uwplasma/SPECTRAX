@@ -1,0 +1,52 @@
+[
+  {
+    "time": 0,
+    "excess": 5.551115123125783e-17,
+    "gaussian_tail": 0.019077155543225463,
+    "min_covariance_eigenvalue": 0.00040000000000000013,
+    "min_density": 0.5221416072158562,
+    "tail": 0.01907715554322552,
+    "max_cell_fraction": 0.0,
+    "mean_negative_mass": 0.0
+  },
+  {
+    "time": 1,
+    "excess": -1.1451671003956387e-05,
+    "gaussian_tail": 0.02326182794849862,
+    "min_covariance_eigenvalue": 0.0002417401763282791,
+    "min_density": 0.7652997043486998,
+    "tail": 0.023250376277494662,
+    "max_cell_fraction": 1.1246973319321995e-42,
+    "mean_negative_mass": 7.590535912051818e-44
+  },
+  {
+    "time": 2,
+    "excess": -0.00687578215004115,
+    "gaussian_tail": 0.05551940547074902,
+    "min_covariance_eigenvalue": 0.00015748370364278302,
+    "min_density": 0.8656685414529491,
+    "tail": 0.04864362332070787,
+    "max_cell_fraction": 4.062196580475693e-12,
+    "mean_negative_mass": 4.956090774655033e-13
+  },
+  {
+    "time": 3,
+    "excess": 0.00426630065430357,
+    "gaussian_tail": 0.03411254868871928,
+    "min_covariance_eigenvalue": 0.00039513984580800266,
+    "min_density": 0.8370914641743579,
+    "tail": 0.03837884934302285,
+    "max_cell_fraction": 6.44591173125882e-05,
+    "mean_negative_mass": 8.620843744064849e-06
+  },
+  {
+    "time": 4,
+    "excess": 0.02606546847371463,
+    "gaussian_tail": 0.04776135455074082,
+    "min_covariance_eigenvalue": 0.00032188775381369655,
+    "min_density": 0.9376141781235804,
+    "tail": 0.07382682302445545,
+    "max_cell_fraction": 0.00012970053703497658,
+    "mean_negative_mass": 2.8070876851236443e-05
+  }
+]

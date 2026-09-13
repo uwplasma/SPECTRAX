@@ -1,0 +1,288 @@
+{
+  "settings": {
+    "grid": 16,
+    "hermite": 8,
+    "steps": 600,
+    "window": [
+      40.0,
+      60.0
+    ],
+    "intervals": 20,
+    "quadrature": 96,
+    "objective": "excess"
+  },
+  "method": "ad",
+  "nu": 0.0,
+  "loss_scale": 10000.0,
+  "loss_definition": "-loss_scale * raw_gain; raw_gain is normalized by tail_spec.normalization",
+  "tail_spec": {
+    "threshold": 0.234375,
+    "width": 0.0234375,
+    "normalization": 0.046875
+  },
+  "initial_phase": [
+    0.7859979977652181,
+    2.4957679180609933,
+    1.7321842783482628,
+    -1.7265741463697049,
+    -1.2555922625248999,
+    2.3471055195601043,
+    -3.1085097693055483,
+    2.0183376786311342
+  ],
+  "optimizer_options": {
+    "maxiter": 20,
+    "ftol": 1e-12,
+    "gtol": 1e-09,
+    "maxls": 20
+  },
+  "fd_step": 0.001,
+  "source_sha256": {
+    "Examples/2D_particle_acceleration.py": "fc7dff61da7a4dca1064676541062302d921088084d366da2d8901d95e768a22",
+    "Examples/_particle_observables.py": "bd5875f9991c36e0dc1e3ba2f444be22c45c64e4f619824b35800b57e8bb3dfb",
+    "spectrax/__init__.py": "e383a9a49090059b04aabb316fdf357ff9b4bfa1a738cf19c82a5c94d07cdced",
+    "spectrax/__main__.py": "3dab05c447f9cddbc09ab3b61baf58a276b2a3cdc4cc2253f5c7ddfb862939e9",
+    "spectrax/_autodiff.py": "1bd932480d9fd1f358ed2c03fc10dd582ccbd19d54336d169fc37086de1be314",
+    "spectrax/_diagnostics.py": "67c07e56c15eb73489880ffa534f38fdb5741bc64576decd0f71d4a46114ae27",
+    "spectrax/_energization.py": "8292997f56d5f38567804016585547221125b7cc11286f2f3a5c97ec1c58ccf2",
+    "spectrax/_initialization.py": "6551a8e9e9337febf3e33a6f7206b1c9c61efd24f5f7d90fcc80d7988a329994",
+    "spectrax/_initialize_maxwellian.py": "04e6aaf0a9531df797f91fc6571da5f1c3ac96a875ba4fbc7e3146d236f7db16",
+    "spectrax/_inverse_transform.py": "5676c95cbe0627d38ea0705f92245f4c38d0a15a36d689527eda7d924b77267d",
+    "spectrax/_local_tail.py": "0e03dee0180871dd91b50328c1dff8e67f684cb8c8636f9238340f78f72a4eb9",
+    "spectrax/_local_tail_diagnostics.py": "3068110d4a7d3fcc953e2222d128f3a3f1149f1eb656786a17329ce26ff0228e",
+    "spectrax/_model.py": "76e6eaf46e668e7323bbce38164af29c664f904dee8ddbf74a2c3f8ff061ad85",
+    "spectrax/_plot.py": "e57fef82aa9d365eda955636aa649449166aafbe59b49acd2d0198e0c3a6b0f1",
+    "spectrax/_simulation.py": "a2cffd56d0a78a2e20d2f2ee4f8cd1197ab7358018d180a6c599f8faee917bb2",
+    "spectrax/_velocity_observables.py": "e11d52cf1ee22326f5a0afb76cd06494f2fff85ec5e225f9eb03214d78edd9cf",
+    "spectrax/midpoint_solver.py": "e5f430c32376389797ffcdb853bac69931f97e40449a793492b77d4a075350ae"
+  },
+  "versions": {
+    "jax": "0.9.2",
+    "jaxlib": "0.9.2",
+    "solvax": "0.20.0",
+    "diffrax": "0.7.2",
+    "numpy": "2.4.6",
+    "scipy": "1.17.1"
+  },
+  "controls_key": "initial_phase",
+  "controls_sha256": null,
+  "device": "cuda:0",
+  "jax_enable_x64": true,
+  "sample_times": [
+    40.0,
+    41.0,
+    42.0,
+    43.0,
+    44.0,
+    45.0,
+    46.0,
+    47.0,
+    48.0,
+    49.0,
+    50.0,
+    51.0,
+    52.0,
+    53.0,
+    54.0,
+    55.0,
+    56.0,
+    57.0,
+    58.0,
+    59.0,
+    60.0
+  ],
+  "evaluate_only": false,
+  "interpretation": "Phase control of sampled, local flow-relative electron tail gain (nu=0).\n\nAD and centered FD minimize the SAME loss: -1e4 * normalized physical gain.\nTail includes heating; excess subtracts a full covariance-matched local Gaussian.\nNeither proves nonthermal acceleration: candidates need q96+ convergence,\nRK4/Hermite/grid refinement, energy balance, density/covariance and negativity\nchecks. Small runs demonstrate optimization, not resolved turbulence.\n",
+  "candidate_checks": "not run; parent must validate candidates",
+  "status": "complete",
+  "compile_seconds": 42.30470325006172,
+  "fg_calls": 27,
+  "objective_calls": 27,
+  "fd_check_objective_calls": 0,
+  "call_count_note": "Includes warm and callbacks; objective calls exclude AD reverse replay and compilation",
+  "warm_seconds": 22.17457076907158,
+  "initial_loss": 0.07701903158579244,
+  "initial_raw_gain": -7.701903158579245e-06,
+  "initial_gradient": [
+    -0.0013879304111665464,
+    -0.007406170556594252,
+    -0.0025925173242107268,
+    -0.0026499233062843046,
+    0.0010808680546196736,
+    -0.0008944005821311721,
+    -0.0015141460013168096,
+    0.006994429877874296
+  ],
+  "history": [
+    {
+      "seconds": 66.86602470418438,
+      "loss": 0.07701903158579244,
+      "raw_gain": -7.701903158579245e-06,
+      "energy_density_gain": -3.610267105584021e-07
+    },
+    {
+      "seconds": 111.42656767414883,
+      "loss": 0.066321504143108,
+      "raw_gain": -6.6321504143108e-06,
+      "energy_density_gain": -3.108820506708187e-07
+    },
+    {
+      "seconds": 133.85913343308493,
+      "loss": 0.04638443956729056,
+      "raw_gain": -4.638443956729056e-06,
+      "energy_density_gain": -2.174270604716745e-07
+    },
+    {
+      "seconds": 178.73017649096437,
+      "loss": 0.03732640696775705,
+      "raw_gain": -3.7326406967757046e-06,
+      "energy_density_gain": -1.7496753266136116e-07
+    },
+    {
+      "seconds": 223.47072465508245,
+      "loss": 0.03630981013115602,
+      "raw_gain": -3.6309810131156023e-06,
+      "energy_density_gain": -1.7020223498979387e-07
+    },
+    {
+      "seconds": 245.95191515400074,
+      "loss": 0.03441810828605017,
+      "raw_gain": -3.441810828605017e-06,
+      "energy_density_gain": -1.6133488259086017e-07
+    },
+    {
+      "seconds": 290.86702813906595,
+      "loss": 0.03307213161687622,
+      "raw_gain": -3.3072131616876223e-06,
+      "energy_density_gain": -1.550256169541073e-07
+    },
+    {
+      "seconds": 313.3801412379835,
+      "loss": 0.032697892875030846,
+      "raw_gain": -3.2697892875030844e-06,
+      "energy_density_gain": -1.5327137285170708e-07
+    },
+    {
+      "seconds": 335.96707542496733,
+      "loss": 0.03245205185048297,
+      "raw_gain": -3.2452051850482973e-06,
+      "energy_density_gain": -1.5211899304913894e-07
+    },
+    {
+      "seconds": 358.5318811410107,
+      "loss": 0.03230495658265189,
+      "raw_gain": -3.2304956582651886e-06,
+      "energy_density_gain": -1.514294839811807e-07
+    },
+    {
+      "seconds": 403.71946594305336,
+      "loss": 0.03217472865151424,
+      "raw_gain": -3.217472865151424e-06,
+      "energy_density_gain": -1.50819040553973e-07
+    },
+    {
+      "seconds": 448.6162762870081,
+      "loss": 0.03199530622193328,
+      "raw_gain": -3.199530622193328e-06,
+      "energy_density_gain": -1.4997799791531226e-07
+    },
+    {
+      "seconds": 471.3039993061684,
+      "loss": 0.031858735458887316,
+      "raw_gain": -3.1858735458887315e-06,
+      "energy_density_gain": -1.4933782246353428e-07
+    },
+    {
+      "seconds": 493.90312612918206,
+      "loss": 0.03175613671752832,
+      "raw_gain": -3.1756136717528317e-06,
+      "energy_density_gain": -1.48856890863414e-07
+    },
+    {
+      "seconds": 516.3266113470308,
+      "loss": 0.0317359672275275,
+      "raw_gain": -3.17359672275275e-06,
+      "energy_density_gain": -1.4876234637903515e-07
+    },
+    {
+      "seconds": 538.7415833361447,
+      "loss": 0.031733297577222284,
+      "raw_gain": -3.1733297577222286e-06,
+      "energy_density_gain": -1.4874983239322947e-07
+    },
+    {
+      "seconds": 561.0988325630315,
+      "loss": 0.03173216457144409,
+      "raw_gain": -3.173216457144409e-06,
+      "energy_density_gain": -1.4874452142864416e-07
+    },
+    {
+      "seconds": 583.5685413100291,
+      "loss": 0.03173134020045321,
+      "raw_gain": -3.1731340200453212e-06,
+      "energy_density_gain": -1.4874065718962444e-07
+    },
+    {
+      "seconds": 606.1018002741039,
+      "loss": 0.03173098874624333,
+      "raw_gain": -3.1730988746243333e-06,
+      "energy_density_gain": -1.4873900974801562e-07
+    },
+    {
+      "seconds": 628.6374263060279,
+      "loss": 0.031730982085179854,
+      "raw_gain": -3.1730982085179852e-06,
+      "energy_density_gain": -1.4873897852428056e-07
+    },
+    {
+      "seconds": 651.1416410300881,
+      "loss": 0.03173095672429758,
+      "raw_gain": -3.173095672429758e-06,
+      "energy_density_gain": -1.487388596451449e-07
+    }
+  ],
+  "optimization_seconds": 584.2764208340086,
+  "initial_energies": [
+    0.0,
+    0.13046125,
+    0.047300816548696924,
+    0.05187500000000001
+  ],
+  "optimized_initial_energies": [
+    0.0,
+    0.13046125,
+    0.047300816548696924,
+    0.05187500000000001
+  ],
+  "initial_energy_constraint_error": 0.0,
+  "optimized_phase": [
+    3.8239743972787195,
+    9.351714469975645,
+    3.046533440219297,
+    0.8450674278630264,
+    -1.2857701457977488,
+    4.34900437680613,
+    0.048992495754751536,
+    -6.075672202349232
+  ],
+  "final_loss": 0.03173095672429758,
+  "final_raw_gain": -3.173095672429758e-06,
+  "raw_gain_improvement": 4.528807486149487e-06,
+  "initial_energy_density_gain": -3.610267105584021e-07,
+  "final_energy_density_gain": -1.487388596451449e-07,
+  "success": false,
+  "message": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+  "iterations": 20,
+  "final_gradient": [
+    -1.2673817801230319e-06,
+    -4.514737089607833e-07,
+    -3.7338682871220115e-07,
+    1.0682080203011906e-06,
+    1.1592521243425965e-06,
+    4.205396073693121e-07,
+    -1.6023737593645116e-06,
+    -1.0816305713416685e-06
+  ],
+  "source_unchanged": true,
+  "total_seconds": 652.3166229671333
+}
