@@ -263,7 +263,28 @@ This project is protected under the MIT License. For more details, refer to the 
 
 ---
 
+## Gradients through the solver
 
+`simulation` is differentiable with ordinary JAX transformations. Any real scalar of its output
+(field energies, kinetic energies, the out-of-plane current from `plasma_current`, ...) can be
+differentiated with respect to any physical parameter or initial condition:
 
+```python
+import jax
+from spectrax import simulation
 
+def loss(deltaB):
+    output = simulation(orszag_tang_parameters(deltaB), Nx=64, Ny=64, Nn=6, Nm=6, Np=6, Ns=2, timesteps=11)
+    return output["EM_energy"][-1]
 
+value, gradient = jax.value_and_grad(loss)(0.2)
+```
+
+The reverse pass differentiates the executed time stepper (Dopri8 with its adaptive controller by
+default) through Diffrax's binomial checkpointing, so its workspace is a fixed multiple of the
+forward solve and independent of the number of time steps.
+`simulation(..., adjoint=RecursiveCheckpointAdjoint(checkpoints=K))` trades memory for
+recomputation, `ForwardMode()` selects forward mode, and fixed-step runs should pass
+`max_steps` close to the step count. `Examples/2D_Orszag_Tang_optimization.py` optimises the
+initial magnetic field of the Orszag–Tang vortex for magnetic-energy conversion or current-sheet
+intensity and benchmarks gradient cost and memory against finite differences.
