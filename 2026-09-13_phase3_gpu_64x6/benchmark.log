@@ -1,0 +1,20 @@
+/home/rjorge/venvs/vmex-gpu/lib/python3.12/site-packages/equinox/_jit.py:55: UserWarning: Complex dtype support in Diffrax is a work in progress and may not yet produce correct results. Consider splitting your computation into real and imaginary parts instead.
+  out = fun(*args, **kwargs)
+P=   4: forward 0.42 s, AD gradient 2.78 s (6.6x), FD gradient 3.6 s (1.3x AD), |FD-AD|/|AD| 1.8e-07
+P=   8: forward 0.43 s, AD gradient 2.80 s (6.5x), FD gradient 6.9 s (2.5x AD), |FD-AD|/|AD| 7.8e-08
+P=  16: forward 0.43 s, AD gradient 2.80 s (6.5x), FD gradient 13.6 s (4.8x AD), |FD-AD|/|AD| 2.1e-08
+P=  32: forward 0.43 s, AD gradient 2.83 s (6.6x), FD gradient 27.3 s (9.6x AD), |FD-AD|/|AD| 1.1e-07
+P=  64: forward 0.47 s, AD gradient 3.00 s (6.4x), FD gradient 58.9 s (19.6x AD), |FD-AD|/|AD| 2.1e-07
+memory vs steps: {'steps': 50, 'forward_MiB': 14.62298583984375, 'reverse_tape_MiB': 229.55319213867188, 'reverse_K8_MiB': 54.296844482421875, 'reverse_K32_MiB': 149.46432495117188}
+memory vs steps: {'steps': 100, 'forward_MiB': 14.62298583984375, 'reverse_tape_MiB': 452.0212097167969, 'reverse_K8_MiB': 54.296844482421875, 'reverse_K32_MiB': 149.46432495117188}
+memory vs steps: {'steps': 200, 'forward_MiB': 14.62298583984375, 'reverse_tape_MiB': 896.9540710449219, 'reverse_K8_MiB': 54.296844482421875, 'reverse_K32_MiB': 149.46432495117188}
+memory vs steps: {'steps': 400, 'forward_MiB': 14.62298583984375, 'reverse_tape_MiB': 1786.8200378417969, 'reverse_K8_MiB': 54.296844482421875, 'reverse_K32_MiB': 149.46432495117188}
+memory vs steps: {'steps': 800, 'forward_MiB': 14.62298583984375, 'reverse_tape_MiB': 3566.551971435547, 'reverse_K8_MiB': 54.296844482421875, 'reverse_K32_MiB': 149.46603393554688}
+memory vs resolution: {'grid': 16, 'hermite': 4, 'state_MiB': 0.29443359375, 'forward_MiB': 6.200859069824219, 'reverse_MiB': 18.454811096191406}
+memory vs resolution: {'grid': 32, 'hermite': 4, 'state_MiB': 1.1123046875, 'forward_MiB': 23.52117156982422, 'reverse_MiB': 69.9347915649414}
+memory vs resolution: {'grid': 32, 'hermite': 6, 'state_MiB': 3.6357421875, 'forward_MiB': 76.45452117919922, 'reverse_MiB': 228.4574966430664}
+memory vs resolution: {'grid': 64, 'hermite': 6, 'state_MiB': 14.115234375, 'forward_MiB': 297.1886520385742, 'reverse_MiB': 848.1012954711914}
+memory vs resolution: {'grid': 64, 'hermite': 8, 'state_MiB': 33.193359375, 'forward_MiB': 697.6466598510742, 'reverse_MiB': 1993.1596450805664}
+memory vs resolution: {'grid': 128, 'hermite': 6, 'state_MiB': 55.60546875, 'forward_MiB': 1170.7584762573242, 'reverse_MiB': 3343.5749282836914}
+wrote /home/rjorge/spectrax-pub/gpu-64x6/benchmark.json
+wrote /home/rjorge/spectrax-pub/gpu-64x6/benchmark.png/.pdf

@@ -1,0 +1,6 @@
+/home/rjorge/venvs/vmex-gpu/lib/python3.12/site-packages/equinox/_jit.py:55: UserWarning: Complex dtype support in Diffrax is a work in progress and may not yet produce correct results. Consider splitting your computation into real and imaginary parts instead.
+  out = fun(*args, **kwargs)
+/home/rjorge/venvs/vmex-gpu/lib/python3.12/site-packages/equinox/_jit.py:55: UserWarning: Complex dtype support in Diffrax is a work in progress and may not yet produce correct results. Consider splitting your computation into real and imaginary parts instead.
+  out = fun(*args, **kwargs)
+peak_current: -0.0386457 -> -0.0640406 in 30 iterations (3060 s); wrote /home/rjorge/spectrax-pub/gpu-64x6/optimize_peak_current.json
+wrote /home/rjorge/spectrax-pub/gpu-64x6/optimize_peak_current.png/.pdf
