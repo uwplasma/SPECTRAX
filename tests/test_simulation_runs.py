@@ -4,8 +4,17 @@ import sys
 
 import pytest
 import jax.numpy as jnp
-from diffrax import RESULTS
+from diffrax import Euler, RESULTS
 from spectrax import make_phase_space_mesh, make_species_mesh, simulation
+from spectrax._simulation import _mapped_solve
+
+
+def test_mapped_solve_reuses_equivalent_configurations():
+    _mapped_solve.cache_clear()
+    first = _mapped_solve(5, 1, 1, 1, 1, Euler(), False, make_species_mesh())
+    second = _mapped_solve(5, 1, 1, 1, 1, Euler(), False, make_species_mesh())
+    assert first is second
+    assert _mapped_solve.cache_info().hits == 1
 
 def test_simulation_runs():
     """Test if the simulation runs without errors with default parameters."""
