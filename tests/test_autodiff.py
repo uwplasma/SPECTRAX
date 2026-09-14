@@ -85,3 +85,41 @@ def test_reverse_pass_workspace_does_not_grow_with_the_step_budget():
         return analysis.temp_size_in_bytes
     small, large = workspace(256), workspace(65536)
     assert large <= 1.05 * small, (small, large)
+
+
+def test_upwind_hermite_matrices_match_host_eigendecomposition():
+    """The upwind split A = A+ + A- uses a symmetric eigendecomposition; compare with an independent host LAPACK eig."""
+    from spectrax._initialization import compute_A_pm_matrices
+    alpha, u = np.array([[0.25, 0.3, 0.35], [0.05, 0.06, 0.07]]), np.array([[0.1, -0.2, 0.0], [0.0, 0.03, -0.01]])
+    for N in (1, 2, 3, 5, 8):
+        Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m = (np.asarray(M) for M in compute_A_pm_matrices(N, N, N, jnp.asarray(alpha), jnp.asarray(u)))
+        blocks = [(Ax_p[:, 0, 0, :, :, 0, 0, 0, 0, 0], Ax_m[:, 0, 0, :, :, 0, 0, 0, 0, 0]),
+                  (Ay_p[:, 0, :, :, 0, 0, 0, 0, 0, 0], Ay_m[:, 0, :, :, 0, 0, 0, 0, 0, 0]),
+                  (Az_p[:, :, :, 0, 0, 0, 0, 0, 0, 0], Az_m[:, :, :, 0, 0, 0, 0, 0, 0, 0])]
+        i, j = np.indices((N, N))
+        off_diagonal = np.where(np.abs(i - j) == 1, np.sqrt(np.maximum(i, j) / 2), 0.0)
+        for s in range(Ns):
+            for d, (plus, minus) in enumerate(blocks):
+                lam, vec = np.linalg.eig(alpha[s, d] * off_diagonal + u[s, d] * np.eye(N))
+                lam, vec = lam.real, vec.real
+                np.testing.assert_allclose(plus[s], vec @ np.diag(np.maximum(lam, 0)) @ vec.T, atol=1e-13)
+                np.testing.assert_allclose(minus[s], vec @ np.diag(np.minimum(lam, 0)) @ vec.T, atol=1e-13)
+
+
+def test_gradients_with_respect_to_thermal_speeds_and_drifts():
+    """alpha_s and u_s reach the upwind Hermite matrices through a symmetric eigendecomposition, which is differentiable."""
+    base = orszag_tang(theta0)
+
+    def field_energy(x, adjoint=RecursiveCheckpointAdjoint()):   # x = (scale of every thermal speed, common x-drift)
+        p = dict(base, alpha_s=base["alpha_s"] * x[0], u_s=base["u_s"] + x[1] * jnp.array([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]))
+        out = simulation(p, Nx=Nx, Ny=Ny, Nz=1, Nn=Nh, Nm=Nh, Np=Nh, Ns=Ns, N_DG=N_DG, dims=dims, timesteps=3, dt=0.01,
+                         progress_meter=NoProgressMeter(), adjoint=adjoint)
+        return 0.5 * jnp.sum(out["Fk"][-1] ** 2 / mass)
+
+    x0 = jnp.array([1.0, 0.0])
+    reverse = jax.jit(jax.grad(field_energy))(x0)
+    assert jnp.all(jnp.isfinite(reverse)) and abs(reverse[0]) > 0
+    forward = jax.jacfwd(lambda x: field_energy(x, ForwardMode()))(x0)
+    np.testing.assert_allclose(reverse, forward, rtol=1e-9, atol=1e-12 * float(jnp.linalg.norm(reverse)))
+    assert_matches_finite_differences(reverse, field_energy, x0)
+

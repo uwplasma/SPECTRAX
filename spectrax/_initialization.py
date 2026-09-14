@@ -219,17 +219,18 @@ def compute_A_pm_matrices(Nn, Nm, Np, alpha, u):
     Ay_mat = alpha[:, 1, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Nm, Nm)), axis=-1)) + u[:, 1, None, None] * jnp.eye(Nm)
     Az_mat = alpha[:, 2, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Np, Np)), axis=-1)) + u[:, 2, None, None] * jnp.eye(Np)
 
-    Lam, U = jnp.linalg.eig(Ax_mat)
+    # Symmetric (Jacobi) matrices: eigh gives real, orthogonal eigenvectors and, unlike eig, is differentiable in alpha and u.
+    Lam, U = jnp.linalg.eigh(Ax_mat)
     D_mat = Lam[:, :, None] * jnp.eye(Nn)
     Ax_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, None, :, :, None, None, None, None, None]
     Ax_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, None, :, :, None, None, None, None, None]
 
-    Lam, U = jnp.linalg.eig(Ay_mat)
+    Lam, U = jnp.linalg.eigh(Ay_mat)
     D_mat = Lam[:, :, None] * jnp.eye(Nm)
     Ay_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, :, :, None, None, None, None, None, None]
     Ay_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, :, :, None, None, None, None, None, None]
 
-    Lam, U = jnp.linalg.eig(Az_mat)
+    Lam, U = jnp.linalg.eigh(Az_mat)
     D_mat = Lam[:, :, None] * jnp.eye(Np)
     Az_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None, None, None]
     Az_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None, None, None]
