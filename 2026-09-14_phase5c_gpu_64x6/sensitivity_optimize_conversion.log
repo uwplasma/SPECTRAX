@@ -1,0 +1,10 @@
+/home/rjorge/venvs/vmex-gpu/lib/python3.12/site-packages/equinox/_jit.py:55: UserWarning: Complex dtype support in Diffrax is a work in progress and may not yet produce correct results. Consider splitting your computation into real and imaginary parts instead.
+  out = fun(*args, **kwargs)
+initial   conversion      nu -0.00093  mass_ratio -0.013  guide_field +0.0385  amplitude -0.0746  | max |error| vs FD 7.1e-08
+initial   peak_current    nu +2.44e-05  mass_ratio -0.0574  guide_field -0.153  amplitude +1.1  | max |error| vs FD 3.1e-07
+initial   mean_conversion nu -0.000436  mass_ratio -0.00203  guide_field +0.0418  amplitude -0.0552  | max |error| vs FD 1.3e-08
+optimized conversion      nu -0.00111  mass_ratio +0.0731  guide_field +0.0742  amplitude -0.264  | max |error| vs FD 4.6e-09
+optimized peak_current    nu +0.00311  mass_ratio -0.0148  guide_field -0.16  amplitude +1.04  | max |error| vs FD 4.4e-06
+optimized mean_conversion nu -0.00034  mass_ratio +0.0392  guide_field +0.0688  amplitude -0.183  | max |error| vs FD 1.8e-08
+wrote /home/rjorge/spectrax-pub/phase5c/sensitivity_optimize_conversion.json
+wrote /home/rjorge/spectrax-pub/phase5c/sensitivity_optimize_conversion.png/.pdf

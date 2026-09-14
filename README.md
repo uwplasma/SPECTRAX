@@ -13,5 +13,6 @@ the commit, package versions and device.
 | `2026-09-13_phase3_gpu_64x6/` | Phase 3 on one RTX A4000 at commit 8380edc: 64²×6³, T=200, tolerance 1e-9, 16 controls, 30 iterations, with validation at 64²×8³ and 128²×6³; benchmark and peak memory are added when they finish |
 | `2026-09-14_phase5b_snapshot_memory/` | Phase 5b gate: compiled reverse-pass workspace against saved snapshots K (2, 11, 41, 161) and checkpoints (8, 32) at 32²×4³; snapshots are stored once (+≈K×S), not per checkpoint |
 | `2026-09-14_phase5e_dg_eigh/` | Phase 5e on the DG branch (PR #45, commit 20605a8): upwind Hermite matrices and a short DG simulation before (eig) and after (eigh), max difference 8.9e-16 and 7.6e-15 relative; the gradient w.r.t. thermal speeds fails before and works after |
+| `2026-09-14_phase5c_gpu_64x6/` | Phase 5c on one RTX A4000 at commit 3ce58b2: forward-mode log-sensitivities of all objectives to ν, m_i/m_e, B_z and δB at the initial and optimised controls of both 64²×6³ optima, 21 snapshots, checked against centred FD; figures re-plotted with f02b674 |
 | `scripts/` | office GPU launchers for Phase 3 (`run_phase3.sh`) and per-process peak device memory (`peak_memory.py`) |
 | `paper/` | draft methods paragraph and figure captions |

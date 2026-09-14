@@ -93,6 +93,28 @@ full trajectory tape. The gradient-to-forward memory ratio is therefore a consta
 budget, independent of both resolution and integration length; the price is recomputation, which raises
 the gradient cost from 4.7 (K = 32) to 6.2 (K = 8) forward solves at 128²×6³.
 
+## Time-window objectives (Phase 5b, measured)
+
+Objectives may combine several saved states, for example a time average of the field energy, without any
+change to the solver: the saved snapshots are stored once, outside the checkpointed loop state. At 32²×4³
+(state S = 1.1 MiB) the compiled reverse-pass workspace grows by 10, 44 and 308 MiB for 11, 41 and 161
+saved snapshots, about 0.8–1.7 K×S, and by the same amounts with 8 and 32 checkpoints. The memory of a
+time-averaged objective therefore stays independent of the number of time steps, with an additive K×S for
+the K saved states that define it.
+
+## Sensitivity of the optimised designs to physical parameters (Phase 5c, measured)
+
+Forward-mode derivatives, four tangents propagated through one adaptive Dopri8 solve at 64²×6³ and tolerance
+1e-9, give the logarithmic sensitivities d ln|J| / d ln p of every objective with respect to the collision
+frequency ν, the mass ratio m_i/m_e, the guide field B_z and the in-plane field amplitude δB. They agree with
+centred differences to at most 4.4e-6 in the same units. At the conversion optimum, a 1 % increase of δB lowers
+the magnetic-energy fraction remaining at t ω_pe = 200 by 0.26 %, a 1 % increase of m_i/m_e or B_z raises it
+by 0.07 %, and a 1 % increase of ν changes it by only 0.001 %. At the current-sheet optimum the peak current
+scales as δB^1.36, a super-linear response weaker at the reference field (δB^1.10). It decreases with mass
+ratio (−0.22) and increases with guide field (+0.26), while its collisional sensitivity is 0.004. Both
+optimised designs are therefore insensitive to collisionality but moderately sensitive to the mass ratio,
+which bounds how far a design found at m_i/m_e = 25 transfers to larger mass ratios without re-optimisation.
+
 ## Figure: inverse design of the Orszag–Tang vortex
 
 Caption. Gradient-based inverse design of the 2D Orszag–Tang vortex. The controls are the amplitudes and
