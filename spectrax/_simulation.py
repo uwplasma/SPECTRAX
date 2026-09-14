@@ -3,7 +3,7 @@ from jax import jit, config
 config.update("jax_enable_x64", True)
 from functools import partial
 from diffrax import (diffeqsolve, Tsit5, Dopri5, ODETerm,
-                     SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
+                     SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize, RecursiveCheckpointAdjoint)
 from ._initialization import initialize_simulation_parameters
 from ._model import Hermite_DG_system
 from ._diagnostics import diagnostics
@@ -38,8 +38,9 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl, t, Ck_Fk, args):
 
     return dy_dt
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'N_DG', 'dims', 'timesteps', 'solver'])
-def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, N_DG=2, dims=1, timesteps=200, dt = 0.01, solver=Dopri5()):
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'N_DG', 'dims', 'timesteps', 'solver', 'max_steps', 'adjoint', 'progress_meter'])
+def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, N_DG=2, dims=1, timesteps=200, dt = 0.01, solver=Dopri5(),
+               max_steps=1000000, adjoint=RecursiveCheckpointAdjoint(), progress_meter=TqdmProgressMeter(1)):
     """
     Simulates the Vlasov-Maxwell system using a mixed spectral-Galerkin method.
     This function initializes simulation parameters, sets up initial conditions,
@@ -56,6 +57,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
         Np (int, optional): Number of Hermite modes in the z direction in velocity space.
         Ns (int, optional): Number of particle species. Default is 2.
         timesteps (int, optional): Number of time steps for the simulation. Default is 200.
+        max_steps, adjoint, progress_meter (optional): Passed to `diffrax.diffeqsolve`. Use e.g.
+            `RecursiveCheckpointAdjoint(checkpoints=K)` to bound reverse-mode memory, `ForwardMode()` for `jax.jacfwd`.
     Returns:
         tuple: A tuple containing:
             - Ck (jnp.ndarray): Time-evolving coefficients for the distribution function.
@@ -98,7 +101,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
         # stepsize_controller=ConstantStepSize(),
         t0=0, t1=parameters["t_max"], dt0=dt,
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
-        max_steps=1000000, progress_meter=TqdmProgressMeter(1))
+        max_steps=max_steps, adjoint=adjoint, progress_meter=progress_meter)
     
     ## Idea: take the eigenvalues of ODE_system to determine the stability of the system.
     
