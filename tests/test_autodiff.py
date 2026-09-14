@@ -116,9 +116,9 @@ def test_gradients_with_respect_to_thermal_speeds_and_drifts():
                          progress_meter=NoProgressMeter(), adjoint=adjoint)
         return 0.5 * jnp.sum(out["Fk"][-1] ** 2 / mass)
 
-    x0 = jnp.array([1.0, 0.0])
+    x0 = jnp.array([1.0, 0.02])   # nonzero drift: at zero drift the field energy is stationary in it by symmetry
     reverse = jax.jit(jax.grad(field_energy))(x0)
-    assert jnp.all(jnp.isfinite(reverse)) and abs(reverse[0]) > 0
+    assert jnp.all(jnp.isfinite(reverse)) and jnp.all(jnp.abs(reverse) > 1e-8)
     forward = jax.jacfwd(lambda x: field_energy(x, ForwardMode()))(x0)
     np.testing.assert_allclose(reverse, forward, rtol=1e-9, atol=1e-12 * float(jnp.linalg.norm(reverse)))
     assert_matches_finite_differences(reverse, field_energy, x0)
