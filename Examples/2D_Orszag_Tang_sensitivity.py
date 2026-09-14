@@ -2,7 +2,7 @@
 
 For the initial and optimised controls of a report from ``2D_Orszag_Tang_optimization.py``, ``jax.jacfwd`` with
 ``adjoint=ForwardMode()`` gives d ln|objective| / d ln(parameter) for the collision frequency, mass ratio, guide field
-and in-plane field amplitude from one solve per tangent, checked against centred differences.
+and in-plane field amplitude, checked against centred differences.
 
   python 2D_Orszag_Tang_sensitivity.py results/optimize_conversion.json --snapshots 21
 """
@@ -15,8 +15,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from diffrax import ForwardMode
+from matplotlib.ticker import StrMethodFormatter
 
-from orszag_tang_control import COLORS, OBJECTIVES, STYLE, deltaB, mi_me, provenance, setup, solve
+from orszag_tang_control import COLORS, OBJECTIVES, deltaB, mi_me, plt, provenance, save, setup, solve
 
 PARAMETERS = {"nu": (1.0, "collision frequency $\\nu$"), "mass_ratio": (mi_me, "mass ratio $m_i/m_e$"),
               "guide_field": (1.0, "guide field $B_z$"), "amplitude": (deltaB, "in-plane field $\\delta B$")}
@@ -49,12 +50,7 @@ def sensitivities(source, snapshots):
     return report
 
 
-def plot(report, path):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib.ticker import StrMethodFormatter
-    plt.rcParams.update(STYLE)
+def plot(report):
     names, y = report["objectives"], np.arange(len(PARAMETERS))
     fig, axes = plt.subplots(1, len(names), figsize=(3.2 * len(names), 2.8), layout="constrained", sharey=True)
     for j, (ax, name) in enumerate(zip(axes, names)):
@@ -67,9 +63,7 @@ def plot(report, path):
     s = report["source_settings"]
     fig.suptitle(f"Sensitivities at the '{s['objective']}' controls, {s['grid']}² × {s['hermite']}³, {report['snapshots']} snapshots, "
                  f"{report['provenance']['device']}", fontsize=10)
-    for ext in ("png", "pdf"):
-        fig.savefig(path.with_suffix(f".{ext}"))
-    plt.close(fig)
+    return fig
 
 
 def main():
@@ -78,12 +72,8 @@ def main():
     parser.add_argument("--snapshots", type=int, default=2, help="saved states per solve, used by mean_conversion")
     parser.add_argument("--output", type=Path, default=Path("results"))
     args = parser.parse_args()
-    report = sensitivities(json.loads(args.report.read_text()), args.snapshots)
-    args.output.mkdir(parents=True, exist_ok=True)
-    path = args.output / f"sensitivity_{args.report.stem}.json"
-    path.write_text(json.dumps(report | dict(source=str(args.report)), indent=1))
-    plot(report, path)
-    print("wrote", path, "and its figure")
+    report = sensitivities(json.loads(args.report.read_text()), args.snapshots) | dict(source=str(args.report))
+    save(report, args.output / f"sensitivity_{args.report.stem}.json", plot)
 
 
 if __name__ == "__main__":

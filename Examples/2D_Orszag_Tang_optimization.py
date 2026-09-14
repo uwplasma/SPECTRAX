@@ -1,14 +1,9 @@
-"""Gradient-based inverse design of the 2D Orszag–Tang vortex.
+"""Gradient-based inverse design of the 2D Orszag–Tang vortex (control problem in ``orszag_tang_control.py``).
 
-L-BFGS-B with ``jax.value_and_grad`` through ``simulation`` finds the initial in-plane magnetic field
-(``orszag_tang_control.py``) that optimises one objective:
-
-  conversion       in-plane magnetic energy at t_max over its initial value (minimised)
-  peak_current     smooth maximum of the out-of-plane current density at t_max (maximised)
-  mean_conversion  in-plane magnetic energy averaged over ``--snapshots`` saved states (minimised)
-
-``--validate 64x8 128x6`` re-simulates the initial and optimised controls at other resolutions. Each run writes a
-JSON report and a figure; ``--report`` re-plots, and optionally validates, an existing report.
+L-BFGS-B with ``jax.value_and_grad`` through ``simulation`` optimises one objective: ``conversion`` (in-plane magnetic
+energy at t_max over its initial value), ``peak_current`` (smooth maximum of Jz at t_max) or ``mean_conversion`` (that
+energy averaged over ``--snapshots`` saved states). ``--validate 64x8 128x6`` re-simulates the initial and optimised
+controls at other resolutions, and ``--report`` re-plots or validates an existing report.
 
   python 2D_Orszag_Tang_optimization.py --objective conversion --modes 8 --grid 32 --hermite 4 --t-max 200
 """
@@ -23,8 +18,8 @@ import jax.numpy as jnp
 import numpy as np
 from scipy.optimize import minimize
 
-from orszag_tang_control import (COLORS, Lx, Ly, OBJECTIVES, STYLE, current_density, initial_controls, inplane_magnetic_energy,
-                                 peak, provenance, setup, solve)
+from orszag_tang_control import (COLORS, Lx, Ly, OBJECTIVES, current_density, initial_controls, inplane_magnetic_energy, peak, plt,
+                                 provenance, save, setup, solve)
 
 
 def optimize(args):
@@ -80,12 +75,8 @@ def validate(report, resolutions):
     report["validation"] = rows
 
 
-def plot(report, path):
+def plot(report):
     """Current maps, energy traces and the objective history."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    plt.rcParams.update(STYLE)
     runs, s = report["runs"], report["settings"]
     fig, axes = plt.subplots(2, 3, figsize=(10, 6.2), layout="constrained")
     maps = [("initial", "Jz_initial", "(a) $J_z$, initial controls, $t=0$"), ("initial", "Jz_final", f"(b) $J_z$, initial controls, $t={s['t_max']:g}$"),
@@ -112,9 +103,7 @@ def plot(report, path):
     fig.suptitle(f"Orszag–Tang inverse design: {len(report['initial'])} {'phase ' if s.get('fixed_amplitudes') else ''}controls, "
                  f"{s['grid']}² × {s['hermite']}³, {runs['optimized']['steps']} Dopri8 steps, {report['seconds']:.0f} s, "
                  f"{report['provenance']['device']}", fontsize=10)
-    for ext in ("png", "pdf"):
-        fig.savefig(path.with_suffix(f".{ext}"))
-    plt.close(fig)
+    return fig
 
 
 def main():
@@ -137,12 +126,8 @@ def main():
     report = json.loads(args.report.read_text()) if args.report else optimize(args)
     if args.validate:
         validate(report, args.validate)
-    args.output.mkdir(parents=True, exist_ok=True)
     s = report["settings"]
-    path = args.output / f"optimize_{s['objective']}{'_phases' if s.get('fixed_amplitudes') else ''}.json"
-    path.write_text(json.dumps(report, indent=1))
-    plot(report, path)
-    print("wrote", path, "and its figure")
+    save(report, args.output / f"optimize_{s['objective']}{'_phases' if s.get('fixed_amplitudes') else ''}.json", plot)
 
 
 if __name__ == "__main__":

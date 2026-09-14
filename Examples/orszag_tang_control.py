@@ -6,25 +6,27 @@ as in ``2D_Orszag_Tang.py``. With ``fixed_amplitudes`` only the phases vary, so 
 Objectives are real scalars of the ``simulation`` output; add any other one to ``OBJECTIVES``.
 """
 
-import os
+import json
 import shutil
 import subprocess
 from pathlib import Path
 
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import numpy as np
 from diffrax import Dopri8, NoProgressMeter, RecursiveCheckpointAdjoint
 
 from spectrax import simulation, compute_C_nmp, plasma_current
 
 jax.config.update("jax_enable_x64", True)
+plt.switch_backend("Agg")
+plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False, "axes.grid": True, "grid.color": "#e6e5e1",
+                     "grid.linewidth": 0.6, "pdf.fonttype": 42, "savefig.dpi": 300, "lines.linewidth": 1.6})
 Lx = Ly = 50.0
 Omega_ce, mi_me, deltaB = 0.5, 25.0, 0.2          # as in input_2D_orszag_tang.toml
 alpha_s, u_s = jnp.array([0.25] * 3 + [0.05] * 3), jnp.zeros(6)
 COLORS = {"initial": "#2a78d6", "optimized": "#eb6834", "third": "#1baf7a", "muted": "#7a7975"}
-STYLE = {"font.size": 9, "axes.spines.top": False, "axes.spines.right": False, "axes.grid": True, "grid.color": "#e6e5e1",
-         "grid.linewidth": 0.6, "pdf.fonttype": 42, "savefig.dpi": 300, "lines.linewidth": 1.6}
 
 
 def setup(theta, grid, hermite, t_max, nu=1.0, fixed_amplitudes=False, tolerance=1e-7, mass_ratio=mi_me, guide_field=1.0,
@@ -84,17 +86,24 @@ OBJECTIVES = {
 }
 
 
-def initial_controls(M, seed, fixed_amplitudes=False):
+def initial_controls(M, seed=0, fixed_amplitudes=False):
     phases = jnp.asarray(np.random.default_rng(seed).uniform(-np.pi, np.pi, M))
     return phases if fixed_amplitudes else jnp.concatenate([jnp.zeros(M), phases])
 
 
 def provenance():
-    """Commit, JAX version and device, recorded in every report."""
-    def run(*command):
-        return subprocess.run(command, capture_output=True, text=True).stdout.strip() if shutil.which(command[0]) else ""
-    device = jax.devices()[0].platform.upper()
-    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "0").split(",")[0]
-    name = run("nvidia-smi", "--query-gpu=name", "--format=csv,noheader", "-i", visible) if device == "GPU" else run("sysctl", "-n", "machdep.cpu.brand_string")
-    return dict(commit=run("git", "-C", str(Path(__file__).resolve().parent), "rev-parse", "HEAD") or None,
-                device=f"{device}, {name}" if name else device, jax=jax.__version__)
+    """Commit, JAX version and device type, recorded in every report."""
+    git = ["git", "-C", str(Path(__file__).resolve().parent), "rev-parse", "HEAD"]
+    commit = subprocess.run(git, capture_output=True, text=True).stdout.strip() if shutil.which("git") else ""
+    return dict(commit=commit or None, device=jax.devices()[0].platform.upper(), jax=jax.__version__)
+
+
+def save(report, path, figure):
+    """Write the JSON report, then ``figure(report)`` as PNG and PDF next to it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, indent=1))
+    fig = figure(report)
+    for ext in ("png", "pdf"):
+        fig.savefig(path.with_suffix(f".{ext}"))
+    plt.close(fig)
+    print("wrote", path, "and its figure")

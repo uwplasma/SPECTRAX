@@ -1,7 +1,7 @@
-"""Cost and memory of gradients through SPECTRAX, on the Orszag–Tang control problem.
+"""Cost and memory of gradients through SPECTRAX, on the Orszag–Tang conversion objective.
 
 (a) Wall time of one reverse-mode gradient against centred finite differences as the number of controls grows.
-(b) Compiled reverse-pass workspace against the number of fixed time steps, for a full tape and 8 or 32 checkpoints.
+(b) Compiled reverse-pass workspace against fixed time steps, for a full tape and for 8 or 32 checkpoints.
 (c) Forward and gradient workspace against state size. (d) Finite-difference error against step size.
 
   python 2D_Orszag_Tang_gradient_benchmark.py --grid 16 --hermite 4 --t-max 100
@@ -15,8 +15,9 @@ from pathlib import Path
 import jax
 import numpy as np
 from diffrax import Tsit5
+from matplotlib.ticker import FixedLocator, NullLocator, ScalarFormatter
 
-from orszag_tang_control import COLORS, OBJECTIVES, STYLE, initial_controls, provenance, setup, solve
+from orszag_tang_control import COLORS, OBJECTIVES, initial_controls, plt, provenance, save, setup, solve
 
 
 def timed(fn, x, repeat=3):
@@ -37,13 +38,13 @@ def workspace(fn, x):
 
 def benchmark(args):
     def loss(theta, grid=args.grid, hermite=args.hermite, t_max=args.t_max, checkpoints=args.checkpoints, **kwargs):
-        return OBJECTIVES[args.objective](solve(setup(theta, grid, hermite, t_max, tolerance=args.tolerance), grid, hermite, checkpoints, **kwargs))
+        return OBJECTIVES["conversion"](solve(setup(theta, grid, hermite, t_max, tolerance=args.tolerance), grid, hermite, checkpoints, **kwargs))
 
     report = dict(settings={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}, provenance=provenance(),
                   cost=[], memory_steps=[], memory_resolution=[], fd_step=[])
     forward, reverse = jax.jit(loss), jax.jit(jax.value_and_grad(loss))
     for M in args.control_counts:
-        theta = initial_controls(M, args.seed)
+        theta = initial_controls(M)
         t_forward, t_reverse = timed(forward, theta), timed(reverse, theta)
         fd_gradient = lambda h: np.array([float(forward(theta + h * e) - forward(theta - h * e)) / (2 * h) for e in np.eye(theta.size)])
         start = time.perf_counter()
@@ -55,7 +56,7 @@ def benchmark(args):
               f"FD gradient {t_fd:.1f} s ({t_fd / t_reverse:.1f}x AD), |FD-AD|/|AD| {error(fd):.1e}")
         if M == args.control_counts[0]:
             report["fd_step"] = [dict(step=float(h), relative_error=error(fd_gradient(h))) for h in np.logspace(-9, -1, 9)]
-    theta, dt = initial_controls(args.modes, args.seed), args.t_max / max(args.step_counts)
+    theta, dt = initial_controls(args.modes), args.t_max / max(args.step_counts)
     for steps in args.step_counts:
         fixed = dict(t_max=steps * dt, dt=dt, adaptive_time_step=False, solver=Tsit5(), max_steps=steps + 1)
         row = dict(steps=steps, forward_MiB=workspace(lambda th: loss(th, checkpoints=1, **fixed), theta))
@@ -71,13 +72,7 @@ def benchmark(args):
     return report
 
 
-def plot(report, path):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib.ticker import FixedLocator, NullLocator, ScalarFormatter
-    plt.rcParams.update(STYLE)
-
+def plot(report):
     def data_ticks(ax, values):
         """Label a log x-axis at the measured values only, so minor-tick labels cannot collide."""
         ax.xaxis.set_major_locator(FixedLocator(values)); ax.xaxis.set_minor_locator(NullLocator()); ax.xaxis.set_major_formatter(ScalarFormatter())
@@ -111,21 +106,17 @@ def plot(report, path):
         ax.legend(frameon=False, fontsize=7)
     s = report["settings"]
     fig.suptitle(f"Gradient cost and memory, {s['grid']}² × {s['hermite']}³, {report['provenance']['device']}", fontsize=10)
-    for ext in ("png", "pdf"):
-        fig.savefig(path.with_suffix(f".{ext}"))
-    plt.close(fig)
+    return fig
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--objective", choices=OBJECTIVES, default="conversion")
     parser.add_argument("--modes", type=int, default=4, help="stream-function modes for the memory measurements")
     parser.add_argument("--grid", type=int, default=32)
     parser.add_argument("--hermite", type=int, default=4)
     parser.add_argument("--t-max", type=float, default=200.0)
     parser.add_argument("--checkpoints", type=int, default=32)
     parser.add_argument("--tolerance", type=float, default=1e-7)
-    parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--control-counts", type=int, nargs="+", default=[2, 4, 8, 16, 32], metavar="M")
     parser.add_argument("--step-counts", type=int, nargs="+", default=[25, 50, 100, 200, 400], metavar="N")
     parser.add_argument("--resolutions", nargs="+", default=[(16, 4), (32, 4), (32, 6), (64, 6)], metavar="GRIDxHERMITE",
@@ -133,12 +124,7 @@ def main():
     parser.add_argument("--report", type=Path, help="re-plot an existing report instead of measuring")
     parser.add_argument("--output", type=Path, default=Path("results"))
     args = parser.parse_args()
-    report = json.loads(args.report.read_text()) if args.report else benchmark(args)
-    args.output.mkdir(parents=True, exist_ok=True)
-    path = args.output / "benchmark.json"
-    path.write_text(json.dumps(report, indent=1))
-    plot(report, path)
-    print("wrote", path, "and its figure")
+    save(json.loads(args.report.read_text()) if args.report else benchmark(args), args.output / "benchmark.json", plot)
 
 
 if __name__ == "__main__":
