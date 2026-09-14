@@ -41,7 +41,6 @@
     - [Command‑line Interface](#commandline-interface)
   - [Testing](#testing)
 - [Input File Format](#input-file-format)
-- [Gradients through the solver](#gradients-through-the-solver)
 - [Contributing](#contributing)
 - [License](#license)
 - [Acknowledgments](#acknowledgments)
@@ -209,41 +208,6 @@ for each velocity dimension) and can be used to represent anisotropic plasmas.
 ---
 
 
-## Gradients through the solver
-
-`simulation` is differentiable with ordinary JAX transformations. Any real scalar of its output
-(field energies, kinetic energies, the out-of-plane current from `plasma_current`, ...) can be
-differentiated with respect to any physical parameter or initial condition:
-
-```python
-import jax
-from spectrax import simulation
-
-def loss(deltaB):
-    output = simulation(orszag_tang_parameters(deltaB), Nx=64, Ny=64, Nn=6, Nm=6, Np=6, Ns=2, timesteps=11)
-    return output["EM_energy"][-1]
-
-value, gradient = jax.value_and_grad(loss)(0.2)
-```
-
-The reverse pass differentiates the executed time stepper (Dopri8 with its adaptive controller by
-default) through Diffrax's binomial checkpointing, so its workspace is a fixed multiple of the
-forward solve and independent of the number of time steps.
-On one NVIDIA RTX A4000 in float64 (32²×4³ Hermite modes, two species), a gradient costs about 6.5
-forward solves for 4 to 64 parameters, while centred finite differences cost 1.3 to 20 times
-more than the gradient. With 8 checkpoints, the peak device memory of a gradient is 2.8-2.9 times
-that of a forward solve from 32²×4³ to 128²×6³ (3.4 GiB at 128²×6³). Its compiled workspace stays
-at 54 MiB from 50 to 800 time steps, whereas storing the full trajectory grows from 0.2 to 3.5 GiB.
-`simulation(..., adjoint=RecursiveCheckpointAdjoint(checkpoints=K))` trades memory for
-recomputation, `ForwardMode()` selects forward mode, and fixed-step runs should pass
-`max_steps` close to the step count. `Examples/2D_Orszag_Tang_optimization.py` optimises the
-initial magnetic field of the Orszag–Tang vortex for magnetic-energy conversion or current-sheet
-intensity and validates the optimum at higher resolution. At 64²×6³ the optimised field converts
-26 % of the in-plane magnetic energy by t = 200 instead of 6 %, a result that holds at 128²×6³.
-Objectives may combine several saved snapshots (`timesteps=K`), for example a time average.
-`adjoint=ForwardMode()` gives sensitivities to physical parameters (`Examples/2D_Orszag_Tang_sensitivity.py`),
-and `Examples/2D_Orszag_Tang_gradient_benchmark.py` measures gradient cost and memory against finite differences.
-
 ##  Contributing
 
 - **💬 [Join the Discussions](https://github.com/uwplasma/SPECTRAX/discussions)**: Share your insights, provide feedback, or ask questions.
@@ -298,3 +262,8 @@ This project is protected under the MIT License. For more details, refer to the 
 - We acknowledge the help of the whole [UWPlasma](https://rogerio.physics.wisc.edu/) plasma group.
 
 ---
+
+
+
+
+
