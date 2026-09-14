@@ -5,7 +5,7 @@ import sys
 import pytest
 import jax.numpy as jnp
 from diffrax import RESULTS
-from spectrax import make_species_mesh, simulation
+from spectrax import make_phase_space_mesh, make_species_mesh, simulation
 
 def test_simulation_runs():
     """Test if the simulation runs without errors with default parameters."""
@@ -45,6 +45,29 @@ kwargs = dict(Nx=5, Ny=1, Nz=1, Nn=2, Nm=1, Np=1, Ns=2,
               timesteps=2, dt=0.001, throw=False)
 serial = simulation(parameters, **kwargs)
 parallel = simulation(parameters, species_mesh=make_species_mesh(), **kwargs)
+np.testing.assert_allclose(parallel["Ck"], serial["Ck"], rtol=0, atol=1e-12)
+np.testing.assert_allclose(parallel["Fk"], serial["Fk"], rtol=0, atol=1e-12)
+"""
+    subprocess.run([sys.executable, "-c", code], check=True, env=env)
+
+def test_phase_space_simulation_matches_serial():
+    env = os.environ.copy()
+    env["JAX_PLATFORMS"] = "cpu"
+    env["XLA_FLAGS"] = "--xla_force_host_platform_device_count=4"
+    code = """
+import numpy as np
+from spectrax import make_phase_space_mesh, simulation
+
+rng = np.random.default_rng(4)
+shape = (8, 1, 3, 1)
+initial = (rng.standard_normal(shape) + 1j * rng.standard_normal(shape)) * 1e-3
+parameters = {"t_max": 0.01, "ode_tolerance": 1e-8, "Ck_0": initial,
+              "Fk_0": np.zeros((6, 1, 3, 1), dtype=complex)}
+adaptive = dict(Nx=5, Ny=1, Nz=1, Nn=4, Nm=1, Np=1, Ns=2,
+                timesteps=2, dt=0.001, throw=False)
+serial = simulation(parameters, **adaptive)
+parallel = simulation(parameters, species_mesh=make_phase_space_mesh(2),
+                      **adaptive)
 np.testing.assert_allclose(parallel["Ck"], serial["Ck"], rtol=0, atol=1e-12)
 np.testing.assert_allclose(parallel["Fk"], serial["Fk"], rtol=0, atol=1e-12)
 """

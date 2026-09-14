@@ -13,13 +13,25 @@ from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
 from ._diagnostics import diagnostics
 
-__all__ = ["cross_product", "make_species_mesh", "ode_system", "simulation"]
+__all__ = ["cross_product", "make_species_mesh", "make_phase_space_mesh",
+           "ode_system", "simulation"]
 
 def make_species_mesh(devices=None):
     """Create a one-dimensional Explicit mesh for species parallelism."""
     devices = jax.devices() if devices is None else devices
     return jax.make_mesh(
         (len(devices),), ("species",), axis_types=(AxisType.Explicit,), devices=devices
+    )
+
+def make_phase_space_mesh(hermite_shards, devices=None):
+    """Create an Explicit mesh that shards species and the first Hermite axis."""
+    devices = tuple(jax.devices() if devices is None else devices)
+    if hermite_shards < 1 or len(devices) % hermite_shards:
+        raise ValueError("Hermite shards must divide the number of devices.")
+    return jax.make_mesh(
+        (len(devices) // hermite_shards, hermite_shards),
+        ("species", "hermite"), axis_types=(AxisType.Explicit,) * 2,
+        devices=devices,
     )
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz'])
@@ -109,7 +121,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, mesh, t, Ck_Fk, args):
 
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
-                                      Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, local_Omega_cs, Nn, Nm, Np, Ns, mask23=mask23)
+                                      Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, local_Omega_cs, Nn, Nm, Np, Ns, mask23=mask23, mesh=mesh)
 
     dBk_dt = -1j * cross_product(nabla, Fk[:3])
     
@@ -124,15 +136,26 @@ def _species_arg_specs():
         P("species"), P(), P(), P(), P("species"), P("species"),
     ) + (P(),) * 15
 
-def _species_rms_norm(error):
+def _sharded_rms_norm(error, axes):
     Ck_error, Fk_error = error
+    root = True
+    shards = 1
+    for axis in axes:
+        root &= jax.lax.axis_index(axis) == 0
+        shards *= jax.lax.axis_size(axis)
     squared_error = jnp.vdot(Ck_error, Ck_error)
-    squared_error += jnp.where(
-        jax.lax.axis_index("species") == 0, jnp.vdot(Fk_error, Fk_error), 0
-    )
-    size = Ck_error.size * jax.lax.axis_size("species") + Fk_error.size
+    squared_error += jnp.where(root, jnp.vdot(Fk_error, Fk_error), 0)
+    size = Ck_error.size * shards + Fk_error.size
     return jnp.sqrt(
-        jnp.maximum(jnp.real(jax.lax.psum(squared_error, "species")), 0) / size
+        jnp.maximum(jnp.real(jax.lax.psum(squared_error, axes)), 0) / size
+    )
+
+def _phase_arg_specs():
+    return (
+        P("species"), P(), P(), P(), P("species"), P("species"),
+        P(), P(), P(), P(), P(), P(), P(), P(), P(None, None, "hermite"),
+        P(None, None, None, "hermite"), P(None, None, None, "hermite"),
+        P(), P(), P(), P(),
     )
 
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
@@ -161,8 +184,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     throw : bool, optional
         Raise on integration failure; otherwise report it in ``solver_result``.
     species_mesh : jax.sharding.Mesh, optional
-        Explicit mesh used to shard distribution coefficients by species while
-        replicating electromagnetic fields.
+        Mesh used to shard distribution coefficients by species and optionally
+        by the first Hermite axis while replicating electromagnetic fields.
 
     Returns
     -------
@@ -180,10 +203,16 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         parameters["Fk_0"].reshape(6, Ny, Nx//2+1, Nz),
     )
     if species_mesh is not None:
-        if Ns % species_mesh.shape["species"]:
-            raise ValueError("The number of species must be divisible by the mesh size.")
+        species_shards = species_mesh.shape["species"]
+        if Ns % species_shards:
+            raise ValueError("The number of species must be divisible by its mesh axis.")
+        phase_mesh = "hermite" in species_mesh.axis_names
+        hermite_shards = species_mesh.shape["hermite"] if phase_mesh else 1
+        if phase_mesh and (Nn % hermite_shards or Nn // hermite_shards < 2):
+            raise ValueError("Hermite shards require at least two modes per shard.")
+        Ck_spec = P("species", None, None, "hermite") if phase_mesh else P("species")
         state_shardings = (
-            NamedSharding(species_mesh, P("species")),
+            NamedSharding(species_mesh, Ck_spec),
             NamedSharding(species_mesh, P()),
         )
         # Stage single-device initialization results before multi-device placement.
@@ -209,8 +238,9 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
             parameters["sqrt_m_plus"], parameters["sqrt_m_minus"],
             parameters["sqrt_p_plus"], parameters["sqrt_p_minus"])
     if species_mesh is not None:
+        specs = (_phase_arg_specs() if phase_mesh else _species_arg_specs())
         arg_shardings = tuple(
-            NamedSharding(species_mesh, spec) for spec in _species_arg_specs()
+            NamedSharding(species_mesh, spec) for spec in specs
         )
         args = args[:7] + jax.device_put(jax.device_get(args[7:]), arg_shardings)
     
@@ -224,20 +254,28 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     }
     stepsize_controller = controllers[adaptive_time_step]
 
-    # Keep Diffrax's state and save buffers local on explicit species meshes.
+    # Keep Diffrax's state and save buffers local on explicit meshes.
     if species_mesh is not None:
+        saved_Ck_spec = (
+            P(None, "species", None, None, "hermite")
+            if phase_mesh else P(None, "species")
+        )
+
         def local_solve(y0, local_args, local_solver_args):
             local_time, local_t0, local_dt, local_t_max, local_tolerance = (
                 local_solver_args
             )
-            local_Ns = y0[0].shape[0]
+            local_Ns, local_Nn = y0[0].shape[0], y0[0].shape[3]
             vector_field = lambda t, y, a: ode_system(
-                Nx, Ny, Nz, Nn, Nm, Np, local_Ns, species_mesh, t, y,
-                (Nx, Ny, Nz, Nn, Nm, Np, local_Ns) + a,
+                Nx, Ny, Nz, local_Nn, Nm, Np, local_Ns, species_mesh, t, y,
+                (Nx, Ny, Nz, local_Nn, Nm, Np, local_Ns) + a,
+            )
+            error_norm = partial(
+                _sharded_rms_norm, axes=species_mesh.axis_names
             )
             local_controller = (
                 PIDController(rtol=local_tolerance, atol=local_tolerance,
-                              norm=_species_rms_norm)
+                              norm=error_norm)
                 if adaptive_time_step else ConstantStepSize()
             )
             sol = diffeqsolve(
@@ -252,8 +290,9 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
 
         solution, solver_result = shard_map(
             local_solve, mesh=species_mesh,
-            in_specs=((P("species"), P()), _species_arg_specs(), (P(),) * 5),
-            out_specs=((P(None, "species"), P()), P()), check_vma=False,
+            in_specs=((Ck_spec, P()), specs, (P(),) * 5),
+            out_specs=((saved_Ck_spec, P()), P()),
+            check_vma=False,
         )(initial_conditions, args[7:], solver_args)
     else:
         ode_system_partial = partial(
