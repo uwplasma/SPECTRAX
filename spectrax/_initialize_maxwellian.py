@@ -5,7 +5,6 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax import jit
 from jax.numpy.fft import rfftn
-from jax.scipy.special import factorial
 from functools import partial
 
 __all__ = ['compute_C_nmp']
@@ -39,27 +38,24 @@ def compute_C_nmp(Us_grid, alpha_s, u_s, Nn, Nm, Np, Ns):
         corresponding to the Maxwellian evaluated on the supplied grid.
     """
     
-    U_x = Us_grid[:, 0, None, None, None, :, :, :] # shape (Ns, 1, 1, 1, Ny, Nx, Nz)
-    U_y = Us_grid[:, 1, None, None, None, :, :, :] # shape (Ns, 1, 1, 1, Ny, Nx, Nz)
-    U_z = Us_grid[:, 2, None, None, None, :, :, :] # shape (Ns, 1, 1, 1, Ny, Nx, Nz)
-
     alpha = jnp.array(alpha_s).reshape(Ns, 3)
-    alpha_x = alpha[:, 0, None, None, None, None, None, None] # shape (Ns, 1, 1, 1, 1, 1, 1)
-    alpha_y = alpha[:, 1, None, None, None, None, None, None] # shape (Ns, 1, 1, 1, 1, 1, 1)
-    alpha_z = alpha[:, 2, None, None, None, None, None, None] # shape (Ns, 1, 1, 1, 1, 1, 1)
-
     u = jnp.array(u_s).reshape(Ns, 3)
-    u_x = u[:, 0, None, None, None, None, None, None] # shape (Ns, 1, 1, 1, 1, 1, 1)
-    u_y = u[:, 1, None, None, None, None, None, None] # shape (Ns, 1, 1, 1, 1, 1, 1)
-    u_z = u[:, 2, None, None, None, None, None, None] # shape (Ns, 1, 1, 1, 1, 1, 1)
 
-    p = jnp.arange(Np)[None, :, None, None, None, None, None] # shape (1, Np, 1, 1, 1, 1, 1)
-    m = jnp.arange(Nm)[None, None, :, None, None, None, None] # shape (1, 1, Nm, 1, 1, 1, 1)
-    n = jnp.arange(Nn)[None, None, None, :, None, None, None] # shape (1, 1, 1, Nn, 1, 1, 1)
+    def coefficients(U, scale, shift, modes):
+        normalized = ((U - shift[:, None, None, None])
+                      / scale[:, None, None, None])
+        factors = (normalized[:, None]
+                   * jnp.sqrt(2 / jnp.arange(1, modes))[None, :, None, None, None])
+        powers = jnp.concatenate(
+            (jnp.ones_like(normalized[:, None]), jnp.cumprod(factors, axis=1)),
+            axis=1,
+        )[:, :modes]
+        return powers / scale[:, None, None, None, None]
 
-    C = (jnp.sqrt(2 ** (n + m + p) / (factorial(n) * factorial(m) * factorial(p))) 
-        * (1 / (alpha_x ** (n + 1) * alpha_y ** (m + 1) * alpha_z ** (p + 1)))
-        * (U_x - u_x) ** n * (U_y - u_y) ** m * (U_z - u_z) ** p)
+    Cn = coefficients(Us_grid[:, 0], alpha[:, 0], u[:, 0], Nn)
+    Cm = coefficients(Us_grid[:, 1], alpha[:, 1], u[:, 1], Nm)
+    Cp = coefficients(Us_grid[:, 2], alpha[:, 2], u[:, 2], Np)
+    C = Cp[:, :, None, None] * Cm[:, None, :, None] * Cn[:, None, None]
     
     Ck_0 = rfftn(C, axes=(-1, -3, -2), norm="forward")  # shape (Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz)
   
