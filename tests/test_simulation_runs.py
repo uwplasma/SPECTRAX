@@ -18,5 +18,17 @@ def test_electric_field_update():
     result = simulation()
     assert not jnp.all(result["Fk"] == 0), "Electric field did not update."
 
+@pytest.mark.parametrize("limits", [{"dtmin": 10.0}, {"max_steps": 2}])
+def test_step_limits_stop_the_solve_with_an_error(limits):
+    """A step below dtmin (here: any step) or too many steps stops the solve instead of crawling on."""
+    with pytest.raises(Exception, match="minimum step size|maximum number of solver steps"):
+        simulation(**limits)
+
+def test_throw_false_reports_the_failure_instead_of_raising():
+    """With throw=False a stopped solve returns, and solver_result says why."""
+    from diffrax import RESULTS
+    assert simulation(throw=False)["solver_result"] == RESULTS.successful
+    assert simulation(max_steps=2, dtmin=0, throw=False)["solver_result"] == RESULTS.max_steps_reached
+
 if __name__ == "__main__":
     pytest.main()
