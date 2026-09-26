@@ -135,7 +135,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         Smallest adaptive step. If the step would fall below it the solve stops with an
         error, instead of crawling towards `max_steps`. A collapsing step usually means too
         few Hermite modes or too weak hypercollisions for the filamentation reaching the
-        cutoff, or a species whose Hermite width is narrower than it becomes. Default: no limit.
+        cutoff, or a species whose Hermite width is narrower than it becomes. Default:
+        `t_max / max_steps`, the step below which the run could not finish anyway; 0 disables it.
     max_steps : int, optional
         Maximum number of solver steps before the solve stops with an error.
 
@@ -170,7 +171,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     True: PIDController(
         rtol=parameters["ode_tolerance"],
         atol=parameters["ode_tolerance"],
-        dtmin=dtmin, force_dtmin=False,
+        dtmin=parameters["t_max"] / max_steps if dtmin is None else dtmin, force_dtmin=False,
     ),
     False: ConstantStepSize(),
     }
