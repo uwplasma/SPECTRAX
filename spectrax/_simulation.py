@@ -181,8 +181,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     Fk = sol.ys[:,(-6 * (Nx//2+1) * Ny * Nz):].reshape(len(sol.ts), 6, Ny, Nx//2+1, Nz)
     
     # Set n = 0, k = 0 mode to zero to get array with time evolution of perturbation.
-    dCk = Ck.at[:, 0, 0, 0, 0].set(0)
-    dCk = dCk.at[:, Nn * Nm * Np, 0, 0, 0].set(0)
+    dCk = Ck.at[:, jnp.arange(Ns) * Nn * Nm * Np, 0, 0, 0].set(0)
     
     # Output results
     temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk, "solver_stats": sol.stats}
