@@ -203,6 +203,7 @@ most important keys. Keys absent from the file fall back to sensible defaults sp
 | `adaptive_time_step` | Timestep adaptability (`true` by default). |
 | `dtmin` | Smallest adaptive step; below it the solve stops with an error instead of stalling. Default `t_max / max_steps`, `0` disables it. A collapsing step means an under-resolved run: more Hermite modes, a larger `nu`, or a wider `alpha_s`. |
 | `max_steps` | Maximum number of solver steps (`1000000` by default). |
+| `throw` | `True` (default) raises on a failed solve; `False` returns and reports it in `output["solver_result"]`. |
 
 Many of these parameters can be arrays; for example `alpha_s` must contain three values per species (one
 for each velocity dimension) and can be used to represent anisotropic plasmas.

@@ -24,5 +24,11 @@ def test_step_limits_stop_the_solve_with_an_error(limits):
     with pytest.raises(Exception, match="minimum step size|maximum number of solver steps"):
         simulation(**limits)
 
+def test_throw_false_reports_the_failure_instead_of_raising():
+    """With throw=False a stopped solve returns, and solver_result says why."""
+    from diffrax import RESULTS
+    assert simulation(throw=False)["solver_result"] == RESULTS.successful
+    assert simulation(max_steps=2, dtmin=0, throw=False)["solver_result"] == RESULTS.max_steps_reached
+
 if __name__ == "__main__":
     pytest.main()
