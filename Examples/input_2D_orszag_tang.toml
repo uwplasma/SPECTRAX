@@ -1,3 +1,4 @@
+# The Orszag-Tang initial state (Ck_0, Fk_0) is built in 2D_Orszag_Tang.py: run that script, not this file alone.
 [input_parameters]
 Lx = 50.0
 Ly = 50.0
