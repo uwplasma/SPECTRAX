@@ -18,5 +18,11 @@ def test_electric_field_update():
     result = simulation()
     assert not jnp.all(result["Fk"] == 0), "Electric field did not update."
 
+@pytest.mark.parametrize("limits", [{"dtmin": 10.0}, {"max_steps": 2}])
+def test_step_limits_stop_the_solve_with_an_error(limits):
+    """A step below dtmin (here: any step) or too many steps stops the solve instead of crawling on."""
+    with pytest.raises(Exception, match="minimum step size|maximum number of solver steps"):
+        simulation(**limits)
+
 if __name__ == "__main__":
     pytest.main()
