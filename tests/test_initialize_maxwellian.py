@@ -47,3 +47,10 @@ def test_narrow_maxwellian_in_a_wide_basis_is_reconstructed(vth, drift):
     f = alpha**2 * np.pi**-0.25 * np.exp(-xi**2 / 2) * (C @ h)  # 1D marginal, as in inverse_HF_transform
     exact = np.exp(-(v - drift) ** 2 / (2 * vth**2)) / (np.sqrt(2 * np.pi) * vth)  # unit density
     np.testing.assert_allclose(f, exact, atol=1e-12)
+
+
+def test_high_order_maxwellian_is_finite():
+    """Nn = 256 overflowed the factorial form (inf / inf = NaN) before the recurrence."""
+    U = jnp.linspace(-0.1, 0.1, 6).reshape(2, 3, 1, 1, 1)
+    alpha = jnp.array([0.25, 0.3, 0.35, 0.05, 0.06, 0.07])
+    assert jnp.all(jnp.isfinite(compute_C_nmp(U, alpha, jnp.zeros(6), 256, 4, 4, 2)))
