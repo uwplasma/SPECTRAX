@@ -107,9 +107,10 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
 
     return dy_dt
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step'])
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step',
+                                'dtmin', 'max_steps'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
-               timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True):
+               timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True, dtmin=None, max_steps=1000000):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -130,6 +131,13 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         Initial integration step size.
     solver : diffrax.AbstractSolver, optional
         Diffrax solver instance controlling the time integration.
+    dtmin : float, optional
+        Smallest adaptive step. If the step would fall below it the solve stops with an
+        error, instead of crawling towards `max_steps`. A collapsing step usually means too
+        few Hermite modes or too weak hypercollisions for the filamentation reaching the
+        cutoff, or a species whose Hermite width is narrower than it becomes. Default: no limit.
+    max_steps : int, optional
+        Maximum number of solver steps before the solve stops with an error.
 
     Returns
     -------
@@ -162,6 +170,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     True: PIDController(
         rtol=parameters["ode_tolerance"],
         atol=parameters["ode_tolerance"],
+        dtmin=dtmin, force_dtmin=False,
     ),
     False: ConstantStepSize(),
     }
@@ -174,7 +183,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         stepsize_controller=stepsize_controller,
         t0=0, t1=parameters["t_max"], dt0=dt,
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
-        max_steps=1000000, progress_meter=TqdmProgressMeter())
+        max_steps=max_steps, progress_meter=TqdmProgressMeter())
         
     # Reshape the solution to extract Ck and Fk
     Ck = sol.ys[:,:(-6 * (Nx//2+1) * Ny * Nz)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz)
