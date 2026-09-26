@@ -3,7 +3,7 @@
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
-from jax import jit
+from jax import jit, lax
 from jax.numpy.fft import rfftn
 from functools import partial
 
@@ -17,10 +17,12 @@ def _maxwellian_modes(d, c2, N):
     Maxwellian has the basis width (then g_n = (sqrt(2) d)^n / sqrt(n!)). The recurrence
     g_{n+1} = (sqrt(2) d g_n - sqrt(n) c2 g_{n-1}) / sqrt(n + 1) avoids factorials.
     """
-    g = [jnp.ones_like(d), jnp.sqrt(2.0) * d]
-    for n in range(1, N - 1):
-        g.append((jnp.sqrt(2.0) * d * g[n] - jnp.sqrt(n) * c2 * g[n - 1]) / jnp.sqrt(n + 1.0))
-    return jnp.stack(g[:N])
+    def step(g, n):  # g = (g_{n-1}, g_n) -> (g_n, g_{n+1}); a scan keeps compile time independent of N
+        g_next = (jnp.sqrt(2.0) * d * g[1] - jnp.sqrt(n) * c2 * g[0]) / jnp.sqrt(n + 1.0)
+        return (g[1], g_next), g_next
+    g0, g1 = jnp.ones_like(d), jnp.sqrt(2.0) * d
+    _, rest = lax.scan(step, (g0, g1), jnp.arange(1.0, max(N - 1, 1)))
+    return jnp.concatenate([g0[None], g1[None], rest])[:N]
 
 
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
