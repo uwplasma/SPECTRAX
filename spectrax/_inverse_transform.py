@@ -116,7 +116,7 @@ def inverse_HF_transform(Ck, Nn, Nm, Np, Nx, Ny, Nz, xi_x, xi_y, xi_z):
     jnp.ndarray
         The reconstructed distribution function evaluated on ``(t, x, y, z, xi_x, xi_y, xi_z)``.
     """
-    C = irfftn(Ck, s=(Nz, Ny, Nx), axes=(-1, -3, -2))
+    C = irfftn(Ck, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")  # same convention as the solver
 
     # Precompute Hermite functions up to desired order
     Herm_x = generate_Hermite_basis(Nn, xi_x)  # (Nn, Nvy, Nvx, Nvz)
