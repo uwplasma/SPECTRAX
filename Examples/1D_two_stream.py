@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 from jax import block_until_ready, config
 config.update("jax_enable_x64", True)
-from spectrax import simulation, load_parameters, legT
+from spectrax import simulation, load_parameters, legT, construct_idx_array
 from scipy.special import eval_hermite
 from matplotlib.animation import FuncAnimation, PillowWriter
 
@@ -35,12 +35,12 @@ dims = solver_parameters["dims"]
 # Initialize distribution function as a two-stream instability
 values  = (dn1 + dn2) * Lx / (4 * jnp.pi * nx * Omega_ce) # Initial perturbation is then 2 * values * cos(2\pi*x/L)
 F0 = lambda x, y, z: jnp.concatenate([jnp.array([2 * values * jnp.cos(2*jnp.pi*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
-input_parameters["Fk_0"] = legT(F0, N_DG)
+input_parameters["Fk_0"] = legT(F0, construct_idx_array(solver_parameters["dims"], N_DG), N_DG, Lx, Nx)
 
 C10 = lambda x: 1 / (alpha_s[0] ** 3) - dn1 * (1 / (alpha_s[0] ** 3)) * jnp.sin(2*jnp.pi*x/Lx)
 C20 = lambda x: 1 / (alpha_s[3] ** 3) - dn2 * (1 / (alpha_s[3] ** 3)) * jnp.sin(2*jnp.pi*x/Lx)
 C0 = lambda x, y, z: jnp.concatenate([jnp.array([C10(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape), jnp.array([C20(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape)])
-input_parameters["Ck_0"] = legT(C0, N_DG)
+input_parameters["Ck_0"] = legT(C0, construct_idx_array(solver_parameters["dims"], N_DG), N_DG, Lx, Nx)
 # Simulate
 start_time = time()
 output = block_until_ready(simulation(input_parameters, **solver_parameters))
