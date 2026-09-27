@@ -7,7 +7,7 @@ import diffrax
 import jax
 import jax.numpy as jnp
 import optimistix as optx
-from solvax import lu_factor_banded, lu_solve_banded, newton_krylov
+from solvax import newton_krylov
 
 
 def collision_diffusion_x_streaming_preconditioner(args, dt):
@@ -32,18 +32,13 @@ def collision_diffusion_x_streaming_preconditioner(args, dt):
     def lines(value):
         return jnp.moveaxis(jnp.broadcast_to(value, diagonal.shape), 3, -1)
 
-    bands = jnp.stack(
-        (lines(coupling * sqrt_minus), lines(diagonal),
-         lines(coupling * sqrt_plus)), axis=-2,
-    )
-    flat_bands = bands.reshape(-1, 3, bands.shape[-1])
-    factors = jax.vmap(lambda band: lu_factor_banded(band, 1, 1))(flat_bands)
+    main, lower = lines(diagonal), lines(coupling * sqrt_minus)
+    upper = lines(coupling * sqrt_plus).at[..., -1].set(0)
 
     def apply(residual):
         coefficients, fields = residual
-        rhs = jnp.moveaxis(coefficients, 3, -1).reshape(-1, coefficients.shape[3])
-        solution = jax.vmap(lu_solve_banded)(factors, rhs)
-        solution = solution.reshape(bands.shape[:-2] + (-1,))
+        rhs = jnp.moveaxis(coefficients, 3, -1)[..., None]
+        solution = jax.lax.linalg.tridiagonal_solve(lower, main, upper, rhs)[..., 0]
         return jnp.moveaxis(solution, -1, 3), fields
 
     return apply
