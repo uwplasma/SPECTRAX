@@ -6,6 +6,14 @@ The short defaults are a smoke test. For a clear nonlinear island movie, run
         --t-max 500 --chunk-time 50 --snapshots 51 --perturbation 0.1
 
 Use ``--perturbation 1e-4`` instead for a linear tearing-growth diagnostic.
+Linear growth rate of the ky = 1 mode at the X point (fit over 500 <= t <= 1000,
+ny = 5, nu = 1), against Camporeale et al.'s 5.33e-3:
+
+    nx  65, H 10: 2.39e-3  (-55 %)      nx 129, H 6: 4.76e-3  (-11 %, 53 min)
+    nx 129, H  8: 4.84e-3  ( -9 %)      nx 257, H 6: 5.07e-3  (-4.9 %, 3.9 h)
+
+It converges in nx; extrapolating nx (second order) and H gives about 5.25e-3,
+1.5 % below the paper. Times are on 36 shared CPU cores.
 The parameters follow Camporeale et al. (2006), section IV.C; the periodic
 double-sheet geometry and half-sheet magnetic diagnostic follow Koshkarov et
 al. (2021).
