@@ -69,7 +69,7 @@ def _solve_sharded(initial_conditions, args, solver_args, shape, solver, shard_a
             saveat=SaveAt(ts=local_time), max_steps=1000000, throw=False,
             progress_meter=NoProgressMeter(),
         )
-        return sol.ys, sol.result
+        return sol.ys, (sol.result, sol.stats)
 
     saved_spec = P(None, *state_spec)
     return shard_map(
@@ -151,7 +151,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
         args = args[:8] + _place(args[8:], (replicated,) * len(args[8:]))
         solver_args = (time, 0.0, dt, parameters["t_max"], parameters["ode_tolerance"])
         solver_args = _place(solver_args, (replicated,) * 5)
-        (Ck, Fk), solver_result = _solve_sharded(
+        (Ck, Fk), (solver_result, solver_stats) = _solve_sharded(
             initial_conditions, args[8:], solver_args,
             (Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl), solver, shard_axis,
         )
@@ -164,7 +164,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
             t0=0, t1=parameters["t_max"], dt0=dt,
             y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
             max_steps=max_steps, adjoint=adjoint, progress_meter=progress_meter)
-        (Ck, Fk), solver_result = sol.ys, sol.result
+        (Ck, Fk), solver_result, solver_stats = sol.ys, sol.result, sol.stats
     
     # Set n = 0, k = 0 mode to zero to get array with time evolution of perturbation.
     mode, y, x, z, basis = jnp.indices(Ck.shape[1:], sparse=True)
@@ -174,7 +174,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
     
     # Output results
     temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk,
-                        "solver_result": solver_result}
+                        "solver_result": solver_result, "solver_stats": solver_stats}
     output = {**temporary_output, **parameters}
     # diagnostics(output)
     return output
