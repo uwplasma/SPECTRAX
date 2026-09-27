@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'JAX-in-Cell'
+project = 'SPECTRAX'
 copyright = '2025, UWPlasma'
 author = 'UWPlasma'
 
@@ -31,4 +31,11 @@ autoapi_dirs = ['../spectrax']
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
+html_short_title = "SPECTRAX"
 html_theme = 'piccolo_theme'
+
+html_theme_options = {
+    "source_url": "https://github.com/uwplasma/SPECTRAX",
+    "source_icon": "github",
+    "banner_text": "SPECTRAX documentation",
+}
