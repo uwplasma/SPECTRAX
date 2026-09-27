@@ -33,7 +33,7 @@ def test_main_runs_a_2d_toml_without_an_initial_state(tmp_path, mock_plot):
     toml.write_text("[input_parameters]\nt_max = 0.5\n[solver_parameters]\nNx = 9\nNy = 4\nNn = 4\nNm = 2\ntimesteps = 3\n")
     main([str(toml)])
     output = mock_plot.call_args[0][0]
-    assert output["Ck"].shape == (3, 2 * 4 * 2, 4, 5, 1)
+    assert output["Ck"].shape == (3, 2 * 4 * 2, 4, 9, 1, 2)
 
 if __name__ == '__main__':
     unittest.main()
