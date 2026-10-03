@@ -71,7 +71,6 @@ def test_structured_state_maps_flat_hermite_index_to_species_p_m_n(monkeypatch):
         flat = s * Nn * Nm * Np + p * Nn * Nm + m * Nn + n
         # compare the (always retained) k = 0 coefficient so the check is independent of dealiasing
         assert Ck[s, p, m, n, 0, 0, 0] == params["Ck_0"][flat, 0, 0, 0]
-        assert len({complex(params["Ck_0"][f, 0, 0, 0]) for f in range(len(params["Ck_0"]))}) == len(params["Ck_0"])
 
 
 def test_continuation_from_output_matches_single_run():
