@@ -33,8 +33,9 @@ X, Y = jnp.meshgrid(jnp.arange(N) * L / N, jnp.arange(N) * L / N, indexing="xy")
 
 
 def inplane_magnetic_energy(Fk):
-    weights = jnp.where(jnp.arange(Fk.shape[-2]) == 0, 1.0, 2.0)    # real-FFT Parseval weights
-    return jnp.sum(jnp.abs(Fk[3:5]) ** 2 * weights[None, None, :, None])
+    """Grid mean of Bx^2 + By^2: evaluated in real space, so no real-FFT parity weights are needed."""
+    B = jnp.fft.irfftn(Fk[3:5], s=(1, N, N), axes=(-1, -3, -2), norm="forward")
+    return jnp.mean(jnp.sum(B ** 2, axis=0))
 
 
 def conversion(phases):

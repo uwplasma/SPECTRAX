@@ -119,3 +119,18 @@ def test_time_window_objective_gradient():
     gradient = jax.jit(jax.grad(time_averaged_energy))(theta0)
     assert jnp.all(jnp.isfinite(gradient))
     assert_matches_finite_differences(gradient, time_averaged_energy, theta0)
+
+
+def test_directional_derivative_has_a_finite_difference_plateau():
+    """Centred differences of the real scalar objective approach the AD directional derivative as eps^2 and
+    then plateau, before round-off takes over; agreement must hold over several consecutive step sizes."""
+    fixed = dict(dt=0.1, solver=Tsit5(), adaptive_time_step=False, max_steps=21)
+    f = jax.jit(lambda th: energy(th, **fixed))
+    direction = jnp.array([0.6, -0.8])
+    derivative = float(jax.jit(jax.grad(lambda th: energy(th, **fixed)))(theta0) @ direction)
+    epsilons = 10.0 ** -np.arange(1, 8)
+    errors = np.array([abs(float(f(theta0 + e * direction) - f(theta0 - e * direction)) / (2 * e) - derivative)
+                       for e in epsilons]) / abs(derivative)
+    plateau = errors < 1e-6
+    assert any(plateau[i:i + 3].all() for i in range(len(errors) - 2)), errors
+    assert errors[1] / errors[2] > 50, errors  # truncation error falls like eps^2 above the plateau
