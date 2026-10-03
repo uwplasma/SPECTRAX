@@ -23,9 +23,20 @@ __all__ = ["diagnostics", "hermite_tail_fraction"]
 
 
 def _rfft_weights(Nx: int, Nx_kept: int) -> jnp.ndarray:
-    """Return Parseval weights for an RFFT of length ``Nx``."""
+    """Parseval weights for the stored half of a real FFT of original length ``Nx``.
+
+    ``k = 0`` has weight 1; the Nyquist coefficient (present only for even ``Nx``) has
+    weight 1; every other stored coefficient stands for itself and its omitted conjugate,
+    weight 2. ``Nx`` must be the original grid length: the stored array must be the full
+    real FFT, ``Nx_kept == Nx // 2 + 1``, not a cropped or dealiased subset.
+    """
+    Nx, Nx_kept = int(Nx), int(Nx_kept)
+    if Nx < 1 or Nx_kept != Nx // 2 + 1:
+        raise ValueError(f"Stored real-FFT axis has {Nx_kept} modes; a full rfft of Nx={Nx} has {Nx // 2 + 1}.")
     weights = jnp.full(Nx_kept, 2.0).at[0].set(1.0)
-    return weights.at[-1].set(1.0 + (Nx % 2) * (Nx_kept > 1))
+    if Nx % 2 == 0 and Nx > 1:
+        weights = weights.at[-1].set(1.0)
+    return weights
 
 
 def _infer_Ns(output: Mapping[str, Any]) -> int:
@@ -108,7 +119,7 @@ def hermite_tail_fraction(output: Mapping[str, Any], width: int = 1) -> jnp.ndar
         tail |= p >= max(Np - width, 0)
 
     Nx_kept = dCk.shape[-2]
-    weights = _rfft_weights(int(output.get("Nx", 2 * (Nx_kept - 1))), Nx_kept)
+    weights = _rfft_weights(output["Nx"], Nx_kept)
     power = jnp.abs(dCk.reshape(dCk.shape[0], Ns, Np, Nm, Nn, *dCk.shape[-3:])) ** 2
     power *= weights.reshape(1, 1, 1, 1, 1, 1, -1, 1)
     total = jnp.sum(power, axis=(2, 3, 4, 5, 6, 7))
@@ -133,6 +144,7 @@ def diagnostics(output: dict) -> None:
         - ``Fk``: field Fourier coefficients of shape ``(Nt, 6, Ny, Nx//2+1, Nz)``
         - ``Omega_cs``: array of shape ``(Ns,)`` (cyclotron frequencies)
         - ``Lx``: domain length in x (used for ``k_norm``)
+        - ``Nx``: original x grid length; ``Fk``/``Ck`` must hold its full real FFT
 
         Optionally, it may use:
         - ``Nn``, ``Nm``, ``Np`` to decode flattened Hermite indices
@@ -248,8 +260,7 @@ def diagnostics(output: dict) -> None:
     kinetic_energy_species = pref[None, :] * (term0[None, :] * C000 + term1 + term2)  # (Nt, Ns)
     kinetic_energy = jnp.sum(kinetic_energy_species, axis=1)  # (Nt,)
     # Field energy
-    Nx = output.get("Nx", 2 * (Nx_kept - 1))
-    rfft_weights = _rfft_weights(Nx, Nx_kept)
+    rfft_weights = _rfft_weights(output["Nx"], Nx_kept)
     weight_grid = rfft_weights.reshape(1, 1, -1, 1)
     EM_energy = 0.5 * jnp.sum((jnp.abs(Fk) ** 2) * weight_grid, axis=(-4, -3, -2, -1)) * Omega_cs[0] ** 2
 
