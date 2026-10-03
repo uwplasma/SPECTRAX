@@ -13,8 +13,9 @@ __all__ = ['compute_C_nmp']
 def _maxwellian_modes(d, c2, N):
     """Normalised Hermite coefficients g_n = c^n H_n(d / c) / sqrt(2^n n!), n < N, of a 1D Maxwellian.
 
-    d is the drift in units of the Hermite width and c2 = 1 - 2 vth^2 / alpha^2; c2 = 0 when the
-    Maxwellian has the basis width (then g_n = (sqrt(2) d)^n / sqrt(n!)). The recurrence
+    d is the drift in units of the Hermite width and c2 = 1 - 2 vth^2 / alpha^2 (negative for
+    vth > alpha / sqrt(2); the series decays iff |c2| < 1, i.e. vth < alpha); c2 = 0 when the
+    Maxwellian is matched to the basis (then g_n = (sqrt(2) d)^n / sqrt(n!)). The recurrence
     g_{n+1} = (sqrt(2) d g_n - sqrt(n) c2 g_{n-1}) / sqrt(n + 1) avoids factorials.
     """
     def step(g, n):  # g = (g_{n-1}, g_n) -> (g_n, g_{n+1}); a scan keeps compile time independent of N
@@ -47,9 +48,13 @@ def compute_C_nmp(Us_grid, alpha_s, u_s, Nn, Nm, Np, Ns, vth_s=None):
         Number of species.
     vth_s : array-like, optional
         Thermal speeds (standard deviations) of the Maxwellians, flattened as `(3 * Ns,)`.
-        Default: `alpha_s / sqrt(2)`, the basis width. A Maxwellian narrower than its basis
-        (`vth < alpha / sqrt(2)`) has a convergent expansion, so a thin beam can share a wide
-        basis; a wider one does not converge.
+        Default: `alpha_s / sqrt(2)`, the Maxwellian matched to the basis weight
+        `exp(-(v - u)^2 / alpha^2)`. The expansion converges in the basis' weighted norm
+        (finite `int f^2 exp((v - u)^2 / alpha^2) dv`) iff `vth < alpha`: the normalised
+        coefficients decay like `|1 - 2 vth^2 / alpha^2|^(n/2)`. So a thin beam can share a wide
+        basis, and Maxwellians up to (not including) `vth = alpha`, i.e. broader than matched,
+        are admissible too. This concerns the initial expansion in this fixed norm only; it does
+        not show that a truncated nonlinear run stays resolved.
 
     Returns
     -------

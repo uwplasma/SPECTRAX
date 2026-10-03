@@ -8,7 +8,9 @@ The beam is expanded in the bulk's Hermite width (alpha = sqrt(2)), not its own 
 `compute_C_nmp(..., vth_s=...)` gives the closed-form coefficients of a Maxwellian narrower than its
 basis. In its own narrow basis the trapped beam, which spreads over 2 < v < 6, has a divergent
 expansion: its coefficients grow by 1e2-1e7 and the adaptive step collapses (near t = 28 with nu = 3).
-Set BEAM_BASIS_VT = 0.5 to see it. Linear theory: omega = 0.866 + 0.198 i at k = 0.3.
+Set BEAM_BASIS_VT = 0.5 to see it. Linear theory: omega = 0.866 + 0.198 i at k = 0.3; the dashed line
+is that rate, drawn for orientation only. Neither it nor this single resolution shows that the
+nonlinear (trapping/saturation) phase is converged: that needs Nn, Nx and nu refinement.
 """
 
 import jax
@@ -49,11 +51,12 @@ for s, a in enumerate(alpha):  # 1D marginal: f(v_x, v_y = v_z = 0) times the tr
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 3.8))
 ax1.semilogy(t, E1, label="SPECTRAX")
 linear = (t > 8) & (t < 20)
-ax1.semilogy(t[linear], E1[linear][0] * np.exp(0.198 * (t[linear] - 8)), "k--", label=r"$\gamma = 0.198$")
+ax1.semilogy(t[linear], E1[linear][0] * np.exp(0.198 * (t[linear] - 8)), "k--", label=r"linear theory, $\gamma = 0.198$")
 ax1.set(xlabel=r"$t\,\omega_{pe}$", ylabel=r"$|\hat E_{k}|$", title="bump-on-tail, k = 0.3")
 ax1.legend()
 mesh = ax2.pcolormesh(x, v, np.asarray(f).T, shading="auto", cmap="magma")
 ax2.set(xlabel=r"$x/\lambda_D$", ylabel=r"$v/v_t$", title=f"f(x, v, t = {t_max:g})")
 fig.colorbar(mesh, ax=ax2)
 plt.tight_layout()
+print(f"max |E_k| = {float(E1.max()):.4f}, min f = {float(np.min(f)):.3f}")
 plt.show()
