@@ -107,6 +107,12 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
 
     return dy_dt
 
+def _stepsize_controller(adaptive_time_step, tolerance, dtmin=None):
+    """PID control at `tolerance` with an optional step floor `dtmin` (None: no floor), or constant steps."""
+    if not adaptive_time_step:
+        return ConstantStepSize()
+    return PIDController(rtol=tolerance, atol=tolerance, dtmin=dtmin, force_dtmin=False)
+
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step',
                                 'dtmin', 'max_steps', 'throw'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
@@ -134,14 +140,17 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         Diffrax solver instance controlling the time integration.
     dtmin : float, optional
         Smallest adaptive step. If the step would fall below it the solve stops with an
-        error, instead of crawling towards `max_steps`. A collapsing step usually means too
-        few Hermite modes or too weak hypercollisions for the filamentation reaching the
-        cutoff, or a species whose Hermite width is narrower than it becomes. Default:
-        `t_max / max_steps`, the step below which the run could not finish anyway; 0 disables it.
+        error, instead of crawling towards `max_steps`. A collapsing step usually signals an
+        under-resolved run (filamentation reaching the Hermite cutoff, or a species whose
+        Hermite width is narrower than it becomes). Default `None`:
+        no floor. A short physical transient may need steps far below `t_max / max_steps` and
+        still finish within the budget, so no floor is inferred from them.
     max_steps : int, optional
-        Maximum number of solver steps before the solve stops with an error.
+        Step budget; exhausting it stops the solve (`RESULTS.max_steps_reached`), reported
+        separately from a step below `dtmin` (`RESULTS.dt_min_reached`).
     throw : bool, optional
-        Raise on integration failure; with False the failure is reported in `solver_result`.
+        Raise on integration failure; with False the failure is reported in `solver_result`,
+        and only the first `num_valid_times` saved times (`valid_times`) hold a solution.
 
     Returns
     -------
@@ -170,15 +179,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
             parameters["sqrt_p_plus"], parameters["sqrt_p_minus"])
     
 
-    controllers = {
-    True: PIDController(
-        rtol=parameters["ode_tolerance"],
-        atol=parameters["ode_tolerance"],
-        dtmin=parameters["t_max"] / max_steps if dtmin is None else dtmin, force_dtmin=False,
-    ),
-    False: ConstantStepSize(),
-    }
-    stepsize_controller = controllers[adaptive_time_step]
+    stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_tolerance"], dtmin)
 
     # Solve the ODE system
     ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns)
@@ -198,8 +199,11 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     dCk = dCk.at[:, Nn * Nm * Np, 0, 0, 0].set(0)
     
     # Output results
+    # Diffrax fills saves after a failed solve with inf; flag them so they are never read as data.
+    valid_times = jnp.isfinite(sol.ts)
     temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk, "solver_stats": sol.stats,
-                        "solver_result": sol.result}
+                        "solver_result": sol.result, "valid_times": valid_times,
+                        "num_valid_times": jnp.sum(valid_times)}
     output = {**temporary_output, **parameters}
     diagnostics(output)
     return output
