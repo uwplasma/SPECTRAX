@@ -98,7 +98,8 @@ def test_structured_state_maps_flat_hermite_index_to_species_p_m_n(monkeypatch):
     Nn, Nm, Np = g["Nn"], g["Nm"], g["Np"]
     for s, p, m, n in [(0, 0, 0, 1), (1, 3, 1, 2), (2, 2, 0, 0)]:
         flat = s * Nn * Nm * Np + p * Nn * Nm + m * Nn + n
-        assert jnp.array_equal(Ck[s, p, m, n], params["Ck_0"][flat])
+        # compare the (always retained) k = 0 coefficient so the check is independent of dealiasing
+        assert Ck[s, p, m, n, 0, 0, 0] == params["Ck_0"][flat, 0, 0, 0]
 
 
 def test_continuation_from_output_matches_single_run():
