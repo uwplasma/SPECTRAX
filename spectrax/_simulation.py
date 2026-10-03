@@ -114,7 +114,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
     dCk = dCk.at[:, Nn * Nm * Np, 0, 1, 0, 0].set(0)
     
     # Output results
-    temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk}
+    temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk, "solver_stats": sol.stats}
     output = {**temporary_output, **parameters}
     # diagnostics(output)
     return output

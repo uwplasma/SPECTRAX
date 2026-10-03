@@ -72,12 +72,12 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     Lx, Ly, Lz = default_parameters["Lx"], default_parameters["Ly"], default_parameters["Lz"]
     values  = (dn1 + dn2) * Lx / (4 * jnp.pi * default_parameters["nx"] * default_parameters["Omega_ce"])
     F0 = lambda x, y, z: jnp.concatenate([jnp.array([2 * values * jnp.cos(2*jnp.pi*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
-    Fk_0 = legT(F0, basis_idx, N_DG, Lx, Nx)
+    Fk_0 = legT(F0, basis_idx, N_DG, Lx, Nx, Ly, Ny, Lz, Nz)
 
     C10 = lambda x: 1 / (alpha_e[0] ** 3) - dn1 * (1 / (alpha_e[0] ** 3)) * jnp.sin(2*jnp.pi*x/Lx)
     C20 = lambda x: 1 / (alpha_e[0] ** 3) - dn2 * (1 / (alpha_e[0] ** 3)) * jnp.sin(2*jnp.pi*x/Lx)
-    C0 = lambda x, y, z: jnp.concatenate([jnp.array([C10(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape), jnp.array([C20(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape)])
-    Ck_0 = legT(C0, basis_idx, N_DG, Lx, Nx)
+    C0 = lambda x, y, z: jnp.concatenate([jnp.array([C10(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn * Nm * Np - 1,) + jnp.zeros_like(x).shape), jnp.array([C20(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn * Nm * Np - 1,) + jnp.zeros_like(x).shape)])
+    Ck_0 = legT(C0, basis_idx, N_DG, Lx, Nx, Ly, Ny, Lz, Nz)
     
     default_parameters.update({
         "Ck_0": Ck_0, "Fk_0": Fk_0, "Ns": Ns,
