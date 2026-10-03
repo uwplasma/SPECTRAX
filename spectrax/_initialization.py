@@ -1,4 +1,5 @@
 import jax.numpy as jnp
+import numpy as np
 from jax import jit, vmap, lax
 from functools import partial
 try: import tomllib
@@ -211,31 +212,29 @@ def compute_basis_products(dx, dy, dz, basis_idx):
     return inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, tripple_product
 
 def compute_A_pm_matrices(Nn, Nm, Np, alpha, u):
-    def compute_A_off(idx):
-        i, j = idx
-        return jnp.where((j == i + 1) | (j == i - 1), jnp.sqrt(jnp.maximum(i, j) / 2), 0)
-    
-    Ax_mat = alpha[:, 0, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Nn, Nn)), axis=-1)) + u[:, 0, None, None] * jnp.eye(Nn)
-    Ay_mat = alpha[:, 1, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Nm, Nm)), axis=-1)) + u[:, 1, None, None] * jnp.eye(Nm)
-    Az_mat = alpha[:, 2, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Np, Np)), axis=-1)) + u[:, 2, None, None] * jnp.eye(Np)
+    """Upwind split A = A+ + A- of the Hermite streaming matrices A = alpha * J + u * I, per species and direction.
 
-    # Symmetric (Jacobi) matrices: eigh gives real, orthogonal eigenvectors and, unlike eig, is differentiable in alpha and u.
-    Lam, U = jnp.linalg.eigh(Ax_mat)
-    D_mat = Lam[:, :, None] * jnp.eye(Nn)
-    Ax_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, None, :, :, None, None, None, None, None]
-    Ax_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, None, :, :, None, None, None, None, None]
+    J is the constant symmetric Hermite (Jacobi) matrix, so A shares J's eigenvectors for every alpha and u, and its
+    eigenvalues are alpha * x_k + u with x_k the eigenvalues of J. The eigenbasis is computed once on the host; the
+    split is then differentiable in alpha and u. At a zero eigenvalue (alpha * x_k + u = 0, e.g. u = 0 for odd N)
+    the split is not differentiable and autodiff returns the mean of the one-sided derivatives.
+    """
+    def split(N, a, v):
+        i, j = np.indices((N, N))
+        x, V = np.linalg.eigh(np.where(np.abs(i - j) == 1, np.sqrt(np.maximum(i, j) / 2), 0.0))
+        x = (x - x[::-1]) / 2  # the spectrum is symmetric; this makes the middle root exactly zero for odd N
+        lam = a[:, None] * jnp.asarray(x) + v[:, None]  # (Ns, N)
+        V = jnp.asarray(V)
+        # maximum/minimum (not (lam +- |lam|)/2) so a zero eigenvalue gets the mean one-sided derivative, not a roundoff-signed one
+        return (jnp.einsum('ik,sk,jk->sij', V, jnp.maximum(lam, 0.0), V),
+                jnp.einsum('ik,sk,jk->sij', V, jnp.minimum(lam, 0.0), V))
 
-    Lam, U = jnp.linalg.eigh(Ay_mat)
-    D_mat = Lam[:, :, None] * jnp.eye(Nm)
-    Ay_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, :, :, None, None, None, None, None, None]
-    Ay_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, :, :, None, None, None, None, None, None]
-
-    Lam, U = jnp.linalg.eigh(Az_mat)
-    D_mat = Lam[:, :, None] * jnp.eye(Np)
-    Az_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None, None, None]
-    Az_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None, None, None]
-
-    return Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m
+    Ax_p, Ax_m = split(Nn, alpha[:, 0], u[:, 0])
+    Ay_p, Ay_m = split(Nm, alpha[:, 1], u[:, 1])
+    Az_p, Az_m = split(Np, alpha[:, 2], u[:, 2])
+    x_shape, y_shape, z_shape = (slice(None), None, None), (slice(None), None), (slice(None),)
+    ex = lambda M, lead: M[lead + (slice(None), slice(None)) + (None,) * (8 - len(lead))]
+    return (ex(Ax_p, x_shape), ex(Ax_m, x_shape), ex(Ay_p, y_shape), ex(Ay_m, y_shape), ex(Az_p, z_shape), ex(Az_m, z_shape))
 
 def compute_R_pm_matrices(upwind=False):
     Rx_mat = jnp.block([[jnp.zeros((3, 3)), jnp.array([[0, 0, 0], [0, 0, 1], [0, -1, 0]])], [jnp.array([[0, 0, 0], [0, 0, -1], [0, 1, 0]]), jnp.zeros((3, 3))]])

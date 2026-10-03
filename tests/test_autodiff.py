@@ -88,7 +88,7 @@ def test_reverse_pass_workspace_does_not_grow_with_the_step_budget():
 
 
 def test_upwind_hermite_matrices_match_host_eigendecomposition():
-    """The upwind split A = A+ + A- uses a symmetric eigendecomposition; compare with an independent host LAPACK eig."""
+    """The upwind split A = A+ + A- (constant Hermite eigenbasis) matches an independent host LAPACK eig of A."""
     from spectrax._initialization import compute_A_pm_matrices
     alpha, u = np.array([[0.25, 0.3, 0.35], [0.05, 0.06, 0.07]]), np.array([[0.1, -0.2, 0.0], [0.0, 0.03, -0.01]])
     for N in (1, 2, 3, 5, 8):
@@ -123,3 +123,27 @@ def test_gradients_with_respect_to_thermal_speeds_and_drifts():
     np.testing.assert_allclose(reverse, forward, rtol=1e-9, atol=1e-12 * float(jnp.linalg.norm(reverse)))
     assert_matches_finite_differences(reverse, field_energy, x0)
 
+
+
+@pytest.mark.parametrize("N", [3, 4, 7])
+def test_upwind_split_derivatives_away_from_and_at_zero_speed(N):
+    """d(A+-)/d(alpha, u) matches finite differences away from zero eigenvalues; at a zero eigenvalue (u = -alpha * x_k,
+    including u = 0 for odd N) autodiff returns the mean of the one-sided derivatives, and alpha = 0 stays finite."""
+    from spectrax._initialization import compute_A_pm_matrices
+    x = np.sort(np.linalg.eigh(np.where(np.abs(np.subtract.outer(np.arange(N), np.arange(N))) == 1,
+                                            np.sqrt(np.maximum.outer(np.arange(N), np.arange(N)) / 2), 0.0))[0])
+    x = (x - x[::-1]) / 2  # same symmetrisation as the solver, so u = -alpha * x_k is an exact zero eigenvalue
+
+    def split(p):  # p = (alpha, u) in x for one species
+        Ax_p, Ax_m, *_ = compute_A_pm_matrices(N, 1, 1, jnp.array([[p[0], 1.0, 1.0]]), jnp.array([[p[1], 0.0, 0.0]]))
+        return jnp.stack([Ax_p[0, 0, 0, :, :, 0, 0, 0, 0, 0], Ax_m[0, 0, 0, :, :, 0, 0, 0, 0, 0]])
+
+    h = 1e-6
+    for p, kink in [((0.25, 0.1), False), ((0.25, 0.0), N % 2 == 1), ((0.3, -0.3 * x[N // 2]), True), ((0.0, 0.1), False)]:
+        p = jnp.array(p)
+        jac = jax.jacfwd(split)(p)
+        assert jnp.all(jnp.isfinite(jac))
+        np.testing.assert_allclose(jac, jax.jacrev(split)(p), atol=1e-13)
+        right, left = [(split(p + s * h * jnp.array([0.0, 1.0])) - split(p)) / (s * h) for s in (1, -1)]
+        assert (float(jnp.max(jnp.abs(right - left))) > 0.1) == kink
+        np.testing.assert_allclose(jac[..., 1], (right + left) / 2, atol=1e-6)

@@ -49,6 +49,14 @@
 
 ##  Overview
 
+> **Discontinuous-Galerkin branch.** On this branch `simulation` discretizes configuration space with a
+> Legendre discontinuous-Galerkin method (`N_DG` basis functions per cell, initial data projected with `legT`),
+> not Fourier modes; the Hermite velocity expansion is unchanged. DG examples: `Examples/1D_Landau_damping.py`,
+> `1D_two_stream.py`, `1D_Weibel.py`, `2D_Orszag_Tang.py`. The files `1D_Landau_damping_dr_curve.py`,
+> `1D_two_stream_gr_curve.py` and `orszag_tang_data_analysis.py`, and the `diagnostics`, `plot` and
+> `inverse_HF_transform` utilities, come from `main` and assume the Fourier state layout; they do not run on DG
+> output. The Fourier description below applies to `main`.
+
 **SPECTRAX** is an open-source spectral kinetic plasma solver written in Python with the [JAX](https://github.com/jax-ml/jax) ecosystem. It solves the collisionless Vlasov–Maxwell equations by evolving the Hermite–Fourier coefficients of the particle distribution function and the electromagnetic fields. This approach was previously implemented in *SpectralPlasmaSolver* (SPS), developed at Los Alamos National Laboratory, and described in [Delzanno (2025)](https://www.sciencedirect.com/science/article/pii/S0021999115004738), [Vencels et al. (2016)](https://iopscience.iop.org/article/10.1088/1742-6596/719/1/012022) and [Roytershteyn & Delzanno (2018)](https://www.frontiersin.org/journals/astronomy-and-space-sciences/articles/10.3389/fspas.2018.00027/full), where the one particle distribution is expanded in asymmetrically weighted (AW) Hermite functions in velocity space and Fourier modes in configuration space. By performing an AW Hermite expansion in velocity space, the method naturally couples fluid and kinetic physics: the lowest‐order Hermite coefficients correspond to fluid moments and higher modes capture kinetic corrections.
 
 SPECTRAX implements a Hermite–Fourier spectral approach for Vlasov–Maxwell simulations in a JAX framework. It uses just‑in‑time compilation to run efficiently on CPUs and GPUs, adopts state‑of‑the‑art ODE solvers from the [Diffrax](https://github.com/patrick-kidger/diffrax) library, and includes utilities for diagnostics and plotting. The code supports multi‑species plasmas and arbitrary spatial dimensionality (1D to 3D) and can serve as a test bed for studying kinetic instabilities, turbulence, and the transition between fluid and kinetic regimes.
