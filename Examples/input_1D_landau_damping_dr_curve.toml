@@ -18,7 +18,7 @@ dn1 = 0.001
 ode_tolerance = 1e-8
 
 [solver_parameters]
-Nx=3
+Nx=4
 Ny=1
 Nz=1
 Nn=40
