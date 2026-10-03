@@ -6,14 +6,23 @@ The short defaults are a smoke test. For a clear nonlinear island movie, run
         --t-max 500 --chunk-time 50 --snapshots 51 --perturbation 0.1
 
 Use ``--perturbation 1e-4`` instead for a linear tearing-growth diagnostic.
-Linear growth rate of the ky = 1 mode at the X point (fit over 500 <= t <= 1000,
-ny = 5, nu = 1), against Camporeale et al.'s 5.33e-3:
+
+Growth observable: the amplitude of the first y Fourier mode (ky = 2 pi / Ly) of
+(Bx, By), taken over the left half of the box, which contains the sheet at Lx/4.
+gamma is a least-squares fit of its logarithm over ``--fit-window`` (default: the
+second half of the run). The script also prints the fit's rms log residual and the
+growth rate of each half of the window; a linear eigenmode needs them to agree.
+
+Earlier measurements (ny = 5, nu = 1, t = 1000) against Camporeale et al.'s
+0.256 Omega_ci = 5.33e-3 omega_pe:
 
     nx  65, H 10: 2.39e-3  (-55 %)      nx 129, H 6: 4.76e-3  (-11 %, 53 min)
     nx 129, H  8: 4.84e-3  ( -9 %)      nx 257, H 6: 5.07e-3  (-4.9 %, 3.9 h)
 
-It converges in nx; extrapolating nx (second order) and H gives about 5.25e-3,
-1.5 % below the paper. Times are on 36 shared CPU cores.
+They used an earlier fit (log-linear through local maxima of the amplitude with
+t >= t_max/4) and were not re-measured with this window fit. The rate rises with nx,
+but no spatial convergence order has been measured, so no extrapolated value is
+quoted. Times are on 36 shared CPU cores.
 The parameters follow Camporeale et al. (2006), section IV.C; the periodic
 double-sheet geometry and half-sheet magnetic diagnostic follow Koshkarov et
 al. (2021).
@@ -31,7 +40,7 @@ import numpy as np
 from diffrax import Dopri8
 from matplotlib.animation import FuncAnimation, PillowWriter
 
-from spectrax import simulation
+from spectrax import hermite_tail_fraction, plasma_current, simulation
 
 
 def initial_conditions(nx, ny, hermite, perturbation, nu):
@@ -99,38 +108,49 @@ def fields_and_flux(fk, nx, lx, ly):
     k2 = KX**2 + KY**2
     az_k = np.zeros_like(bx)
     np.divide(-1j * KY * bx + 1j * KX * by, k2, out=az_k, where=k2 != 0.0)
-    jz_k = 1j * KX * by - 1j * KY * bx
     az = np.fft.irfftn(az_k, s=(ny, nx), axes=(-2, -1), norm="forward").real
-    jz = np.fft.irfftn(jz_k, s=(ny, nx), axes=(-2, -1), norm="forward").real
-    return fields, az, jz
+    return fields, az
 
 
-def save_diagnostics(output_dir, t, fk, nx, lx, ly):
-    fields, az, jz = fields_and_flux(fk, nx, lx, ly)
+def kinetic_current_z(output, hermite, omega_ce):
+    """Ampere source J_z / Omega_ce from the Hermite moments. It equals (curl B)_z only
+    when the displacement current dE_z/dt vanishes."""
+    current = jax.vmap(lambda ck: plasma_current(
+        output["qs"], output["alpha_s"], output["u_s"], ck,
+        hermite, hermite, hermite, 4))(output["Ck"])
+    return np.asarray(current[:, 2, :, :, 0]) / omega_ce
+
+
+def fit_growth(t, amplitude, window):
+    inside = (t >= window[0]) & (t <= window[1]) & (amplitude > 0)
+    if inside.sum() < 4:
+        return np.nan, np.nan, (np.nan, np.nan)
+    ts, logs = t[inside], np.log(amplitude[inside])
+    gamma, intercept = np.polyfit(ts, logs, 1)
+    rms = float(np.sqrt(np.mean((logs - intercept - gamma * ts) ** 2)))
+    half = len(ts) // 2
+    halves = tuple(float(np.polyfit(ts[s], logs[s], 1)[0]) for s in (slice(None, half + 1), slice(half, None)))
+    return float(gamma), rms, halves
+
+
+def save_diagnostics(output_dir, t, fk, jz_k, nx, lx, ly, window):
+    fields, az = fields_and_flux(fk, nx, lx, ly)
+    jz = np.fft.irfftn(jz_k, s=(fk.shape[-3], nx), axes=(-2, -1), norm="forward").real
     half = (nx + 1) // 2
     magnetic = fields[:, 3:, :, :half, 0]
     phase = np.exp(2j * np.pi * np.arange(magnetic.shape[2]) / magnetic.shape[2])
     amplitude = np.linalg.norm(
         np.sum(magnetic * phase[None, None, :, None], axis=(-2, -1)), axis=1
     ) / np.sqrt(magnetic.shape[2] * magnetic.shape[3])
-    peaks = np.flatnonzero(
-        (amplitude[1:-1] > amplitude[:-2]) & (amplitude[1:-1] > amplitude[2:])
-    ) + 1
-    peaks = peaks[t[peaks] >= t[-1] / 4.0]
-    fit = None
-    if len(peaks) >= 3:
-        gamma, intercept = np.polyfit(t[peaks], np.log(amplitude[peaks]), 1)
-        fit = np.exp(intercept + gamma * t)
-    else:
-        gamma = np.nan
+    gamma, rms, halves = fit_growth(t, amplitude, window)
 
     sheet = np.argmin(abs(np.linspace(0.0, lx, nx, endpoint=False) - lx / 4.0))
     flux = np.ptp(az[:, :, sheet], axis=1)
     fig, axes = plt.subplots(2, 1, figsize=(6.4, 6.0), sharex=True, constrained_layout=True)
     axes[0].semilogy(t, amplitude, color="0.65", label="half-sheet magnetic mode")
-    if fit is not None:
-        axes[0].semilogy(t[peaks], amplitude[peaks], "o", ms=3)
-        axes[0].semilogy(t, fit, "k--", label=rf"envelope $\gamma={gamma:.5f}$")
+    if np.isfinite(gamma):
+        axes[0].axvspan(*window, color="0.9", zorder=0)
+        axes[0].set_title(rf"window fit $\gamma={gamma:.5f}$", fontsize=9)
     axes[0].set_ylabel("magnetic-mode amplitude")
     axes[0].legend(fontsize=8)
     axes[1].plot(t, flux)
@@ -152,7 +172,7 @@ def save_diagnostics(output_dir, t, fk, nx, lx, ly):
     contours = [None]
     title = ax.set_title("")
     ax.set(xlabel="x", ylabel="y")
-    fig.colorbar(image, ax=ax, label=r"$J_z-\langle J_z\rangle_y$")
+    fig.colorbar(image, ax=ax, label=r"kinetic $(J_z-\langle J_z\rangle_y)/\Omega_{ce}$")
 
     def update(frame):
         image.set_array(jz[frame].ravel())
@@ -171,7 +191,7 @@ def save_diagnostics(output_dir, t, fk, nx, lx, ly):
     animation = FuncAnimation(fig, update, frames=frames, interval=80, blit=False)
     animation.save(output_dir / "reconnection-topology.gif", PillowWriter(fps=12), dpi=110)
     plt.close(fig)
-    return amplitude, gamma
+    return amplitude, gamma, rms, halves
 
 
 def main():
@@ -184,12 +204,16 @@ def main():
     parser.add_argument("--t-max", type=float, default=10.0)
     parser.add_argument("--chunk-time", type=float, default=10.0)
     parser.add_argument("--snapshots", type=int, default=21)
+    parser.add_argument("--fit-window", type=float, nargs=2, default=None,
+                        help="t_start t_end of the growth fit (default: second half of the run)")
     parser.add_argument("--output-dir", type=Path, default=Path("reconnection_output"))
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     values = initial_conditions(args.nx, args.ny, args.hermite, args.perturbation, args.nu)
-    times, fields, offset = [], [], 0.0
+    window = args.fit_window or (args.t_max / 2.0, args.t_max)
+    omega_ce = float(values["Omega_cs"][0])
+    times, fields, currents, offset = [], [], [], 0.0
     start = time.perf_counter()
     while offset < args.t_max:
         duration = min(args.chunk_time, args.t_max - offset)
@@ -203,6 +227,8 @@ def main():
         first = 0 if not times else 1
         times.append(np.asarray(output["time"])[first:] + offset)
         fields.append(np.asarray(output["Fk"])[first:])
+        currents.append(kinetic_current_z(output, args.hermite, omega_ce)[first:])
+        tails = np.asarray(hermite_tail_fraction(output)[-1])
         values["Ck_0"] = jnp.asarray(output["Ck"][-1])
         values["Fk_0"] = jnp.asarray(output["Fk"][-1])
         del output
@@ -210,25 +236,21 @@ def main():
         print(f"t={offset:g}")
 
     t, fk = np.concatenate(times), np.concatenate(fields)
-    amplitude, gamma = save_diagnostics(
-        args.output_dir, t, fk, args.nx, float(values["Lx"]), float(values["Ly"])
+    amplitude, gamma, rms, halves = save_diagnostics(
+        args.output_dir, t, fk, np.concatenate(currents), args.nx,
+        float(values["Lx"]), float(values["Ly"]), window,
     )
-    coefficients = np.asarray(values["Ck_0"]).reshape(
-        4, args.hermite, args.hermite, args.hermite, args.ny, args.nx // 2 + 1, 1
-    )
-    power = abs(coefficients) ** 2
-    tails = {
-        name: float(np.take(power, -1, axis=axis).sum() / power.sum())
-        for name, axis in (("p", 1), ("m", 2), ("n", 3))
-    }
     np.savez(args.output_dir / "reconnection.npz", time=t, amplitude=amplitude, Fk=fk)
     linear = args.perturbation <= 1e-3
     print(json.dumps({
         "runtime_s": time.perf_counter() - start,
         "regime": "linear diagnostic" if linear else "finite-seed nonlinear",
         "gamma": None if not np.isfinite(gamma) else float(gamma),
+        "fit_window": list(window),
+        "fit_rms_log_residual": None if not np.isfinite(rms) else rms,
+        "gamma_first_and_second_half": [h if np.isfinite(h) else None for h in halves],
         "expected_gamma": 0.256 / 48.0 if linear else None,
-        "hermite_tail_fraction": tails,
+        "hermite_tail_fraction_per_population": tails.tolist(),
     }, sort_keys=True))
 
 
