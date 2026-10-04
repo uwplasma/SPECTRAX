@@ -5,8 +5,8 @@ import jax.numpy as jnp
 from jax import jit, config
 config.update("jax_enable_x64", True)
 from functools import partial
-from diffrax import (diffeqsolve, Dopri8, ODETerm,
-                     SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
+from diffrax import (diffeqsolve, Dopri8, ODETerm, SaveAt, PIDController, TqdmProgressMeter,
+                     NoProgressMeter, ConstantStepSize, RecursiveCheckpointAdjoint)
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
 from ._diagnostics import diagnostics
@@ -107,10 +107,10 @@ def _stepsize_controller(adaptive_time_step, tolerance, dtmin=None):
     return PIDController(rtol=tolerance, atol=tolerance, dtmin=dtmin, force_dtmin=False)
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step',
-                                'dtmin', 'max_steps', 'throw'])
+                                'dtmin', 'max_steps', 'throw', 'adjoint', 'progress_meter'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
                timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True, dtmin=None, max_steps=1000000,
-               throw=True):
+               throw=True, adjoint=RecursiveCheckpointAdjoint(), progress_meter=TqdmProgressMeter()):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -144,6 +144,12 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     throw : bool, optional
         Raise on integration failure; with False the failure is reported in `solver_result`,
         and only the first `num_valid_times` saved times (`valid_times`) hold a solution.
+    adjoint : diffrax.AbstractAdjoint, optional
+        How gradients are taken through the solve. Default `RecursiveCheckpointAdjoint()`;
+        pass `RecursiveCheckpointAdjoint(checkpoints=k)` to bound reverse-mode memory, or
+        `ForwardMode()` for `jax.jacfwd`. The objective must be a real scalar.
+    progress_meter : diffrax.AbstractProgressMeter, optional
+        Default `TqdmProgressMeter()`; `NoProgressMeter()` inside optimisation loops.
 
     Returns
     -------
@@ -190,7 +196,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         stepsize_controller=stepsize_controller,
         t0=0, t1=parameters["t_max"], dt0=dt,
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
-        max_steps=max_steps, progress_meter=TqdmProgressMeter(), throw=throw)
+        max_steps=max_steps, adjoint=adjoint, progress_meter=progress_meter, throw=throw)
         
     # Reshape the solution to extract Ck and Fk
     Ck = sol.ys[0].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz)
