@@ -1,5 +1,6 @@
 """Time integration driver for the spectral Vlasov–Maxwell system."""
 
+import numpy as np
 import jax.numpy as jnp
 from jax import jit, config
 config.update("jax_enable_x64", True)
@@ -12,21 +13,18 @@ from ._diagnostics import diagnostics
 
 __all__ = ["cross_product", "ode_system", "simulation"]
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz'])
 def _twothirds_mask(Ny: int, Nx: int, Nz: int):
-    """Return a boolean mask that keeps |k|<=N//3 in each dim."""
-    # Real-valued fft leaves only the positive-k elements on the last axis given.
-    # We choose the x-axis since this gets us the savings in 1D as well as 2D/3D.
-    ky = (jnp.fft.fftfreq(Ny) * Ny)[:, None, None]
-    kx = (jnp.fft.rfftfreq(Nx) * Nx)[None, :, None]
-    kz = (jnp.fft.fftfreq(Nz) * Nz)[None, None, :]
+    """Boolean 2/3 de-aliasing mask on the solver's (Ny, Nx//2+1, Nz) Fourier layout.
 
-    # cutoffs (keep indices with |k| <= floor(N/3)); if N<3 this naturally keeps only k=0
-    cy = Ny // 3
-    cx = Nx // 3
-    cz = Nz // 3
-
-    return (jnp.abs(ky) <= cy) & (jnp.abs(kx) <= cx) & (jnp.abs(kz) <= cz)
+    Keeps integer mode indices with ``3*|k| < N`` in each direction, i.e. ``|k| <= (N-1)//3``.
+    With this strict bound a product of two retained modes never aliases back onto a retained
+    mode (``2*K < N - K``). The inclusive bound ``|k| <= N//3`` fails when ``N`` is divisible by
+    three: ``K + K = 2K`` aliases onto ``-K``. The real FFT runs along x, so only ``k_x >= 0`` is stored.
+    """
+    ky = np.fft.fftfreq(Ny, d=1.0 / Ny).round().astype(int)[:, None, None]
+    kx = np.arange(Nx // 2 + 1)[None, :, None]
+    kz = np.fft.fftfreq(Nz, d=1.0 / Nz).round().astype(int)[None, None, :]
+    return (3 * np.abs(ky) < Ny) & (3 * kx < Nx) & (3 * np.abs(kz) < Nz)
 
 @jit
 def cross_product(k_vec, F_vec):
@@ -136,10 +134,16 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     # **Initialize simulation parameters**
     parameters = initialize_simulation_parameters(input_parameters, Nx, Ny, Nz, Nn, Nm, Np, Ns, timesteps, dt)
 
+    # Project the initial state onto the de-aliased active subspace so distribution, current and
+    # fields share one set of Fourier modes; report the removed content instead of hiding it.
+    mask23 = _twothirds_mask(Ny, Nx, Nz)
+    Ck_0, Fk_0 = jnp.asarray(parameters["Ck_0"]), jnp.asarray(parameters["Fk_0"])
+    initial_projection_residual = jnp.sqrt(jnp.sum(jnp.abs(Ck_0 * ~mask23) ** 2)
+                                           + jnp.sum(jnp.abs(Fk_0 * ~mask23) ** 2))
     # Preserve the species and Hermite axes for the integrator.
     initial_conditions = (
-        parameters["Ck_0"].reshape(Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz),
-        parameters["Fk_0"].reshape(6, Ny, Nx//2+1, Nz),
+        (Ck_0 * mask23).reshape(Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz),
+        (Fk_0 * mask23).reshape(6, Ny, Nx//2+1, Nz),
     )
 
     # Define the time array for data output.
@@ -182,7 +186,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     dCk = Ck.at[:, jnp.arange(Ns) * Nn * Nm * Np, 0, 0, 0].set(0)
     
     # Output results
-    temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk, "solver_stats": sol.stats}
+    temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk, "solver_stats": sol.stats,
+                         "initial_projection_residual": initial_projection_residual}
     output = {**temporary_output, **parameters, "Nx": Nx}  # static grid length for the rFFT weights
     diagnostics(output)
     return output
