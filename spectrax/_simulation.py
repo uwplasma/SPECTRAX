@@ -64,17 +64,16 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
         Number of species.
     t : float
         Integration time (unused but required by Diffrax interface).
-    Ck_Fk : jnp.ndarray
-        Flattened state vector containing concatenated Hermite coefficients followed
-        by electromagnetic field coefficients.
+    Ck_Fk : tuple[jnp.ndarray, jnp.ndarray]
+        Hermite and electromagnetic field coefficients.
     args : tuple
         Cached parameter tuple produced in `simulation` providing physical constants,
         grids, and helper arrays.
 
     Returns
     -------
-    jnp.ndarray
-        Flattened derivative vector matching the shape of `Ck_Fk`.
+    tuple[jnp.ndarray, jnp.ndarray]
+        Derivatives matching the Hermite and field coefficient arrays.
     """
 
     (qs, nu, D, Omega_cs, alpha_s, u_s,
@@ -82,9 +81,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
      sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus
     ) = args[7:]
 
-    total_Ck_size = Nn * Nm * Np * Ns * (Nx//2+1) * Ny * Nz
-    Ck = Ck_Fk[:total_Ck_size].reshape(Nn * Nm * Np * Ns, Ny, Nx//2+1, Nz)
-    Fk = Ck_Fk[total_Ck_size:].reshape(6, Ny, Nx//2+1, Nz)
+    Ck, Fk = Ck_Fk
 
 
     # Build the 2/3 mask once per call (JIT will constant-fold it since Nx/Ny/Nz are static)
@@ -103,9 +100,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     dEk_dt = 1j * cross_product(nabla, Fk[3:]) - current / Omega_cs[0]
 
     dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
-    dy_dt  = jnp.concatenate([dCk_s_dt.reshape(-1), dFk_dt.reshape(-1)])
-
-    return dy_dt
+    return dCk_s_dt, dFk_dt
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
@@ -141,8 +136,11 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     # **Initialize simulation parameters**
     parameters = initialize_simulation_parameters(input_parameters, Nx, Ny, Nz, Nn, Nm, Np, Ns, timesteps, dt)
 
-    # Combine initial conditions.
-    initial_conditions = jnp.concatenate([parameters["Ck_0"].flatten(), parameters["Fk_0"].flatten()])
+    # Preserve the species and Hermite axes for the integrator.
+    initial_conditions = (
+        parameters["Ck_0"].reshape(Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz),
+        parameters["Fk_0"].reshape(6, Ny, Nx//2+1, Nz),
+    )
 
     # Define the time array for data output.
     time = jnp.linspace(0, parameters["t_max"], timesteps)
@@ -177,8 +175,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         max_steps=1000000, progress_meter=TqdmProgressMeter())
         
     # Reshape the solution to extract Ck and Fk
-    Ck = sol.ys[:,:(-6 * (Nx//2+1) * Ny * Nz)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz)
-    Fk = sol.ys[:,(-6 * (Nx//2+1) * Ny * Nz):].reshape(len(sol.ts), 6, Ny, Nx//2+1, Nz)
+    Ck = sol.ys[0].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz)
+    Fk = sol.ys[1]
     
     # Set n = 0, k = 0 mode to zero to get array with time evolution of perturbation.
     dCk = Ck.at[:, 0, 0, 0, 0].set(0)
