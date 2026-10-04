@@ -9,7 +9,33 @@ import diffrax
 import inspect
 from .midpoint_solver import ImplicitMidpoint
 
-__all__ = ["load_parameters", "initialize_simulation_parameters"]
+__all__ = ["load_parameters", "initialize_simulation_parameters", "hypercollision_spectrum"]
+
+
+def hypercollision_spectrum(Nn, Nm, Np, order=2):
+    """Damping spectrum of the numerical hypercollision ``-nu * col * C``, shape ``(Np, Nm, Nn)``.
+
+    Per velocity axis with N modes, ``col_i(n) = n!/(n-2*order+1)! / [(N-1)!/(N-2*order)!]``: zero for
+    ``n <= 2*order - 2`` and 1 for the top mode ``n = N - 1`` (an axis with ``N <= 2*order - 1`` gets
+    none). The axes are summed. ``order = 2`` is ``n(n-1)(n-2)/[(N-1)(N-2)(N-3)]``, the default; it
+    leaves every moment of total degree <= 2 (density, momentum, full pressure tensor) unchanged for
+    any basis centre and width. ``order = 1`` (``n``, Lenard-Bernstein-like) would damp the momentum
+    and energy rows and is rejected. Pass the result as ``"collision_matrix"`` to override the default.
+    """
+    if int(order) != order or order < 2:
+        raise ValueError(f"hypercollision order must be an integer >= 2, got {order}")
+    r = 2 * order - 1  # number of factors
+
+    def axis(N, i):
+        term, denom = i, N - 1
+        for j in range(1, r):
+            term, denom = term * (i - j), denom * (N - 1 - j)
+        return term / denom if N > r else jnp.zeros(i.shape, float)
+
+    p = jnp.arange(Np)[:, None, None]
+    m = jnp.arange(Nm)[None, :, None]
+    n = jnp.arange(Nn)[None, None, :]
+    return axis(Nn, n) + axis(Nm, m) + axis(Np, p)
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz','Nn', 'Nm', 'Np', 'Ns', 'timesteps'])
 def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, timesteps=500, dt=0.01):
@@ -117,17 +143,6 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     k2_grid = kx_grid**2 + ky_grid**2 + kz_grid**2
     nabla = jnp.array([kx_grid / Lx, ky_grid / Ly, kz_grid / Lz])
 
-    def precompute_collisions(Nn, Nm, Np):
-        p = jnp.arange(Np)[:, None, None]
-        m = jnp.arange(Nm)[None, :, None]
-        n = jnp.arange(Nn)[None, None, :]
-        def safe(N, i):
-            term = i * (i - 1) * (i - 2)
-            denom = (N - 1) * (N - 2) * (N - 3)
-            return jnp.where(N > 3, term / denom, 0.0)
-        col = safe(Nn, n) + safe(Nm, m) + safe(Np, p)
-        return col
-    
     def build_coeff_tables(Nn, Nm, Np):
         p = jnp.arange(Np)[None, :, None, None, None, None, None]
         m = jnp.arange(Nm)[None, None, :, None, None, None, None]
@@ -146,7 +161,9 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
 
     parameters.update({
         "kx_grid": kx_grid, "ky_grid": ky_grid, "kz_grid": kz_grid, "k2_grid": k2_grid, 
-        "nabla": nabla, "collision_matrix": precompute_collisions(Nn, Nm, Np),
+        "nabla": nabla,
+        "collision_matrix": (jnp.asarray(user_parameters["collision_matrix"]) if "collision_matrix" in user_parameters
+                             else hypercollision_spectrum(Nn, Nm, Np)),
         "sqrt_n_plus": sqrt_n_plus, "sqrt_n_minus": sqrt_n_minus,
         "sqrt_m_plus": sqrt_m_plus, "sqrt_m_minus": sqrt_m_minus,
         "sqrt_p_plus": sqrt_p_plus, "sqrt_p_minus": sqrt_p_minus,
