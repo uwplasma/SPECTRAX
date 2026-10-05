@@ -1,6 +1,6 @@
 """Two-stream growth rate against wavenumber, compared with the dispersion relation (growth_rate.csv).
 
-Each run is input_1D_two_stream.toml with 3 Fourier modes, a 1e-8 seed, and the box length set so that its
+Each run is input_1D_two_stream.toml with 4 Fourier modes, a 1e-8 seed, and the box length set so that its
 first mode has k vth/omega_pe = kx. The growth rate is fitted to the field energy after the transient.
 """
 from pathlib import Path
@@ -14,7 +14,7 @@ kx = np.arange(0.1, 1.02, 0.02)
 rate = []
 for k in kx:
     input_parameters, solver_parameters = load_parameters(here / "input_1D_two_stream.toml", Lx=np.sqrt(2) * np.pi * vth / k,
-                                                          Nx=3, Nn=100, t_max=80.0, timesteps=801,
+                                                          Nx=4, Nn=100, t_max=80.0, timesteps=801,
                                                           species={name: {"perturbation_amplitude": 1e-8} for name in ("beam_right", "beam_left")})
     output = simulation(input_parameters, **solver_parameters)
     t, W = np.asarray(output["time"]), np.asarray(output["EM_energy"])

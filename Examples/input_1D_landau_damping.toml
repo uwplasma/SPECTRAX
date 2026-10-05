@@ -7,7 +7,7 @@ nu = 1.0             # high-Hermite sink, closes the Hermite hierarchy
 ode_tolerance = 1e-8
 
 [solver_parameters]
-Nx = 3               # Fourier modes in x
+Nx = 4               # Fourier modes in x (kx = 1 survives the strict 2/3 mask of #55)
 Nn = 40              # Hermite modes in v_x
 timesteps = 501      # saved times
 
