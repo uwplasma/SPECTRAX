@@ -25,7 +25,7 @@ A case is one TOML file that describes the box, the resolution and each species 
     nu = 1.0
 
     [solver_parameters]
-    Nx = 3
+    Nx = 4
     Nn = 40
 
     [species.electrons]
