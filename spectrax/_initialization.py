@@ -76,7 +76,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     dn2     = default_parameters["dn2"]
     alpha_e = default_parameters["alpha_e"]
     values  = (dn1 + dn2) * default_parameters["Lx"] / (4 * jnp.pi * default_parameters["nx"] * default_parameters["Omega_cs"](default_parameters)[0])
-    Fk_0    = jnp.zeros((6, 1, Nx//2+1, 1), dtype=jnp.complex128).at[0, 0, default_parameters["nx"], 0].set(values)
+    Fk_0    = jnp.zeros((6, Ny, Nx//2+1, Nz), dtype=jnp.complex128).at[0, 0, default_parameters["nx"], 0].set(values)
     C10     = jnp.array([1 / (alpha_e[0] ** 3) + 0 * 1j,
             0 - 1j * (1 / (2 * alpha_e[0] ** 3)) * dn1
     ])
@@ -84,9 +84,9 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
             0 - 1j * (1 / (2 * alpha_e[0] ** 3)) * dn2
     ])
     indices = jnp.array([0, default_parameters["nx"]])
-    Ck_0    = jnp.zeros((2 * Nn, 1, Nx//2+1, 1), dtype=jnp.complex128)
+    Ck_0    = jnp.zeros((Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz), dtype=jnp.complex128)
     Ck_0    = Ck_0.at[0,  0, indices, 0].set(C10)
-    Ck_0    = Ck_0.at[Nn, 0, indices, 0].set(C20)
+    Ck_0    = Ck_0.at[Nn * Nm * Np, 0, indices, 0].set(C20)
     
     default_parameters.update({
         "Ck_0": Ck_0, "Fk_0": Fk_0, "Ns": Ns,

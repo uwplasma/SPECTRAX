@@ -40,6 +40,7 @@ E_field_component = int(jnp.sign(ny) + 2 * jnp.sign(nz))
 # Fourier components of magnetic and electric fields.
 Fk_0 = jnp.zeros((6, Ny, Nx//2+1, Nz), dtype=jnp.complex128)
 Fk_0 = Fk_0.at[E_field_component, ny, nx, nz].set(dn * L / (4 * jnp.pi * n * Omega_cs[0]))
+input_parameters["Fk_0"] = Fk_0
 
 # Hermite-Fourier components of electron and ion distribution functions.
 Ce0_mk, Ce0_0, Ce0_k = 0 + 1j * (1 / (2 * alpha_s[0] ** 3)) * dn, 1 / (alpha_s[0] ** 3) + 0 * 1j, 0 - 1j * (1 / (2 * alpha_s[0] ** 3)) * dn
