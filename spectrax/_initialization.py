@@ -9,7 +9,8 @@ import diffrax
 import inspect
 from .midpoint_solver import ImplicitMidpoint
 
-__all__ = ["load_parameters", "initialize_simulation_parameters", "hypercollision_spectrum"]
+__all__ = ["load_parameters", "initialize_simulation_parameters", "hypercollision_spectrum",
+           "filter_spectrum", "exponential_filter"]
 
 
 def hypercollision_spectrum(Nn, Nm, Np, order=2):
@@ -36,6 +37,44 @@ def hypercollision_spectrum(Nn, Nm, Np, order=2):
     m = jnp.arange(Nm)[None, :, None]
     n = jnp.arange(Nn)[None, None, :]
     return axis(Nn, n) + axis(Nm, m) + axis(Np, p)
+
+def filter_spectrum(Nn, Nm, Np, order=36, keep=2):
+    """Shape ``s(n)`` of a Hou-Li-type exponential filter, shape ``(Np, Nm, Nn)``.
+
+    Per velocity axis with N modes, ``s_i(n) = (n/(N-1))**order`` for ``n > keep`` and exactly 0 for
+    ``n <= keep``; the axes are summed. One filter application is ``C <- exp(-strength * s) C``
+    (:func:`exponential_filter`; Hou & Li use ``strength = order = 36``). With ``keep = 2`` every moment
+    of total degree <= 2 (density, momentum, full pressure tensor) is untouched for any basis centre and
+    width. Applying it as a right-hand-side damping, i.e. passing it as ``"collision_matrix"`` with
+    ``nu = rate``, is the continuous form: over a time ``dt`` it equals the filter with
+    ``strength = rate * dt``.
+    """
+    if int(order) != order or order < 1:
+        raise ValueError(f"filter order must be a positive integer, got {order}")
+    if int(keep) != keep or keep < 2:
+        raise ValueError(f"keep must be an integer >= 2 (density, momentum, energy), got {keep}")
+
+    def axis(N, i):
+        return jnp.where(i > keep, (i / max(N - 1, 1)) ** order, 0.0)
+
+    p = jnp.arange(Np)[:, None, None]
+    m = jnp.arange(Nm)[None, :, None]
+    n = jnp.arange(Nn)[None, None, :]
+    return axis(Nn, n) + axis(Nm, m) + axis(Np, p)
+
+
+def exponential_filter(Ck, strength, spectrum):
+    """Apply ``C <- exp(-strength * spectrum) C`` to every species and Fourier mode, between steps.
+
+    ``Ck`` has shape ``(Ns * Np * Nm * Nn, ...)`` or ``(Ns, Np, Nm, Nn, ...)``; ``spectrum`` is
+    :func:`filter_spectrum`. ``strength = 0`` returns ``Ck`` unchanged (bitwise).
+    """
+    Np, Nm, Nn = spectrum.shape
+    shape = Ck.shape
+    C = Ck.reshape(-1, Np, Nm, Nn, *shape[-3:])
+    sigma = jnp.exp(-strength * spectrum)[None, :, :, :, None, None, None]
+    return (C * sigma).astype(Ck.dtype).reshape(shape)
+
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz','Nn', 'Nm', 'Np', 'Ns', 'timesteps'])
 def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, timesteps=500, dt=0.01):
