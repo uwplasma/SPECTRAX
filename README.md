@@ -201,6 +201,9 @@ most important keys. Keys absent from the file fall back to sensible defaults sp
 | `dt` | Initial step size provided to the ODE solver. |
 | `solver` | Name of Diffrax solver (e.g., `Tsit5`, `Dopri5`, `Dopri8`, `ImplicitMidpoint`). |
 | `adaptive_time_step` | Timestep adaptability (`true` by default). |
+| `dtmin` | Smallest adaptive step; below it the solve stops with an error instead of stalling. No floor by default. A collapsing step usually signals an under-resolved run (Hermite cutoff or basis width); it is reported, not fixed. |
+| `max_steps` | Step budget (`1000000` by default); exhausting it is reported as `max_steps_reached`, distinct from `dt_min_reached`. |
+| `throw` | `True` (default) raises on a failed solve; `False` returns and reports it in `output["solver_result"]`; only saves with `output["valid_times"]` (the first `num_valid_times`) hold a solution. |
 
 Many of these parameters can be arrays; for example `alpha_s` must contain three values per species (one
 for each velocity dimension) and can be used to represent anisotropic plasmas.
