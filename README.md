@@ -140,31 +140,38 @@ appropriate CUDA-enabled version of `jaxlib`; consult the [JAX installation guid
 
 ###  Usage
 
-SPECTRAX can be used either via a command‑line interface or directly as a Python module.
-
-#### Command‑line Interface
-
-After installation, the `spectrax` CLI entry point is available. You can run an instance of the 1D two-stream instability by simply calling `spectrax` from the terminal.
+A case is one TOML file. Run it with
 
 ```sh
-spectrax
+spectrax Examples/input_1D_two_stream.toml
 ```
 
-To run it with different input parameters, us a TOML file like those in the `Examples` directory.
+This runs the simulation, saves `Examples/input_1D_two_stream.png` next to the input and shows it (add `--no-show` for batch runs). `spectrax` with no file runs a default two-stream case.
 
-```sh
-spectrax example_input.toml
+The same thing from Python, for scans or custom analysis:
+
+```python
+from spectrax import load_parameters, simulation, plot
+
+input_parameters, solver_parameters = load_parameters("input.toml", Lx=2.0)   # optional overrides
+output = simulation(input_parameters, **solver_parameters)
+plot(output, save="run.png")
 ```
 
-Other examples written in Python scripts, like those in the `Examples` directory, can be executed from the terminal as follows:
+`output` is a dictionary with the Hermite–Fourier coefficients `Ck`, the field coefficients `Fk`, `time`, the energies (`electric_energy`, `magnetic_energy`, `kinetic_energy_species`, `total_energy`) and every input parameter.
 
-```sh
-python example_script.py
-```
+### The automatic figure
 
+`plot(output)` works for any number of species in 1D, 2D or 3D and shows:
 
-The `simulation` function returns a dictionary containing the evolved Hermite coefficients `Ck`, electromagnetic coefficients `Fk`, time array, the input parameters and diagnostic quantities.
+* the electric and magnetic field energy and the change in kinetic energy of each species;
+* energy conservation, |W(t)/W(0) − 1|;
+* the amplitude of the strongest electric-field modes, labelled by their wavevector;
+* the Hermite spectrum of each species against time, which shows phase mixing, recurrence and whether the closure absorbs what reaches the last Hermite mode;
+* the phase-space perturbation f − ⟨f⟩ₓ of each species at the last saved time;
+* in 2D and 3D, the strongest field component in the plane.
 
+`spectrax.phase_space(output, species, time_index)` returns the reconstructed f(x, v) for custom figures.
 
 ###  Testing
 Run the test suite using the following command:
@@ -176,34 +183,37 @@ pytest .
 
 ## Input File Format
 
-Input files are written in TOML and define both physical and solver parameters. Below is a summary of the
-most important keys. Keys absent from the file fall back to sensible defaults specified in the code.
+Units: time in 1/ω_pe, length in c/ω_pe, velocity in c, density in the reference density that defines ω_pe.
 
-| Parameter | Description |
-|---|---|
-| `Lx, Ly, Lz` | Domain lengths in the spatial directions (periodic boundary condition). |
-| `mi_me` | Ion‑to‑electron mass ratio. |
-| `Ti_Te` | Ion‑to‑electron temperature ratio. |
-| `qs` | Array of species charges. |
-| `alpha_s` | Thermal scales for each species for Hermite basis. |
-| `u_s` | Drift velocities for each species for Hermite basis (packed as `[u_x,u_y,u_z]` ). |
-| `Omega_cs` | Cyclotron frequencies for each species. |
-| `nu` | Hyper-collision frequency to damp recurrence. |
-| `D` | Hyper‑diffusion coefficient. |
-| `t_max` | Final simulation time. |
-| `nx, ny, nz` | Mode numbers used to seed sinusoidal perturbations (see examples). |
-| `dn1, dn2` | Amplitudes of initial density perturbations (see examples). |
-| `ode_tolerance` | Relative/absolute tolerance for adaptive solvers. |
-| `Nx, Ny, Nz` | Number of retained Fourier modes per spatial dimension. |
-| `Nn, Nm, Np` | Number of Hermite modes per velocity dimension. |
-| `Ns` | Number of species (two by default). |
-| `timesteps` | Number of solution snapshots to store between `t=0` and `t_max`. |
-| `dt` | Initial step size provided to the ODE solver. |
-| `solver` | Name of Diffrax solver (e.g., `Tsit5`, `Dopri5`, `Dopri8`, `ImplicitMidpoint`). |
-| `adaptive_time_step` | Timestep adaptability (`true` by default). |
+```toml
+[input_parameters]
+Lx = 12.57            # box lengths Lx, Ly, Lz (periodic)
+t_max = 50.0          # final time
+nu = 3.0              # high-Hermite sink, closes the Hermite hierarchy (not a collision rate)
+ode_tolerance = 1e-7  # adaptive time-step tolerance
+Omega_ce = 1.0        # optional: electron gyrofrequency of the reference field over omega_pe (sets field units)
+B0 = [0.0, 0.0, 0.0]  # optional: uniform background magnetic field in those units
 
-Many of these parameters can be arrays; for example `alpha_s` must contain three values per species (one
-for each velocity dimension) and can be used to represent anisotropic plasmas.
+[solver_parameters]
+Nx = 33               # Fourier modes in x, y, z: Nx, Ny, Nz (default 1 for y and z)
+Nn = 50               # Hermite modes in vx, vy, vz: Nn, Nm, Np
+timesteps = 501       # saved times
+solver = "Dopri8"     # any Diffrax solver, or ImplicitMidpoint
+
+[species.electrons]   # one table per species; the first one must have unit mass
+charge = -1           # in units of e
+mass = 1              # in units of m_e
+density = 1.0
+vth = 0.707           # sqrt(2 T / m) / c, a number or [vx, vy, vz]; also the Hermite width
+drift = 1.0           # mean velocity / c, a number (along x) or [ux, uy, uz]
+perturbation_amplitude = 0.01   # density * (1 + A cos(2 pi m x / L))
+perturbation_mode = 1           # m
+perturbation_axis = "x"         # "x", "y" or "z"
+```
+
+The initial electric field is computed from Gauss's law, so the state is consistent at t = 0. Cases that are not described by species densities, such as the Orszag–Tang vortex, can still pass `qs`, `alpha_s`, `u_s`, `Omega_cs`, `Ck_0` and `Fk_0` directly, as in `Examples/2D_Orszag_Tang.py`.
+
+**Choosing `nu` and `Nn`.** Landau damping moves free energy to high Hermite order. The sink must absorb it before it reaches the last mode, or it reflects as recurrence. Check the Hermite-spectrum panel: the energy should fall by many orders of magnitude before the last mode. For ion waves with hot electrons, the electron resonance lies deep inside the truncated spectrum, and the sink also supplies electron Landau damping; `nu` of order 1 ω_pe with 128 or more Hermite modes reproduces exact kinetic growth rates.
 
 ---
 
