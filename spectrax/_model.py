@@ -1,7 +1,7 @@
 import jax.numpy as jnp
-from jax import vmap, jit, debug
+from jax import jit, lax, vmap
 from functools import partial
-from jax.lax import dynamic_slice, cond
+from jax.lax import cond
 from jax.scipy.signal import convolve
 
 __all__ = ['Hermite_DG_system']
@@ -27,9 +27,18 @@ def shift_multi(Ck, dn=0, dm=0, dp=0):
     p0 = 1 + dp
     return P[:, p0:p0+Np, m0:m0+Nm, n0:n0+Nn, :, :, :, :]
 
-def shift_element(C, dx, dy, dz):
-    
-    return jnp.roll(C, (-dy, -dx, -dz), axis=(-4, -3, -2))
+def shift_element(C, dx, dy, dz, shard_axis=None, shards=1):
+    shifts = {"y": (dy, -4), "x": (dx, -3), "z": (dz, -2)}
+    shifted = jnp.roll(C, (-dy, -dx, -dz), axis=(-4, -3, -2))
+    if shard_axis is None or shifts[shard_axis][0] == 0:
+        return shifted
+
+    offset, axis = shifts[shard_axis]
+    halo = jnp.take(C, jnp.array([0 if offset > 0 else -1]), axis=axis)
+    permutation = tuple((i, (i - offset) % shards) for i in range(shards))
+    index = C.shape[axis] - 1 if offset > 0 else 0
+    halo = lax.ppermute(halo, "cell", permutation)
+    return lax.dynamic_update_slice_in_dim(shifted, halo, index, axis)
 
 @jit
 def cross_product(k_vec, F_vec):
@@ -45,10 +54,10 @@ def cross_product(k_vec, F_vec):
     Fx, Fy, Fz = F_vec
     return jnp.array([ky * Fz - kz * Fy, kz * Fx - kx * Fz, kx * Fy - ky * Fx])
 
-@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
+@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns', 'shard_axis', 'shards'])
 def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx, 
                         inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, tripple_product, Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
-                           Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np, Ns):
+                           Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np, Ns, shard_axis=None, shards=1):
     """
     Computes the time derivative of a single Hermite-DG coefficient Ck[n, m, p] for species s
     in a Vlasov-Maxwell spectral solver using a Hermite velocity, Galerkin space decomposition
@@ -62,6 +71,7 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-4:])
     Ny, Nx, Nz = Ck.shape[-4], Ck.shape[-3], Ck.shape[-2]
     dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz 
+    shift = lambda C, dx, dy, dz: shift_element(C, dx, dy, dz, shard_axis, shards)
 
     # Define u, alpha, charge, and gyrofrequency depending on species.
     alpha = alpha_s.reshape(Ns, 3)
@@ -95,17 +105,17 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
 
     # Ax_p/m should have shape (Ns, 1, 1, Nn, Nn 1, 1, 1, 1, 1) then multiplied by Ck[:, :, :, None, :, :, :, :, None, :] then sum over axis 4
     bdy_xp = jnp.sum(Ax_p * Ck[:, :, :, None, :, :, :, :, None, :] * inner_mm[0] 
-                        + Ax_m * shift_element(Ck, dx=+1, dy=0, dz=0)[:, :, :, None, :, :, :, :, None, :] * inner_pm[0], axis=(4, -1))
+                        + Ax_m * shift(Ck, dx=+1, dy=0, dz=0)[:, :, :, None, :, :, :, :, None, :] * inner_pm[0], axis=(4, -1))
     bdy_xm = jnp.sum(Ax_m * Ck[:, :, :, None, :, :, :, :, None, :] * inner_pp[0] 
-                        + Ax_p * shift_element(Ck, dx=-1, dy=0, dz=0)[:, :, :, None, :, :, :, :, None, :] * inner_mp[0], axis=(4, -1))
+                        + Ax_p * shift(Ck, dx=-1, dy=0, dz=0)[:, :, :, None, :, :, :, :, None, :] * inner_mp[0], axis=(4, -1))
     bdy_yp = jnp.sum(Ay_p * Ck[:, :, None, :, :, :, :, :, None, :] * inner_mm[1]
-                        + Ay_m * shift_element(Ck, dx=0, dy=+1, dz=0)[:, :, None, :, :, :, :, :, None, :] * inner_pm[1], axis=(3, -1))
+                        + Ay_m * shift(Ck, dx=0, dy=+1, dz=0)[:, :, None, :, :, :, :, :, None, :] * inner_pm[1], axis=(3, -1))
     bdy_ym = jnp.sum(Ay_m * Ck[:, :, None, :, :, :, :, :, None, :] * inner_pp[1] 
-                        + Ay_p * shift_element(Ck, dx=0, dy=-1, dz=0)[:, :, None, :, :, :, :, :, None, :] * inner_mp[1], axis=(3, -1))
+                        + Ay_p * shift(Ck, dx=0, dy=-1, dz=0)[:, :, None, :, :, :, :, :, None, :] * inner_mp[1], axis=(3, -1))
     bdy_zp = jnp.sum(Az_p * Ck[:, None, :, :, :, :, :, :, None, :] * inner_mm[2] 
-                        + Az_m * shift_element(Ck, dx=0, dy=0, dz=+1)[:, None, :, :, :, :, :, :, None, :] * inner_pm[2], axis=(2, -1))
+                        + Az_m * shift(Ck, dx=0, dy=0, dz=+1)[:, None, :, :, :, :, :, :, None, :] * inner_pm[2], axis=(2, -1))
     bdy_zm = jnp.sum(Az_m * Ck[:, None, :, :, :, :, :, :, None, :] * inner_pp[2] 
-                        + Az_p * shift_element(Ck, dx=0, dy=0, dz=-1)[:, None, :, :, :, :, :, :, None, :] * inner_mp[2], axis=(2, -1))
+                        + Az_p * shift(Ck, dx=0, dy=0, dz=-1)[:, None, :, :, :, :, :, :, None, :] * inner_mp[2], axis=(2, -1))
 
     bdy = bdy_xp - bdy_xm + bdy_yp - bdy_ym + bdy_zp - bdy_zm
 
@@ -183,19 +193,19 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
     ####################### Boundary ########################
     
     dF_bdy_xp = jnp.sum(R_p[0] * Fk[None, :, :, :, :, None, :] * inner_mm[0] 
-                        + R_m[0] * shift_element(Fk, dx=+1, dy=0, dz=0)[None, :, :, :, :, None, :] * inner_pm[0], axis=(1, -1))
+                        + R_m[0] * shift(Fk, dx=+1, dy=0, dz=0)[None, :, :, :, :, None, :] * inner_pm[0], axis=(1, -1))
     dF_bdy_xm = jnp.sum(R_m[0] * Fk[None, :, :, :, :, None, :] * inner_pp[0] 
-                        + R_p[0] * shift_element(Fk, dx=-1, dy=0, dz=0)[None, :, :, :, :, None, :] * inner_mp[0], axis=(1, -1))
+                        + R_p[0] * shift(Fk, dx=-1, dy=0, dz=0)[None, :, :, :, :, None, :] * inner_mp[0], axis=(1, -1))
     dF_bdy_yp = jnp.sum(R_p[1] * Fk[None, :, :, :, :, None, :] * inner_mm[1] 
-                        + R_m[1] * shift_element(Fk, dx=0, dy=+1, dz=0)[None, :, :, :, :, None, :] * inner_pm[1], axis=(1, -1))
+                        + R_m[1] * shift(Fk, dx=0, dy=+1, dz=0)[None, :, :, :, :, None, :] * inner_pm[1], axis=(1, -1))
     dF_bdy_ym = jnp.sum(R_m[1] * Fk[None, :, :, :, :, None, :] * inner_pp[1] 
-                        + R_p[1] * shift_element(Fk, dx=0, dy=-1, dz=0)[None, :, :, :, :, None, :] * inner_mp[1], axis=(1, -1))
+                        + R_p[1] * shift(Fk, dx=0, dy=-1, dz=0)[None, :, :, :, :, None, :] * inner_mp[1], axis=(1, -1))
     dF_bdy_zp = jnp.sum(R_p[2] * Fk[None, :, :, :, :, None, :] * inner_mm[2] 
-                        + R_m[2] * shift_element(Fk, dx=0, dy=0, dz=+1)[None, :, :, :, :, None, :] * inner_pm[2], axis=(1, -1))
+                        + R_m[2] * shift(Fk, dx=0, dy=0, dz=+1)[None, :, :, :, :, None, :] * inner_pm[2], axis=(1, -1))
     dF_bdy_zm = jnp.sum(R_m[2] * Fk[None, :, :, :, :, None, :] * inner_pp[2] 
-                        + R_p[2] * shift_element(Fk, dx=0, dy=0, dz=-1)[None, :, :, :, :, None, :] * inner_mp[2], axis=(1, -1))
+                        + R_p[2] * shift(Fk, dx=0, dy=0, dz=-1)[None, :, :, :, :, None, :] * inner_mp[2], axis=(1, -1))
     
     dF_bdy = dF_bdy_xp + dF_bdy_yp + dF_bdy_zp - (dF_bdy_xm + dF_bdy_ym + dF_bdy_zm)
 
     dFk_dt = inv_m * (dF_integral - dF_bdy) + source
-    return jnp.concatenate([dCk_s_dt.reshape(-1), dFk_dt.reshape(-1)])
+    return dCk_s_dt.reshape(Ck.shape[0] * Np * Nm * Nn, Ny, Nx, Nz, -1), dFk_dt
