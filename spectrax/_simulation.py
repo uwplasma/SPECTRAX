@@ -62,8 +62,10 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
         Number of species.
     t : float
         Integration time (unused but required by Diffrax interface).
-    Ck_Fk : tuple[jnp.ndarray, jnp.ndarray]
-        Hermite and electromagnetic field coefficients.
+    Ck_Fk : tuple[jnp.ndarray, jnp.ndarray] or tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]
+        Hermite and electromagnetic field coefficients, optionally followed by the basis state
+        ``stack([u_s, alpha_s])`` of shape ``(2, 3*Ns)``. When present it replaces the
+        ``alpha_s, u_s`` in ``args`` for the kinetic operator and the current.
     args : tuple
         Cached parameter tuple produced in `simulation` providing physical constants,
         grids, and helper arrays.
@@ -79,8 +81,10 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
      sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus
     ) = args[7:]
 
-    Ck, Fk = Ck_Fk
-
+    Ck, Fk = Ck_Fk[:2]
+    moving = len(Ck_Fk) == 3
+    if moving:  # basis state (u_s, alpha_s), shape (2, 3*Ns); complex like (Ck, Fk), imaginary part zero
+        u_s, alpha_s = jnp.real(Ck_Fk[2][0]), jnp.real(Ck_Fk[2][1])
 
     # Build the 2/3 mask once per call (JIT will constant-fold it since Nx/Ny/Nz are static)
     mask23 = _twothirds_mask(Ny, Nx, Nz)
@@ -98,6 +102,8 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     dEk_dt = 1j * cross_product(nabla, Fk[3:]) - current / Omega_cs[0]
 
     dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
+    if moving:
+        return dCk_s_dt, dFk_dt, jnp.zeros_like(Ck_Fk[2])
     return dCk_s_dt, dFk_dt
 
 def _stepsize_controller(adaptive_time_step, tolerance, dtmin=None):
@@ -107,10 +113,10 @@ def _stepsize_controller(adaptive_time_step, tolerance, dtmin=None):
     return PIDController(rtol=tolerance, atol=tolerance, dtmin=dtmin, force_dtmin=False)
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step',
-                                'dtmin', 'max_steps', 'throw', 'adjoint', 'progress_meter'])
+                                'dtmin', 'max_steps', 'throw', 'adjoint', 'progress_meter', 'frame'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
                timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True, dtmin=None, max_steps=1000000,
-               throw=True, adjoint=RecursiveCheckpointAdjoint(), progress_meter=TqdmProgressMeter()):
+               throw=True, adjoint=RecursiveCheckpointAdjoint(), progress_meter=TqdmProgressMeter(), frame=None):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -150,6 +156,11 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         `ForwardMode()` for `jax.jacfwd`. The objective must be a real scalar.
     progress_meter : diffrax.AbstractProgressMeter, optional
         Default `TqdmProgressMeter()`; `NoProgressMeter()` inside optimisation loops.
+    frame : {None, "fixed"}, optional
+        None (default): the Hermite basis centres ``u_s`` and widths ``alpha_s`` are constants.
+        ``"fixed"``: they are carried in the solver state as ``stack([u_s, alpha_s])`` and
+        returned per saved time as ``basis_u`` and ``basis_alpha`` (shape ``(Nt, 3*Ns)``);
+        with zero rates the kinetic right-hand side is bitwise that of ``frame=None``.
 
     Returns
     -------
@@ -172,6 +183,11 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         (Ck_0 * mask23).reshape(Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz),
         (Fk_0 * mask23).reshape(6, Ny, Nx//2+1, Nz),
     )
+    if frame not in (None, "fixed"):
+        raise ValueError(f"frame must be None or 'fixed', got {frame!r}")
+    if frame is not None:
+        basis_0 = jnp.stack([parameters["u_s"], parameters["alpha_s"]]).astype(jnp.complex128)
+        initial_conditions = initial_conditions + (basis_0,)
 
     # Define the time array for data output.
     time = jnp.linspace(0, parameters["t_max"], timesteps)
@@ -212,6 +228,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
                         "initial_projection_residual": initial_projection_residual,
                         "solver_result": sol.result, "valid_times": valid_times,
                         "num_valid_times": jnp.sum(valid_times)}
+    if frame is not None:
+        temporary_output.update(basis_u=jnp.real(sol.ys[2][:, 0]), basis_alpha=jnp.real(sol.ys[2][:, 1]))
     output = {**temporary_output, **parameters, "Nx": Nx}  # static grid length for the rFFT weights
     diagnostics(output)
     return output
