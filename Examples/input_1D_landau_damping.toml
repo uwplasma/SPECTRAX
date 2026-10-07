@@ -1,30 +1,23 @@
+# Landau damping of a Langmuir wave: k lambda_De = 0.44 (lambda_De = vth / sqrt(2) = 0.0707 c/omega_pe).
+# Run with:  spectrax input_1D_landau_damping.toml
 [input_parameters]
-Lx = 1.0
-Ly = 1.0
-Lz = 1.0
-mi_me = 1836.0
-Ti_Te = 1.0
-qs = [-1.0, 1.0]
-alpha_e = [0.1, 0.1, 0.1]
-alpha_s = [0.1, 0.1, 0.1, 0.0023, 0.0023, 0.0023]
-u_s = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-Omega_cs = [1.0, 0.00054]
-nu = 1.0
-t_max = 50.0
-nx = 1
-ny = 0
-nz = 0
-dn1 = 0.001
+Lx = 1.0             # box length in c/omega_pe; the wave is the first Fourier mode
+t_max = 50.0         # in 1/omega_pe
+nu = 1.0             # high-Hermite sink, closes the Hermite hierarchy
 ode_tolerance = 1e-8
 
 [solver_parameters]
-Nx=3
-Ny=1
-Nz=1
-Nn=40
-Nm=1
-Np=1
-Ns=2
-timesteps=501
-dt=0.01
-solver="Dopri8"
+Nx = 4               # Fourier modes in x (kx = 1 survives the strict 2/3 mask of #55)
+Nn = 40              # Hermite modes in v_x
+timesteps = 501      # saved times
+
+[species.electrons]
+charge = -1
+mass = 1
+vth = 0.1                       # sqrt(2 T / m) / c
+perturbation_amplitude = 0.001  # density * (1 + 0.001 cos(2 pi x / Lx))
+
+[species.protons]
+charge = 1
+mass = 1836
+vth = 0.0023
