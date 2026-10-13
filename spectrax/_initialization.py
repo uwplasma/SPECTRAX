@@ -30,7 +30,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         Optional dictionary of parameter overrides. Any key present here replaces
         the corresponding default before derived quantities are computed.
     Nx, Ny, Nz : int, optional
-        Number of Fourier modes along each spatial direction.
+        Number of elements along each spatial direction.
     Nn, Nm, Np : int, optional
         Number of Hermite modes along each velocity-space axis.
     Ns : int, optional
@@ -38,7 +38,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     N_DG : int, optional
         Number of DG element basis function modes in each direction.
     dims : int, optional
-        Dimensionality (in real space) of the simulation. Number of dimensions in which more than one basis modes are to be used.
+        Spatial dimensionality of the simulation. Number of dimensions in which more than one basis modes are to be used.
     timesteps : int, optional
         Number of time samples to store in the solution.
     dt : float, optional
@@ -73,22 +73,21 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "dn1": 0.001,
         "dn2": 0.001,
         "ode_tolerance": 1e-12,
-        "vte": lambda p: p["alpha_s"][0] / jnp.sqrt(2),
-        "vti": lambda p: p["vte"] * jnp.sqrt(1 / p["ms"][1]),
     }
     
     # Initialize distribution function as a two-stream instability
     basis_idx = construct_idx_array(dims, N_DG) # Construct array of combinations of Legendre coefficients
     dn1     = default_parameters["dn1"]
     dn2     = default_parameters["dn2"]
+    nx      = default_parameters["nx"]
     alpha_e = default_parameters["alpha_e"]
     Lx, Ly, Lz = default_parameters["Lx"], default_parameters["Ly"], default_parameters["Lz"]
-    values  = (dn1 + dn2) * Lx / (4 * jnp.pi * default_parameters["nx"] * default_parameters["Omega_ce"])
-    F0 = lambda x, y, z: jnp.concatenate([jnp.array([2 * values * jnp.cos(2*jnp.pi*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
+    values  = (dn1 + dn2) * Lx / (2 * jnp.pi * nx * default_parameters["Omega_ce"])
+    F0 = lambda x, y, z: jnp.concatenate([jnp.array([values * jnp.cos(2*jnp.pi*nx*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
     Fk_0 = legT(F0, basis_idx, N_DG, Lx, Nx)
 
-    C10 = lambda x: 1 / (alpha_e[0] ** 3) - dn1 * (1 / (alpha_e[0] ** 3)) * jnp.sin(2*jnp.pi*x/Lx)
-    C20 = lambda x: 1 / (alpha_e[0] ** 3) - dn2 * (1 / (alpha_e[0] ** 3)) * jnp.sin(2*jnp.pi*x/Lx)
+    C10 = lambda x: 1 / (alpha_e[0] ** 3) + dn1 * (1 / (alpha_e[0] ** 3)) * jnp.sin(2*jnp.pi*nx*x/Lx)
+    C20 = lambda x: 1 / (alpha_e[0] ** 3) + dn2 * (1 / (alpha_e[0] ** 3)) * jnp.sin(2*jnp.pi*nx*x/Lx)
     C0 = lambda x, y, z: jnp.concatenate([jnp.array([C10(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape), jnp.array([C20(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape)])
     Ck_0 = legT(C0, basis_idx, N_DG, Lx, Nx)
     
@@ -166,7 +165,7 @@ def construct_idx_array(dims=1, N_DG=2):
     l = 0
     indices = jnp.zeros((Nl, 3))
 
-    if dims == 1:
+    if dims <= 1:
         for i in range(N_DG):
             indices = indices.at[l, :].set([i, 0, 0])
             l += 1

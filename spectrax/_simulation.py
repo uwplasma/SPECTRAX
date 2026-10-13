@@ -12,40 +12,21 @@ from ._diagnostics import diagnostics
 
 __all__ = ["ode_system", "simulation"]
 
-@jit
-def cross_product(k_vec, F_vec):
-    """
-    Compute the cross product `k × F` for length-3 vectors or broadcastable arrays.
-
-    Parameters
-    ----------
-    k_vec : array-like
-        First vector with leading dimension 3.
-    F_vec : array-like
-        Second vector with leading dimension 3.
-
-    Returns
-    -------
-    jnp.ndarray
-        Array representing the cross product with the same trailing shape as the inputs.
-    """
-    kx, ky, kz = k_vec
-    Fx, Fy, Fz = F_vec
-    return jnp.array([ky * Fz - kz * Fy, kz * Fx - kx * Fz, kx * Fy - ky * Fx])
-
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'Nl'])
 def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl, t, Ck_Fk, args):
     """
-    Right-hand side for the coupled Vlasov-Maxwell system expressed in spectral form.
+    Right-hand side for the coupled Vlasov-Maxwell system expressed in spectral-FE form.
 
     Parameters
     ----------
     Nx, Ny, Nz : int
-        Number of Fourier modes per spatial dimension.
+        Number of elements per spatial dimension.
     Nn, Nm, Np : int
         Number of Hermite modes per velocity-space dimension.
     Ns : int
         Number of species.
+    Nl : int
+        Total number of element basis modes.
     t : float
         Integration time (unused but required by Diffrax interface).
     Ck_Fk : jnp.ndarray
@@ -89,17 +70,23 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
     input_parameters : dict, optional
         User-specified overrides passed to `initialize_simulation_parameters`.
     Nx, Ny, Nz : int, optional
-        Number of retained Fourier modes per spatial direction.
+        Number of elements per spatial dimension.
     Nn, Nm, Np : int, optional
         Number of Hermite modes per velocity-space axis.
     Ns : int, optional
         Number of species.
+    N_DG : int, optional
+        Number of DG element basis function modes in each direction.
+    dims : int, optional
+        Spatial dimensionality of the simulation. Number of dimensions in which more than one basis modes are to be used.
     timesteps : int, optional
         Number of solution snapshots to save between `t=0` and `t_max`.
     dt : float, optional
         Initial integration step size.
     solver : diffrax.AbstractSolver, optional
         Diffrax solver instance controlling the time integration.
+    adaptive_time_step : bool, optional
+        Toggle for using an adaptive time step versus a fixed one.
 
     Returns
     -------
@@ -117,7 +104,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
     # Define the time array for data output.
     time = jnp.linspace(0, parameters["t_max"], timesteps)
     
-    # Define number of basis modes
+    # Define total number of basis modes
     Nl = parameters["basis_idx"].shape[0]
 
     # Arguments for the ODE system.
@@ -146,11 +133,11 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
         stepsize_controller=stepsize_controller,
         t0=0, t1=parameters["t_max"], dt0=dt,
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
-        max_steps=1000000, progress_meter=TqdmProgressMeter(1))
+        max_steps=1000000, progress_meter=TqdmProgressMeter())
     
     # Reshape the solution to extract Ck and Fk
     Ck = sol.ys[:,:(-6 * Nx * Ny * Nz * Nl)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx, Nz, Nl)
-    Fk = sol.ys[:,(-6 * Nx * Ny * Nz * Nl):].reshape(len(sol.ts), 6, Ny, Nx, Nz, Nl) # 
+    Fk = sol.ys[:,(-6 * Nx * Ny * Nz * Nl):].reshape(len(sol.ts), 6, Ny, Nx, Nz, Nl)
     
     # Output results
     temporary_output = {"Ck": Ck, "Fk": Fk, "time": time}

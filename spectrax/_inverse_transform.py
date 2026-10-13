@@ -113,7 +113,7 @@ def inverse_HDG_transform(Ck, Nn, Nm, Np, xi_x, xi_y, xi_z):
     jnp.ndarray
         The reconstructed distribution function evaluated on ``(t, x, y, z, xi_x, xi_y, xi_z)``.
     """
-    C = Ck[..., 0]
+    C = Ck[..., 0] # Pick out average value on element.
 
     # Precompute Hermite functions up to desired order
     Herm_x = generate_Hermite_basis(Nn, xi_x)  # (Nn, Nvy, Nvx, Nvz)
