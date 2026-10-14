@@ -1,7 +1,7 @@
 """Example: 1D Landau damping.
 
 Runs a 1D Landau damping setup defined in ``input_1D_landau_damping.toml`` and
-plots standard diagnostics via ``spectrax.plot``.
+plots standard diagnostics.
 """
 
 import sys

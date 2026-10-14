@@ -1,7 +1,7 @@
 """Simulation parameter initialization and TOML configuration loading."""
 
 import jax.numpy as jnp
-from jax import jit, vmap, lax
+from jax import jit, vmap
 from functools import partial
 try: import tomllib
 except ModuleNotFoundError: import pip._vendor.tomli as tomllib
@@ -10,7 +10,7 @@ import inspect
 from .midpoint_solver import ImplicitMidpoint
 from math import comb
 from jax.scipy.special import factorial
-from scipy.special import roots_legendre
+from orthax.legendre import leggauss, legvander
 
 __all__ = ["load_parameters", "initialize_simulation_parameters", "construct_idx_array", "legT"]
 
@@ -82,12 +82,12 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     nx      = default_parameters["nx"]
     alpha_e = default_parameters["alpha_e"]
     Lx, Ly, Lz = default_parameters["Lx"], default_parameters["Ly"], default_parameters["Lz"]
-    values  = (dn1 + dn2) * Lx / (2 * jnp.pi * nx * default_parameters["Omega_ce"])
-    F0 = lambda x, y, z: jnp.concatenate([jnp.array([values * jnp.cos(2*jnp.pi*nx*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
+    values  = -(dn1 + dn2) * Lx / (2 * jnp.pi * nx * default_parameters["Omega_ce"])
+    F0 = lambda x, y, z: jnp.concatenate([jnp.array([values * jnp.sin(2*jnp.pi*nx*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
     Fk_0 = legT(F0, basis_idx, N_DG, Lx, Nx)
 
-    C10 = lambda x: 1 / (alpha_e[0] ** 3) + dn1 * (1 / (alpha_e[0] ** 3)) * jnp.sin(2*jnp.pi*nx*x/Lx)
-    C20 = lambda x: 1 / (alpha_e[0] ** 3) + dn2 * (1 / (alpha_e[0] ** 3)) * jnp.sin(2*jnp.pi*nx*x/Lx)
+    C10 = lambda x: 1 / (alpha_e[0] ** 3) + dn1 * (1 / (alpha_e[0] ** 3)) * jnp.cos(2*jnp.pi*nx*x/Lx)
+    C20 = lambda x: 1 / (alpha_e[0] ** 3) + dn2 * (1 / (alpha_e[0] ** 3)) * jnp.cos(2*jnp.pi*nx*x/Lx)
     C0 = lambda x, y, z: jnp.concatenate([jnp.array([C10(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape), jnp.array([C20(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape)])
     Ck_0 = legT(C0, basis_idx, N_DG, Lx, Nx)
     
@@ -266,18 +266,13 @@ def compute_R_pm_matrices(upwind=False):
     return R_p, R_m
 
 def legT(f, basis_idx, N_DG, Lx, Nx, Ly=1, Ny=1, Lz=1, Nz=1): # Transform initial values into finite element basis
-    Nq = N_DG # Number of quadrature points needed to project every retained mode
+    Nq = N_DG + 2 # Number of quadrature points used to approximate inner products.
     dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz
     x_elements = dx / 2 + jnp.linspace(0, Lx, Nx, endpoint=False)
     y_elements = dy / 2 + jnp.linspace(0, Ly, Ny, endpoint=False)
     z_elements = dz / 2 + jnp.linspace(0, Lz, Nz, endpoint=False)
-    quad_points, w_quad = jnp.array(roots_legendre(Nq))
-    def legendre(n, x):
-        def term(k, acc):
-            return acc + (-1)**k * jnp.round(factorial(2*n-2*k) / (factorial(k) * factorial(n-k) * factorial(n-2*k))) * x**(n-2*k)
-        return lax.fori_loop(0, (n // 2) + 1, term, jnp.zeros_like(x)) / 2**n
-    legendre_array = vmap(vmap(legendre, in_axes=(None, 0)), in_axes=(0, None))
-    leg_vals = jnp.array(legendre_array(jnp.arange(N_DG), quad_points)) # Create array of shape (N_DG, Nq) evaluating the n'th Legendre polynomial at each quadrature point
+    quad_points, w_quad = leggauss(Nq) # Gauss-Legendre quadrature points and weights on [-1, 1]
+    leg_vals = legvander(quad_points, N_DG - 1).T # Create array of shape (N_DG, Nq) evaluating the n'th Legendre polynomial at each quadrature point
     leg_vals3d = leg_vals[basis_idx[:, 1], :][:, :, None, None] * leg_vals[basis_idx[:, 0], :][:, None, :, None] * leg_vals[basis_idx[:, 2], :][:, None, None, :] # create values of evaluated Legendre polynomials on 3d local grid. Shape (Nl, Nq, Nq, Nq) where Nq is the number of quadrature points.
     leg_vals3d = jnp.transpose(leg_vals3d, (1, 2, 3, 0))
     w_array = w_quad[:, None, None] * w_quad[None, :, None] * w_quad[None, None, :]
@@ -285,7 +280,8 @@ def legT(f, basis_idx, N_DG, Lx, Nx, Ly=1, Ny=1, Lz=1, Nz=1): # Transform initia
     Y = y_elements[:, None, None, None, None, None] + quad_points[None, None, None, :, None, None] * dy / 2
     Z = z_elements[None, None, :, None, None, None] + quad_points[None, None, None, None, None, :] * dz / 2
     X, Y, Z = jnp.broadcast_arrays(X, Y, Z)
-    Uk_0 = (basis_idx[:, 0] + 0.5) * (basis_idx[:, 1] + 0.5) * (basis_idx[:, 2] + 0.5) * jnp.sum(f(X, Y, Z)[..., None] * leg_vals3d * w_array[:, :, :, None], axis=(-4, -3, -2))
+    # Contract f over the three quadrature axes against the weighted basis, without materializing the full (..., Nq, Nq, Nq, Nl) product
+    Uk_0 = (basis_idx[:, 0] + 0.5) * (basis_idx[:, 1] + 0.5) * (basis_idx[:, 2] + 0.5) * jnp.einsum('...abc,abcl->...l', f(X, Y, Z), leg_vals3d * w_array[:, :, :, None])
 
     return Uk_0
 
