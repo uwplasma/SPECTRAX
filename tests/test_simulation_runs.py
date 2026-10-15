@@ -1,12 +1,12 @@
 import pytest
 import jax.numpy as jnp
-from spectrax import construct_idx_array, legT, simulation
+from spectrax import DG_project, simulation
 
 
-def test_legendre_transform_retains_highest_mode():
-    basis = construct_idx_array(1, 3)
-    coefficients = legT(lambda x, y, z: 0.5 * (3 * (2 * x - 1) ** 2 - 1),
-                        basis, 3, 1.0, 1)
+def test_DG_project_retains_highest_mode():
+    coefficients = DG_project(lambda x, y, z: 0.5 * (3 * (2 * x - 1) ** 2 - 1),
+                              {"Lx": 1.0, "Ly": 1.0, "Lz": 1.0},
+                              {"Nx": 1, "Ny": 1, "Nz": 1, "N_DG": 3, "dims": 1})
     assert jnp.allclose(coefficients, jnp.array([0.0, 0.0, 1.0]), atol=1e-14)
 
 def test_simulation_runs():

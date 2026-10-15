@@ -11,9 +11,8 @@ from time import time
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from jax import block_until_ready
-from spectrax import simulation, load_parameters, construct_idx_array, legT, inverse_HDG_transform
+from spectrax import simulation, load_parameters, DG_project, inverse_HDG_transform
 from scipy.special import eval_hermite
-from jax.scipy.special import factorial
 from matplotlib.animation import FuncAnimation, PillowWriter
 
 # Read from input.toml
@@ -41,14 +40,13 @@ Nt = solver_parameters["timesteps"]
 N_DG = solver_parameters["N_DG"]
 dims = solver_parameters["dims"]
 
-basis_idx = construct_idx_array(dims, N_DG)
 F0 = lambda x, y, z: jnp.concatenate([jnp.array([dn * Lx / (2 * jnp.pi * nx * Omega_ce) * jnp.cos(2*jnp.pi*nx*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
-input_parameters["Fk_0"] = legT(F0, basis_idx, N_DG, Lx, Nx)
+input_parameters["Fk_0"] = DG_project(F0, input_parameters, solver_parameters)
 
 Ci0_0 = lambda x: 1 / (alpha_s[3] ** 3) * jnp.ones_like(x)
 Ce0_0 = lambda x: 1 / (alpha_s[0] ** 3) * (1 + dn * jnp.sin(2*jnp.pi*nx*x/Lx))
 C0 = lambda x, y, z: jnp.concatenate([jnp.array([Ce0_0(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape), jnp.array([Ci0_0(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape)])
-input_parameters["Ck_0"] = legT(C0, basis_idx, N_DG, Lx, Nx)
+input_parameters["Ck_0"] = DG_project(C0, input_parameters, solver_parameters)
 
 # Simulate
 start_time = time()

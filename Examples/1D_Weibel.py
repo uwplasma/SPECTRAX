@@ -6,7 +6,7 @@ os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_pr
 from time import time
 import jax.numpy as jnp
 from jax import block_until_ready
-from spectrax import simulation, load_parameters, construct_idx_array, legT
+from spectrax import simulation, load_parameters, DG_project
 import matplotlib.pyplot as plt
 
 # Read from input.toml
@@ -32,16 +32,14 @@ Omega_ce = input_parameters["Omega_ce"]
 N_DG = solver_parameters["N_DG"]
 dims = solver_parameters["dims"]
 
-basis_idx = construct_idx_array(dims, N_DG)
-
 Ez = lambda x: dE * jnp.cos(2 * nx * jnp.pi * x / Lx)
 F0 = lambda x, y, z: jnp.array([jnp.zeros_like(x), jnp.zeros_like(x), Ez(x), jnp.zeros_like(x), jnp.zeros_like(x), jnp.zeros_like(x)]) 
-input_parameters["Fk_0"] = legT(F0, basis_idx, N_DG, Lx, Nx)
+input_parameters["Fk_0"] = DG_project(F0, input_parameters, solver_parameters)
 
 C10_0 = lambda x: 1 / (alpha_s[0] * alpha_s[1] * alpha_s[2]) * jnp.ones_like(x)
 C20_0 = lambda x: 1 / (alpha_s[3] * alpha_s[4] * alpha_s[5]) * jnp.ones_like(x)
 C0 = lambda x, y, z: jnp.concatenate([jnp.array([C10_0(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn*Nm*Np-1,) + jnp.zeros_like(x).shape), jnp.array([C20_0(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn*Nm*Np-1,) + jnp.zeros_like(x).shape)])
-input_parameters["Ck_0"] = legT(C0, basis_idx, N_DG, Lx, Nx)
+input_parameters["Ck_0"] = DG_project(C0, input_parameters, solver_parameters)
 
 # Simulate
 start_time = time()

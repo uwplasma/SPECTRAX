@@ -14,7 +14,7 @@ from jax import block_until_ready, config
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.scipy.special import factorial
-from spectrax import simulation, load_parameters, construct_idx_array, legT
+from spectrax import simulation, load_parameters, DG_project
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
 
@@ -52,7 +52,6 @@ alpha_x = alpha[:, 0, None, None, None, None, None, None, None, None, None]
 alpha_y = alpha[:, 1, None, None, None, None, None, None, None, None, None]
 alpha_z = alpha[:, 2, None, None, None, None, None, None, None, None, None]
 
-basis_idx = construct_idx_array(dims, N_DG)
 # Electron and ion fluid velocities.
 Ue = lambda x, y, z: jnp.array([-U0 * jnp.sin(ky * y), U0 * jnp.sin(kx * x), -deltaB * input_parameters["Omega_ce"] * (2 * kx * jnp.cos(2 * kx * x) + ky * jnp.cos(ky * y))])
 Ui = lambda x, y, z: jnp.array([-U0 * jnp.sin(ky * y), U0 * jnp.sin(kx * x), jnp.zeros_like(x)])
@@ -74,10 +73,10 @@ C0 = lambda x, y, z: (jnp.sqrt(2 ** (n + m + p) / (factorial(n) * factorial(m) *
      * (1 / (alpha_x ** (n + 1) * alpha_y ** (m + 1) * alpha_z ** (p + 1)))
      * U_x(x, y, z) ** n * U_y(x, y, z) ** m * U_z(x, y, z) ** p)
 
-input_parameters["Ck_0"] = legT(C0, basis_idx, N_DG, Lx, Nx, Ly, Ny) # shape (Ns, Np, Nm, Nn, Ny, Nx, Nz, N_DG)
+input_parameters["Ck_0"] = DG_project(C0, input_parameters, solver_parameters) # shape (Ns, Np, Nm, Nn, Ny, Nx, Nz, N_DG)
 
 F0 = lambda x, y, z: jnp.concatenate([E(x, y, z), B(x, y, z)])
-input_parameters["Fk_0"] = legT(F0, basis_idx, N_DG, Lx, Nx, Ly, Ny) # shape (6, Ny, Nx, Nz, N_DG)
+input_parameters["Fk_0"] = DG_project(F0, input_parameters, solver_parameters) # shape (6, Ny, Nx, Nz, N_DG)
 
 C = input_parameters["Ck_0"][:, :, :, :, :, :, 0, 0] # (Ns, Np, Nm, Nn, Ny, Nx)
 F = input_parameters["Fk_0"][:, :, :, 0, 0] # (6, Ny, Nx)
@@ -147,6 +146,7 @@ uz = output["u_s"][2]
 Ck = output["Ck"][:, :, :, :, 0, :] # (Nt, Ns*Np*Nm*Nn, Ny, Nx, Nl)
 C = output["Ck"][:, :, :, :, 0, 0] # (Nt, Ns*Np*Nm*Nn, Ny, Nx)
 F = output["Fk"][:, :, :, :, 0, :] # (Nt, 6, Ny, Nx, Nl)
+basis_idx = output["basis_idx"] # Legendre orders of each DG basis function, shape (Nl, 3)
 
 # Densities
 ne = alpha_s[0] * alpha_s[1] * alpha_s[2] * C[:, 0, :, :]

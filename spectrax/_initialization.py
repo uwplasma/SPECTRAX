@@ -12,7 +12,7 @@ from math import comb
 from jax.scipy.special import factorial
 from orthax.legendre import leggauss, legvander
 
-__all__ = ["load_parameters", "initialize_simulation_parameters", "construct_idx_array", "legT"]
+__all__ = ["load_parameters", "initialize_simulation_parameters", "construct_idx_array", "DG_project"]
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz','Nn', 'Nm', 'Np', 'Ns', 'N_DG', 'dims', 'timesteps'])
 def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, N_DG=2, dims=1, timesteps=500, dt=0.01):
@@ -84,12 +84,13 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     Lx, Ly, Lz = default_parameters["Lx"], default_parameters["Ly"], default_parameters["Lz"]
     values  = -(dn1 + dn2) * Lx / (2 * jnp.pi * nx * default_parameters["Omega_ce"])
     F0 = lambda x, y, z: jnp.concatenate([jnp.array([values * jnp.sin(2*jnp.pi*nx*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
-    Fk_0 = legT(F0, basis_idx, N_DG, Lx, Nx)
+    grid_parameters = {"Nx": Nx, "Ny": Ny, "Nz": Nz, "N_DG": N_DG, "dims": dims}
+    Fk_0 = DG_project(F0, default_parameters, grid_parameters)
 
     C10 = lambda x: 1 / (alpha_e[0] ** 3) + dn1 * (1 / (alpha_e[0] ** 3)) * jnp.cos(2*jnp.pi*nx*x/Lx)
     C20 = lambda x: 1 / (alpha_e[0] ** 3) + dn2 * (1 / (alpha_e[0] ** 3)) * jnp.cos(2*jnp.pi*nx*x/Lx)
     C0 = lambda x, y, z: jnp.concatenate([jnp.array([C10(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape), jnp.array([C20(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape)])
-    Ck_0 = legT(C0, basis_idx, N_DG, Lx, Nx)
+    Ck_0 = DG_project(C0, default_parameters, grid_parameters)
     
     default_parameters.update({
         "Ck_0": Ck_0, "Fk_0": Fk_0, "Ns": Ns,
@@ -265,7 +266,31 @@ def compute_R_pm_matrices(upwind=False):
 
     return R_p, R_m
 
-def legT(f, basis_idx, N_DG, Lx, Nx, Ly=1, Ny=1, Lz=1, Nz=1): # Transform initial values into finite element basis
+def DG_project(f, input_parameters, solver_parameters):
+    """
+    Project a function of space onto the Legendre DG basis on every element.
+
+    Parameters
+    ----------
+    f : callable
+        Function `f(x, y, z)` returning an array of shape `(..., Ny, Nx, Nz, Nq, Nq, Nq)`
+        when evaluated on the broadcast element quadrature grid.
+    input_parameters : Mapping
+        Physical parameters.
+    solver_parameters : Mapping
+        Resolution parameters.
+
+    Returns
+    -------
+    jnp.ndarray
+        DG coefficients with shape `(..., Ny, Nx, Nz, Nl)`.
+    """
+    p = {**input_parameters, **solver_parameters}
+    Lx, Ly, Lz = p["Lx"], p["Ly"], p["Lz"]
+    Nx, Ny, Nz = p["Nx"], p["Ny"], p["Nz"]
+    N_DG, dims = p["N_DG"], p["dims"]
+    basis_idx = construct_idx_array(dims, N_DG) # Array of combinations of Legendre polynomial orders, shape (Nl, 3)
+
     Nq = N_DG + 2 # Number of quadrature points used to approximate inner products.
     dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz
     x_elements = dx / 2 + jnp.linspace(0, Lx, Nx, endpoint=False)

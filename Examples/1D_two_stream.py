@@ -11,7 +11,7 @@ from time import time
 import jax.numpy as jnp
 from jax import block_until_ready, config
 config.update("jax_enable_x64", True)
-from spectrax import simulation, load_parameters, construct_idx_array, legT, inverse_HDG_transform
+from spectrax import simulation, load_parameters, DG_project, inverse_HDG_transform
 from scipy.special import eval_hermite
 from matplotlib.animation import FuncAnimation, PillowWriter
 import matplotlib.pyplot as plt
@@ -34,8 +34,6 @@ Nn = solver_parameters["Nn"]
 N_DG = solver_parameters["N_DG"]
 dims = solver_parameters["dims"]
 
-basis_idx = construct_idx_array(dims, N_DG)
-
 alpha = jnp.array(alpha_s).reshape(2, 3)
 a0 = alpha[:, 0]
 a1 = alpha[:, 1]
@@ -48,12 +46,12 @@ u2 = u[:, 2]
 # Initialize distribution function as a two-stream instability
 Ex = lambda x: -(dn1 + dn2) * Lx / (2 * jnp.pi * nx * Omega_ce) * jnp.sin(2 * nx * jnp.pi * x / Lx)
 F0 = lambda x, y, z: jnp.array([Ex(x), jnp.zeros_like(x), jnp.zeros_like(x), jnp.zeros_like(x), jnp.zeros_like(x), jnp.zeros_like(x)])
-input_parameters["Fk_0"] = legT(F0, basis_idx, N_DG, Lx, Nx)
+input_parameters["Fk_0"] = DG_project(F0, input_parameters, solver_parameters)
 
 C10 = lambda x: (1 / (alpha_s[0] ** 3)) * (1 + dn1 * jnp.cos(2 * nx * jnp.pi * x / Lx))
 C20 = lambda x: (1 / (alpha_s[3] ** 3)) * (1 + dn2 * jnp.cos(2 * nx * jnp.pi * x / Lx))
 C0 = lambda x, y, z: jnp.concatenate([jnp.array([C10(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape), jnp.array([C20(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape)])
-input_parameters["Ck_0"] = legT(C0, basis_idx, N_DG, Lx, Nx)
+input_parameters["Ck_0"] = DG_project(C0, input_parameters, solver_parameters)
 
 # Simulate
 start_time = time()
