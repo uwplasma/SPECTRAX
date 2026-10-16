@@ -39,6 +39,10 @@ def _rfft_weights(Nx: int, Nx_kept: int) -> jnp.ndarray:
     return weights
 
 
+rfft_weights = _rfft_weights  # public name: Parseval weights for companion codes and user diagnostics
+__all__ += ["rfft_weights"]
+
+
 def _infer_Ns(output: Mapping[str, Any]) -> int:
     """Infer the number of species ``Ns`` from ``output["u_s"]``.
 
