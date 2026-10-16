@@ -191,6 +191,7 @@ Lx = 12.57            # box lengths Lx, Ly, Lz (periodic)
 t_max = 50.0          # final time
 nu = 3.0              # high-Hermite sink, closes the Hermite hierarchy (not a collision rate)
 ode_tolerance = 1e-7  # adaptive time-step tolerance
+# ode_rtol, ode_atol  # optional: separate relative/absolute tolerances (default ode_tolerance)
 Omega_ce = 1.0        # optional: electron gyrofrequency of the reference field over omega_pe (sets field units)
 B0 = [0.0, 0.0, 0.0]  # optional: uniform background magnetic field in those units
 
