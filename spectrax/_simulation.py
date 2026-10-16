@@ -28,6 +28,10 @@ def _twothirds_mask(Ny: int, Nx: int, Nz: int):
 
     return (jnp.abs(ky) <= cy) & (jnp.abs(kx) <= cx) & (jnp.abs(kz) <= cz)
 
+
+twothirds_mask = _twothirds_mask  # public name: the de-aliasing mask used by ode_system
+__all__ += ["twothirds_mask"]
+
 @jit
 def cross_product(k_vec, F_vec):
     """
