@@ -192,6 +192,12 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         How gradients are taken through the solve. Default `RecursiveCheckpointAdjoint()`;
         pass `RecursiveCheckpointAdjoint(checkpoints=k)` to bound reverse-mode memory, or
         `ForwardMode()` for `jax.jacfwd`. The objective must be a real scalar.
+        Warning: with ``adaptive_time_step=False``, Diffrax 0.7.2 ``RecursiveCheckpointAdjoint`` returns
+        wrong gradients (a few percent; 2.5% for 201 saves at dt = 0.01 in ``tests/test_autodiff.py``) when
+        many save times fall exactly on step ends, as ``linspace(0, t_max, timesteps)`` usually does; the
+        error depends on the checkpoint count. Forward values are correct. For such objectives use
+        ``RecursiveCheckpointAdjoint(checkpoints=max_steps)`` with ``max_steps`` close to the number of
+        steps (exact, one stored state per step), ``DirectAdjoint()`` or ``ForwardMode()``.
     progress_meter : diffrax.AbstractProgressMeter, optional
         Default `TqdmProgressMeter()`; `NoProgressMeter()` inside optimisation loops.
     frame : {None, "fixed", "pump"}, optional
