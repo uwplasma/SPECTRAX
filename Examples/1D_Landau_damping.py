@@ -68,8 +68,6 @@ f_e = inverse_HDG_transform(output['Ck'][:, :Nn*Nm*Np], Nn, Nm, Np,
                             (Vy - u_s[1]) / alpha_s[1],
                             (Vz - u_s[2]) / alpha_s[2])[:, 0, :, 0, 0, :, 0] # (Nt, Nx, Nv)
 
-print(f_e.shape)
-
 # Animate electron f(x, vx) (DG element averages, plotted at element centers)
 x = Lx / Nx * (jnp.arange(Nx) + 0.5)
 # Perturbation relative to the spatial average, since dn is small

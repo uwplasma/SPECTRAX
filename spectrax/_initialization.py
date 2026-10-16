@@ -232,20 +232,21 @@ def compute_A_pm_matrices(Nn, Nm, Np, alpha, u):
     Ay_mat = alpha[:, 1, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Nm, Nm)), axis=-1)) + u[:, 1, None, None] * jnp.eye(Nm)
     Az_mat = alpha[:, 2, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Np, Np)), axis=-1)) + u[:, 2, None, None] * jnp.eye(Np)
 
+    # Each returned matrix has shape (Ns, N, N), indexed [species, output mode, input mode].
     Lam, U = jnp.linalg.eig(Ax_mat)
     D_mat = Lam[:, :, None] * jnp.eye(Nn)
-    Ax_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, None, :, :, None, None, None, None, None]
-    Ax_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, None, :, :, None, None, None, None, None]
+    Ax_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)
+    Ax_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)
 
     Lam, U = jnp.linalg.eig(Ay_mat)
     D_mat = Lam[:, :, None] * jnp.eye(Nm)
-    Ay_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, :, :, None, None, None, None, None, None]
-    Ay_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, :, :, None, None, None, None, None, None]
+    Ay_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)
+    Ay_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)
 
     Lam, U = jnp.linalg.eig(Az_mat)
     D_mat = Lam[:, :, None] * jnp.eye(Np)
-    Az_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None, None, None]
-    Az_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None, None, None]
+    Az_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)
+    Az_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)
 
     return Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m
 
@@ -255,14 +256,15 @@ def compute_R_pm_matrices(upwind=False):
     Rz_mat = jnp.block([[jnp.zeros((3, 3)), jnp.array([[0, 1, 0], [-1, 0, 0], [0, 0, 0]])], [jnp.array([[0, -1, 0], [1, 0, 0], [0, 0, 0]]), jnp.zeros((3, 3))]])
     R_mat = jnp.stack([Rx_mat, Ry_mat, Rz_mat])
 
+    # R_p, R_m have shape (3, 6, 6), indexed [direction, output field, input field].
     if upwind: # upwind flux
         Lam, U = jnp.linalg.eig(R_mat)
         D = Lam[:, :, None] * jnp.eye(6)
-        R_p = jnp.real(U @ (D + jnp.abs(D)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None]
-        R_m = jnp.real(U @ (D - jnp.abs(D)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None]
+        R_p = jnp.real(U @ (D + jnp.abs(D)) @ jnp.transpose(U, (0, 2, 1)) / 2)
+        R_m = jnp.real(U @ (D - jnp.abs(D)) @ jnp.transpose(U, (0, 2, 1)) / 2)
     else: # central flux
-        R_p = (R_mat / 2)[:, :, :, None, None, None, None, None]
-        R_m = (R_mat / 2)[:, :, :, None, None, None, None, None]
+        R_p = R_mat / 2
+        R_m = R_mat / 2
 
     return R_p, R_m
 

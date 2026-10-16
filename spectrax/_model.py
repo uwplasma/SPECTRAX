@@ -7,7 +7,6 @@ equations (:func:`Hermite_DG_system`).
 import jax.numpy as jnp
 from jax import vmap, jit, debug
 from functools import partial
-from jax.lax import cond
 
 __all__ = ['Hermite_DG_system']
 
@@ -37,8 +36,44 @@ def shift_multi(Ck, dn=0, dm=0, dp=0):
     return P[:, p0:p0+Np, m0:m0+Nm, n0:n0+Nn, :, :, :, :]
 
 def shift_element(C, dx, dy, dz):
-    
+
     return jnp.roll(C, (-dy, -dx, -dz), axis=(-4, -3, -2))
+
+# Unit element offsets (dx, dy, dz) and the matching Hermite axis of Ck (Ns, Np, Nm, Nn, ...) for each direction.
+_UNIT_OFFSETS = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+_HERMITE_AXIS = (3, 2, 1)
+
+# Below this many modes XLA fuses the broadcast form of the flux into a single pass, which is faster than a
+# matrix multiply; above it the broadcast product gets materialized and the matmul form is far cheaper (CPU timings).
+_MATMUL_MIN_MODES = 32
+
+def _hermite_matmul(A, X, axis):
+    """Apply per-species matrices A (Ns, N, N) along Hermite axis `axis` of X, as one matmul per species."""
+    Xt = jnp.moveaxis(X, axis, 1)
+    out = jnp.matmul(A, Xt.reshape(Xt.shape[:2] + (-1,))).reshape(Xt.shape)
+    return jnp.moveaxis(out, 1, axis)
+
+def _upwind_flux(A_p, A_m, C, C_plus, C_minus, inner_mm, inner_pm, inner_mp, inner_pp, axis):
+    """Net upwind flux through the two faces of every element along one direction.
+
+    Computes A_p (C·mm - C_minus·mp) + A_m (C_plus·pm - C·pp), where A_p, A_m (Ns, N, N) act on Hermite
+    axis `axis` of the (Ns, Np, Nm, Nn, Ny, Nx, Nz, Nl) arrays C, C_plus, C_minus (the element and its
+    neighbours above and below), and each inner_* (Nl, Nl) acts on the last (DG mode) axis.
+    """
+    N = A_p.shape[-1]
+    if N >= _MATMUL_MIN_MODES:
+        face = lambda X, inner: jnp.tensordot(X, inner, axes=(-1, -1))
+        return (_hermite_matmul(A_p, face(C, inner_mm) - face(C_minus, inner_mp), axis)
+                + _hermite_matmul(A_m, face(C_plus, inner_pm) - face(C, inner_pp), axis))
+
+    # Broadcast form: insert the output Hermite axis before `axis` and the output DG axis before the last axis,
+    # then reduce over the input Hermite and DG axes.
+    trailing = (1,) * (C.ndim - axis)
+    to_bcast = lambda A: A.reshape((A.shape[0],) + (1,) * (axis - 1) + A.shape[1:] + trailing)
+    expand = lambda X: jnp.expand_dims(X, (axis, X.ndim))
+    C, C_plus, C_minus = expand(C), expand(C_plus), expand(C_minus)
+    return jnp.sum(to_bcast(A_p) * (C * inner_mm - C_minus * inner_mp)
+                   + to_bcast(A_m) * (C_plus * inner_pm - C * inner_pp), axis=(axis + 1, -1))
 
 @jit
 def cross_product(k_vec, F_vec):
@@ -54,17 +89,18 @@ def cross_product(k_vec, F_vec):
     Fx, Fy, Fz = F_vec
     return jnp.array([ky * Fz - kz * Fy, kz * Fx - kx * Fz, kx * Fy - ky * Fx])
 
-@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
-def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx, 
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'dims', 'shift_element'])
+def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx,
                         inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product, Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
-                           Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np, Ns):
+                           Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nx, Ny, Nz, Nn, Nm, Np, Ns, dims, shift_element=shift_element):
     """
     Evaluate the right-hand side of the coupled Hermite-DG moment equations.
 
     Parameters
     ----------
     Ck : jnp.ndarray
-        Hermite-DG coefficients with shape `(Ns * Np * Nm * Nn, Ny, Nx, Nz, Nl)`.
+        Hermite-DG coefficients with shape `(Ns, Np, Nm, Nn, Ny, Nx, Nz, Nl)` (or with the Hermite and species
+        axes flattened into one).
     Fk : jnp.ndarray
         DG coefficient-space electromagnetic fields with shape `(6, Ny, Nx, Nz, Nl)` ordered
         as `(Ex, Ey, Ez, Bx, By, Bz)`.
@@ -83,10 +119,11 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
     triple_product : jnp.ndarray
         Array of integrals of three multiplied basis elements.
     A* : jnp.ndarray
-        Velocity-space Hermite-coefficient matrix for coefficient time derivative. (x,y,z) = derivative in (x,y,z) direction. 
+        Velocity-space Hermite-coefficient matrix for coefficient time derivative, shape `(Ns, N, N)` with N the
+        number of Hermite modes along that direction. (x,y,z) = derivative in (x,y,z) direction.
         (p,m) = matrix decomposition into positive and negative eigenvalue parts, respectively, for upwinding scheme.
     R_* : jnp.ndarray
-        EM-field derivative coupling matrix (through curl E / curl B). 
+        EM-field derivative coupling matrix (through curl E / curl B), shape `(3, 6, 6)` indexed by direction.
         (p,m) = matrix decomposition into positive and negative eigenvalue parts, respectively.
     Lx, Ly, Lz : float
         Domain lengths in each spatial direction.
@@ -102,18 +139,30 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
         Species charges.
     Omega_ce : jnp.ndarray
         Electron cyclotron frequency.
+    Nx, Ny, Nz : int
+        Number of elements per spatial dimension in the whole domain (which may differ from the array
+        shapes when only part of the domain is passed in).
     Nn, Nm, Np, Ns : int
         Number of Hermite modes and species.
+    dims : int
+        Number of spatial dimensions in which the DG basis varies.
+    shift_element : callable, optional
+        `shift_element(C, dx, dy, dz)` returning the coefficients of the neighbouring element at offset
+        `(dx, dy, dz)`. Defaults to a periodic shift of the arrays passed in.
 
     Returns
     -------
-    jnp.ndarray
-        Flattened Time derivative array `(dCk/dt, dFk/dt)` with length `(Ns * Np * Nm * Nn + 6) * Ny * Nx * Nz * Nl)`.
+    tuple[jnp.ndarray, jnp.ndarray]
+        Time derivatives `(dCk/dt, dFk/dt)` with shapes `(Ns, Np, Nm, Nn, Ny, Nx, Nz, Nl)` and `(6, Ny, Nx, Nz, Nl)`.
     """
 
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-4:])
-    Ny, Nx, Nz = Ck.shape[-4], Ck.shape[-3], Ck.shape[-2]
-    dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz 
+    dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz
+
+    # A direction with a single element and no basis variation has no internal derivative or net face flux,
+    # so its terms vanish identically and are skipped.
+    Nl = basis_idx.shape[0]
+    active_dirs = [d for d, N_elements in enumerate((Nx, Ny, Nz)) if N_elements > 1 or (Nl > 1 and d < dims)]
 
     # Define u, alpha, charge, and gyrofrequency depending on species.
     alpha = alpha_s.reshape(Ns, 3)
@@ -132,34 +181,24 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
 
     ################### Distribution function linear integral term ###################
     
-    integral = - (a0 * jnp.tensordot(sqrt_n_plus / jnp.sqrt(2) * shift_multi(Ck, dn=1, dm=0, dp=0) +
-        sqrt_n_minus / jnp.sqrt(2) * shift_multi(Ck, dn=-1, dm=0, dp=0) +
-        (u0 / a0) * Ck, di_inner_product[0], axes=(-1, -1))
-    ) - (a1 * jnp.tensordot(sqrt_m_plus / jnp.sqrt(2) * shift_multi(Ck, dn=0, dm=1, dp=0) +
-        sqrt_m_minus / jnp.sqrt(2) * shift_multi(Ck, dn=0, dm=-1, dp=0) +
-        (u1 / a1) * Ck, di_inner_product[1], axes=(-1, -1))
-    ) - (a2 * jnp.tensordot(sqrt_p_plus / jnp.sqrt(2) * shift_multi(Ck, dn=0, dm=0, dp=1) +
-        sqrt_p_minus / jnp.sqrt(2) * shift_multi(Ck, dn=0, dm=0, dp=-1) +
-        (u2 / a2) * Ck, di_inner_product[2], axes=(-1, -1))
-    )
+    a_dir, u_dir = (a0, a1, a2), (u0, u1, u2)
+    sqrt_plus, sqrt_minus = (sqrt_n_plus, sqrt_m_plus, sqrt_p_plus), (sqrt_n_minus, sqrt_m_minus, sqrt_p_minus)
+    hermite_shift = ('dn', 'dm', 'dp')
+    integral = 0
+    for d in active_dirs:
+        streaming = (sqrt_plus[d] / jnp.sqrt(2) * shift_multi(Ck, **{hermite_shift[d]: 1}) +
+                     sqrt_minus[d] / jnp.sqrt(2) * shift_multi(Ck, **{hermite_shift[d]: -1}) +
+                     (u_dir[d] / a_dir[d]) * Ck)
+        integral = integral - a_dir[d] * jnp.tensordot(streaming, di_inner_product[d], axes=(-1, -1))
 
     ################### Boundary Terms ###################
 
-    # Ax_p/m should have shape (Ns, 1, 1, Nn, Nn 1, 1, 1, 1, 1) then multiplied by Ck[:, :, :, None, :, :, :, :, None, :] then sum over axis 4
-    bdy_xp = jnp.sum(Ax_p * Ck[:, :, :, None, :, :, :, :, None, :] * inner_mm[0] 
-                        + Ax_m * shift_element(Ck, dx=+1, dy=0, dz=0)[:, :, :, None, :, :, :, :, None, :] * inner_pm[0], axis=(4, -1))
-    bdy_xm = jnp.sum(Ax_m * Ck[:, :, :, None, :, :, :, :, None, :] * inner_pp[0] 
-                        + Ax_p * shift_element(Ck, dx=-1, dy=0, dz=0)[:, :, :, None, :, :, :, :, None, :] * inner_mp[0], axis=(4, -1))
-    bdy_yp = jnp.sum(Ay_p * Ck[:, :, None, :, :, :, :, :, None, :] * inner_mm[1]
-                        + Ay_m * shift_element(Ck, dx=0, dy=+1, dz=0)[:, :, None, :, :, :, :, :, None, :] * inner_pm[1], axis=(3, -1))
-    bdy_ym = jnp.sum(Ay_m * Ck[:, :, None, :, :, :, :, :, None, :] * inner_pp[1] 
-                        + Ay_p * shift_element(Ck, dx=0, dy=-1, dz=0)[:, :, None, :, :, :, :, :, None, :] * inner_mp[1], axis=(3, -1))
-    bdy_zp = jnp.sum(Az_p * Ck[:, None, :, :, :, :, :, :, None, :] * inner_mm[2] 
-                        + Az_m * shift_element(Ck, dx=0, dy=0, dz=+1)[:, None, :, :, :, :, :, :, None, :] * inner_pm[2], axis=(2, -1))
-    bdy_zm = jnp.sum(Az_m * Ck[:, None, :, :, :, :, :, :, None, :] * inner_pp[2] 
-                        + Az_p * shift_element(Ck, dx=0, dy=0, dz=-1)[:, None, :, :, :, :, :, :, None, :] * inner_mp[2], axis=(2, -1))
-
-    bdy = bdy_xp - bdy_xm + bdy_yp - bdy_ym + bdy_zp - bdy_zm
+    A_p, A_m = (Ax_p, Ay_p, Az_p), (Ax_m, Ay_m, Az_m)
+    bdy = 0
+    for d in active_dirs:
+        offset = _UNIT_OFFSETS[d]
+        bdy = bdy + _upwind_flux(A_p[d], A_m[d], Ck, shift_element(Ck, *offset), shift_element(Ck, *(-o for o in offset)),
+                                 inner_mm[d], inner_pm[d], inner_mp[d], inner_pp[d], _HERMITE_AXIS[d])
 
     ###################### Nonlinear terms #########################
 
@@ -181,25 +220,17 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
         jnp.sqrt(2) * sqrt_n_minus * (u1 / a0) * shift_multi(Ck, dn=-1, dm=0, dp=0) - 
         jnp.sqrt(2) * sqrt_m_minus * (u0 / a1) * shift_multi(Ck, dn=0, dm=-1, dp=0))
 
-    ECx = Fk[0, None, None, None, None, :, :, :, :, None] * shift_multi(Ck, dn=-1, dm=0, dp=0)[:, :, :, :, :, :, :, None, :]    
-    Ex_term = (sqrt_n_minus * jnp.sqrt(2) / a0) * jnp.tensordot(ECx, triple_product, axes=([-2, -1], [0, 1]))
+    # Hermite-space factor multiplying each field component (Ex, Ey, Ez, Bx, By, Bz) in the Lorentz force term.
+    hermite_factors = (sqrt_n_minus * jnp.sqrt(2) / a0 * shift_multi(Ck, dn=-1, dm=0, dp=0),
+                       sqrt_m_minus * jnp.sqrt(2) / a1 * shift_multi(Ck, dn=0, dm=-1, dp=0),
+                       sqrt_p_minus * jnp.sqrt(2) / a2 * shift_multi(Ck, dn=0, dm=0, dp=-1),
+                       C_aux_x, C_aux_y, C_aux_z)
 
-    BC_aux_x = Fk[3, None, None, None, None, :, :, :, :, None] * C_aux_x[:, :, :, :, :, :, :, None, :]
-    Bx_term = jnp.tensordot(BC_aux_x, triple_product, axes=([-2, -1], [0, 1]))
+    # Per-element field matrices M[f, y, x, z, j, k] = sum_i Fk[f, y, x, z, i] * triple_product[i, j, k].
+    M = jnp.einsum('fyxzi,ijk->fyxzjk', Fk, triple_product)
+    lorentz = sum(jnp.sum(H[..., :, None] * M[f], axis=-2) for f, H in enumerate(hermite_factors))
 
-    ECy = Fk[1, None, None, None, None, :, :, :, :, None] * shift_multi(Ck, dn=0, dm=-1, dp=0)[:, :, :, :, :, :, :, None, :]
-    Ey_term = (sqrt_m_minus * jnp.sqrt(2) / a1) * jnp.tensordot(ECy, triple_product, axes=([-2, -1], [0, 1]))
-
-    BC_aux_y = Fk[4, None, None, None, None, :, :, :, :, None] * C_aux_y[:, :, :, :, :, :, :, None, :]
-    By_term = jnp.tensordot(BC_aux_y, triple_product, axes=([-2, -1], [0, 1]))
-
-    ECz = Fk[2, None, None, None, None, :, :, :, :, None] * shift_multi(Ck, dn=0, dm=0, dp=-1)[:, :, :, :, :, :, :, None, :]
-    Ez_term = (sqrt_p_minus * jnp.sqrt(2) / a2) * jnp.tensordot(ECz, triple_product, axes=([-2, -1], [0, 1]))
-
-    BC_aux_z = Fk[5, None, None, None, None, :, :, :, :, None] * C_aux_z[:, :, :, :, :, :, :, None, :]
-    Bz_term = jnp.tensordot(BC_aux_z, triple_product, axes=([-2, -1], [0, 1]))
-
-    dNL = -(q * Omega_ce / ms) * (Ex_term + Bx_term + Ey_term + By_term + Ez_term + Bz_term)
+    dNL = -(q * Omega_ce / ms) * lorentz
 
     ################## Inverse mass matrix and final expression #################
     
@@ -242,43 +273,31 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
 
     ####################### Field evolution equations (Maxwell) #####################
     
-    Cn1 = cond(Nn > 1, lambda x: Ck[:, 0, 0, 1], lambda x: jnp.zeros_like(Ck[:, 0, 0, 0]), operand=None) # Only use first order mode for current if it exists
-    Cm1 = cond(Nm > 1, lambda x: Ck[:, 0, 1, 0], lambda x: jnp.zeros_like(Ck[:, 0, 0, 0]), operand=None)
-    Cp1 = cond(Np > 1, lambda x: Ck[:, 1, 0, 0], lambda x: jnp.zeros_like(Ck[:, 0, 0, 0]), operand=None)
+    no_mode = jnp.zeros_like(Ck[:, 0, 0, 0])
+    Cn1 = Ck[:, 0, 0, 1] if Nn > 1 else no_mode # Only use first order mode for current if it exists
+    Cm1 = Ck[:, 0, 1, 0] if Nm > 1 else no_mode
+    Cp1 = Ck[:, 1, 0, 0] if Np > 1 else no_mode
 
     source_x = jnp.sum((q * a0 * a1 * a2)[:, 0, 0, 0] * (Ck[:, 0, 0, 0] * u0[:, 0, 0, 0] + a0[:, 0, 0, 0] * Cn1 / jnp.sqrt(2)), axis=0)
     source_y = jnp.sum((q * a0 * a1 * a2)[:, 0, 0, 0] * (Ck[:, 0, 0, 0] * u1[:, 0, 0, 0] + a1[:, 0, 0, 0] * Cm1 / jnp.sqrt(2)), axis=0)
     source_z = jnp.sum((q * a0 * a1 * a2)[:, 0, 0, 0] * (Ck[:, 0, 0, 0] * u2[:, 0, 0, 0] + a2[:, 0, 0, 0] * Cp1 / jnp.sqrt(2)), axis=0)
     source = -(1 / Omega_ce) * jnp.stack((source_x, source_y, source_z, jnp.zeros_like(source_x), jnp.zeros_like(source_y), jnp.zeros_like(source_z)))
 
-    ex = jnp.array([1, 0, 0])
-    ey = jnp.array([0, 1, 0])
-    ez = jnp.array([0, 0, 1])
-
-    cross_field_x = jnp.concatenate((cross_product(-ex, Fk[3:]), cross_product(ex, Fk[:3])), axis=0)
-    cross_field_y = jnp.concatenate((cross_product(-ey, Fk[3:]), cross_product(ey, Fk[:3])), axis=0)
-    cross_field_z = jnp.concatenate((cross_product(-ez, Fk[3:]), cross_product(ez, Fk[:3])), axis=0)
-
-    dF_integral =  (jnp.tensordot(cross_field_x, di_inner_product[0], axes=(-1, -1)) 
-                    + jnp.tensordot(cross_field_y, di_inner_product[1], axes=(-1, -1)) 
-                    + jnp.tensordot(cross_field_z, di_inner_product[2], axes=(-1, -1)))
+    dF_integral = 0
+    for d in active_dirs:
+        e = jnp.array(_UNIT_OFFSETS[d])
+        cross_field = jnp.concatenate((cross_product(-e, Fk[3:]), cross_product(e, Fk[:3])), axis=0)
+        dF_integral = dF_integral + jnp.tensordot(cross_field, di_inner_product[d], axes=(-1, -1))
 
     ####################### Boundary ########################
-    
-    dF_bdy_xp = jnp.sum(R_p[0] * Fk[None, :, :, :, :, None, :] * inner_mm[0] 
-                        + R_m[0] * shift_element(Fk, dx=+1, dy=0, dz=0)[None, :, :, :, :, None, :] * inner_pm[0], axis=(1, -1))
-    dF_bdy_xm = jnp.sum(R_m[0] * Fk[None, :, :, :, :, None, :] * inner_pp[0] 
-                        + R_p[0] * shift_element(Fk, dx=-1, dy=0, dz=0)[None, :, :, :, :, None, :] * inner_mp[0], axis=(1, -1))
-    dF_bdy_yp = jnp.sum(R_p[1] * Fk[None, :, :, :, :, None, :] * inner_mm[1] 
-                        + R_m[1] * shift_element(Fk, dx=0, dy=+1, dz=0)[None, :, :, :, :, None, :] * inner_pm[1], axis=(1, -1))
-    dF_bdy_ym = jnp.sum(R_m[1] * Fk[None, :, :, :, :, None, :] * inner_pp[1] 
-                        + R_p[1] * shift_element(Fk, dx=0, dy=-1, dz=0)[None, :, :, :, :, None, :] * inner_mp[1], axis=(1, -1))
-    dF_bdy_zp = jnp.sum(R_p[2] * Fk[None, :, :, :, :, None, :] * inner_mm[2] 
-                        + R_m[2] * shift_element(Fk, dx=0, dy=0, dz=+1)[None, :, :, :, :, None, :] * inner_pm[2], axis=(1, -1))
-    dF_bdy_zm = jnp.sum(R_m[2] * Fk[None, :, :, :, :, None, :] * inner_pp[2] 
-                        + R_p[2] * shift_element(Fk, dx=0, dy=0, dz=-1)[None, :, :, :, :, None, :] * inner_mp[2], axis=(1, -1))
-    
-    dF_bdy = dF_bdy_xp + dF_bdy_yp + dF_bdy_zp - (dF_bdy_xm + dF_bdy_ym + dF_bdy_zm)
+
+    # The 6 field components take the place of a Hermite axis, so the same flux kernel applies.
+    F = Fk[None, None, None]
+    dF_bdy = 0
+    for d in active_dirs:
+        offset = _UNIT_OFFSETS[d]
+        dF_bdy = dF_bdy + _upwind_flux(R_p[d][None], R_m[d][None], F, shift_element(F, *offset), shift_element(F, *(-o for o in offset)),
+                                       inner_mm[d], inner_pm[d], inner_mp[d], inner_pp[d], axis=3)[0, 0, 0]
 
     dFk_dt = inv_m * (dF_integral - dF_bdy) + source
-    return jnp.concatenate([dCk_s_dt.reshape(-1), dFk_dt.reshape(-1)])
+    return dCk_s_dt, dFk_dt

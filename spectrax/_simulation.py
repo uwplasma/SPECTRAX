@@ -12,52 +12,44 @@ from ._diagnostics import diagnostics
 
 __all__ = ["ode_system", "simulation"]
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'Nl'])
-def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl, t, Ck_Fk, args):
+# Parameters passed to `Hermite_DG_system` under the same name as in the parameter dictionary.
+_RHS_PARAMETER_NAMES = (
+    "sqrt_n_plus", "sqrt_n_minus", "sqrt_m_plus", "sqrt_m_minus", "sqrt_p_plus", "sqrt_p_minus", "basis_idx",
+    "inner_mm", "inner_pm", "inner_mp", "inner_pp", "di_inner_product", "triple_product",
+    "Ax_p", "Ax_m", "Ay_p", "Ay_m", "Az_p", "Az_m", "R_p", "R_m",
+    "Lx", "Ly", "Lz", "nu", "D", "alpha_s", "u_s", "ms", "qs", "Omega_ce",
+)
+
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'dims'])
+def ode_system(t, y, args, Nx, Ny, Nz, Nn, Nm, Np, Ns, dims):
     """
     Right-hand side for the coupled Vlasov-Maxwell system expressed in spectral-FE form.
 
     Parameters
     ----------
+    t : float
+        Integration time (unused but required by Diffrax interface).
+    y : dict
+        State with entries `"Ck"` (Hermite-DG coefficients, shape `(Ns, Np, Nm, Nn, Ny, Nx, Nz, Nl)`) and
+        `"Fk"` (electromagnetic field coefficients, shape `(6, Ny, Nx, Nz, Nl)`).
+    args : dict
+        Keyword arguments of `Hermite_DG_system` other than the state and the grid sizes, built in `simulation`.
     Nx, Ny, Nz : int
         Number of elements per spatial dimension.
     Nn, Nm, Np : int
         Number of Hermite modes per velocity-space dimension.
     Ns : int
         Number of species.
-    Nl : int
-        Total number of element basis modes.
-    t : float
-        Integration time (unused but required by Diffrax interface).
-    Ck_Fk : jnp.ndarray
-        Flattened state vector containing concatenated Hermite coefficients followed
-        by electromagnetic field coefficients.
-    args : tuple
-        Cached parameter tuple produced in `simulation` providing physical constants,
-        grids, and helper arrays.
+    dims : int
+        Number of spatial dimensions in which the DG basis varies.
 
     Returns
     -------
-    jnp.ndarray
-        Flattened derivative vector matching the shape of `Ck_Fk`.
+    dict
+        Time derivative with the same structure and shapes as `y`.
     """
-
-    (ms, qs, nu, D, Omega_ce, alpha_s, u_s, Lx, Ly, Lz, col, 
-    sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
-    basis_idx, inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product, 
-    Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m
-    ) = args[8:]
-
-    total_Ck_size = Nn * Nm * Np * Ns * Nx * Ny * Nz * Nl
-    Ck = Ck_Fk[:total_Ck_size].reshape(Nn * Nm * Np * Ns, Ny, Nx, Nz, Nl)
-    Fk = Ck_Fk[total_Ck_size:].reshape(6, Ny, Nx, Nz, Nl)
-
-    dy_dt = Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx, 
-                                inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product, 
-                                Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
-                                    Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np, Ns)
-
-    return dy_dt
+    dCk, dFk = Hermite_DG_system(y["Ck"], y["Fk"], **args, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns, dims=dims)
+    return {"Ck": dCk, "Fk": dFk}
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'N_DG', 'dims', 'timesteps', 'solver', 'adaptive_time_step'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, N_DG=2, dims=1, timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True):
@@ -98,24 +90,18 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
     # **Initialize simulation parameters**
     parameters = initialize_simulation_parameters(input_parameters, Nx, Ny, Nz, Nn, Nm, Np, Ns, N_DG, dims, timesteps, dt)
 
-    # Combine initial conditions.
-    initial_conditions = jnp.concatenate([parameters["Ck_0"].flatten(), parameters["Fk_0"].flatten()])
-
-    # Define the time array for data output.
-    time = jnp.linspace(0, parameters["t_max"], timesteps)
-    
     # Define total number of basis modes
     Nl = parameters["basis_idx"].shape[0]
 
+    # Initial state, with species and Hermite modes on separate axes.
+    initial_conditions = {"Ck": parameters["Ck_0"].reshape(Ns, Np, Nm, Nn, Ny, Nx, Nz, Nl),
+                          "Fk": parameters["Fk_0"].reshape(6, Ny, Nx, Nz, Nl)}
+
+    # Define the time array for data output.
+    time = jnp.linspace(0, parameters["t_max"], timesteps)
+
     # Arguments for the ODE system.
-    args = (Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl, parameters["ms"], parameters["qs"], parameters["nu"], parameters["D"], parameters["Omega_ce"], parameters["alpha_s"],
-            parameters["u_s"], parameters["Lx"], parameters["Ly"], parameters["Lz"], parameters["collision_matrix"], 
-            parameters["sqrt_n_plus"], parameters["sqrt_n_minus"], parameters["sqrt_m_plus"], parameters["sqrt_m_minus"], 
-            parameters["sqrt_p_plus"], parameters["sqrt_p_minus"], parameters["basis_idx"], 
-            parameters["inner_mm"], parameters["inner_pm"], parameters["inner_mp"], parameters["inner_pp"], parameters["di_inner_product"],
-            parameters["triple_product"], parameters["Ax_p"], parameters["Ax_m"], 
-            parameters["Ay_p"], parameters["Ay_m"], parameters["Az_p"], parameters["Az_m"], parameters["R_p"], parameters["R_m"]
-            )
+    args = {"col": parameters["collision_matrix"], **{name: parameters[name] for name in _RHS_PARAMETER_NAMES}}
     
     controllers = {
     True: PIDController(
@@ -127,17 +113,17 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
     stepsize_controller = controllers[adaptive_time_step]
     
     # Solve the ODE system
-    ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl)
+    ode_system_partial = partial(ode_system, Nx=Nx, Ny=Ny, Nz=Nz, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns, dims=dims)
     sol = diffeqsolve(
         ODETerm(ode_system_partial), solver=solver,
         stepsize_controller=stepsize_controller,
         t0=0, t1=parameters["t_max"], dt0=dt,
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
         max_steps=1000000, progress_meter=TqdmProgressMeter())
-    
-    # Reshape the solution to extract Ck and Fk
-    Ck = sol.ys[:,:(-6 * Nx * Ny * Nz * Nl)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx, Nz, Nl)
-    Fk = sol.ys[:,(-6 * Nx * Ny * Nz * Nl):].reshape(len(sol.ts), 6, Ny, Nx, Nz, Nl)
+
+    # Output Ck with species and Hermite modes flattened into one axis.
+    Ck = sol.ys["Ck"].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx, Nz, Nl)
+    Fk = sol.ys["Fk"]
     
     # Output results
     temporary_output = {"Ck": Ck, "Fk": Fk, "time": time}
