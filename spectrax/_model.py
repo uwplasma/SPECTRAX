@@ -298,7 +298,7 @@ def uniform_acceleration(F, u_s, qs, Omega_cs, Ns):
     return accel.reshape(3 * Ns), F0
 
 
-def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c):
+def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c, u_s=None, magnetic=False):
     """
     Per-species closure rate that follows the field, for the asymmetric-Hermite top-mode instability.
 
@@ -324,13 +324,33 @@ def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c):
         ``|q/m|_s = |qs * Omega_cs|`` in SPECTRAX units.
     c : float
         Dimensionless strength.
+    u_s : jnp.ndarray, shape (3 * Ns,), optional
+        Basis centres; only used with ``magnetic=True`` (default zero).
+    magnetic : bool
+        Also scale with the non-uniform magnetic force. On axis ``i`` the field scale
+        ``max_x |E_i - <E_i>|`` becomes ``max_x |E_i - <E_i>| + sum_{j != i} V_j max_x |B_l - <B_l>|``
+        (``i, j, l`` a permutation), ``V_j = |u_j| + a_j sqrt(2 N_j)`` the largest velocity the kept
+        ladder on axis ``j`` represents (turning point of its top Hermite function). The ``v x B`` term
+        gives the same non-normal top-mode growth as ``E`` once ``B`` is non-uniform (e.g. Weibel past
+        U_B ~ 1e-3, where the electric-only rate leaves it unchanged). Default ``False`` is the
+        electric-only rate above, unchanged.
     """
-    E = F[:3]
-    dE = jnp.max(jnp.abs(E - jnp.mean(E, axis=(-3, -2, -1), keepdims=True)), axis=(-3, -2, -1))  # (3,)
     N = jnp.array([Nn, Nm, Np], dtype=float)
     a = alpha_s.reshape(Ns, 3)
+    if magnetic:
+        dev = jnp.max(jnp.abs(F - jnp.mean(F, axis=(-3, -2, -1), keepdims=True)), axis=(-3, -2, -1))  # (6,)
+        dE, dB = dev[:3], dev[3:6]
+        u = jnp.zeros_like(a) if u_s is None else u_s.reshape(Ns, 3)
+        V = jnp.abs(u) + a * jnp.sqrt(2 * N)[None, :]
+        scale = dE[None, :] + jnp.stack([V[:, 1] * dB[2] + V[:, 2] * dB[1],
+                                         V[:, 2] * dB[0] + V[:, 0] * dB[2],
+                                         V[:, 0] * dB[1] + V[:, 1] * dB[0]], axis=1)
+    else:
+        E = F[:3]
+        dE = jnp.max(jnp.abs(E - jnp.mean(E, axis=(-3, -2, -1), keepdims=True)), axis=(-3, -2, -1))  # (3,)
+        scale = jnp.broadcast_to(dE[None, :], a.shape)
     active = (N > 3)[None, :]
-    per_axis = jnp.where(active, jnp.sqrt(2 * N)[None, :] * dE[None, :] / a, 0.0)
+    per_axis = jnp.where(active, jnp.sqrt(2 * N)[None, :] * scale / a, 0.0)
     rate = c * jnp.abs(qs * Omega_cs) * jnp.max(per_axis, axis=1)
     return rate.reshape(Ns, 1, 1, 1, 1, 1, 1)
 
