@@ -304,6 +304,12 @@ def load_parameters(input_file, **overrides):
         input_parameters.pop("Omega_ce", None), input_parameters.pop("B0", None)
         solver_parameters["Ns"] = len(parameters["species"])
 
+    # Physical collisions: [collisions] model = "dougherty", nu = scalar or Ns x Ns matrix.
+    collisions = parameters.get("collisions")
+    if collisions and collisions.get("model", "none") != "none":
+        solver_parameters["collision_model"] = collisions["model"]
+        input_parameters["nu_dougherty"] = collisions.get("nu", 0.0)
+
     # Whether to use adaptive time-stepping or constant dt.
     # Default is True.
     adaptive_time_step = solver_parameters.get("adaptive_time_step", True)
