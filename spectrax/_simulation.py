@@ -1,6 +1,7 @@
 """Time integration driver for the spectral Vlasov–Maxwell system."""
 
 import numpy as np
+import jax
 import jax.numpy as jnp
 from jax import jit, config
 config.update("jax_enable_x64", True)
@@ -11,7 +12,7 @@ from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system, uniform_acceleration, dougherty_collisions
 from ._diagnostics import diagnostics
 
-__all__ = ["cross_product", "ode_system", "simulation"]
+__all__ = ["cross_product", "ode_system", "simulation", "FlooredPIDController"]
 
 def _twothirds_mask(Ny: int, Nx: int, Nz: int):
     """Boolean 2/3 de-aliasing mask on the solver's (Ny, Nx//2+1, Nz) Fourier layout.
@@ -25,6 +26,10 @@ def _twothirds_mask(Ny: int, Nx: int, Nz: int):
     kx = np.arange(Nx // 2 + 1)[None, :, None]
     kz = np.fft.fftfreq(Nz, d=1.0 / Nz).round().astype(int)[None, None, :]
     return (3 * np.abs(ky) < Ny) & (3 * kx < Nx) & (3 * np.abs(kz) < Nz)
+
+
+twothirds_mask = _twothirds_mask  # public name: the de-aliasing mask used by ode_system
+__all__ += ["twothirds_mask"]
 
 @jit
 def cross_product(k_vec, F_vec):
@@ -74,7 +79,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collis
         Cached parameter tuple produced in `simulation` providing physical constants,
         grids, and helper arrays. With ``collision_model="dougherty"`` its last entry is the
         ``(Ns, Ns)`` Dougherty collision-frequency matrix.
-    collision_model : {None, "dougherty"}
+    collision_model : {None, "dougherty", "dougherty_g"}
         Physical collision operator added to the kinetic right-hand side (see
         :func:`spectrax._model.dougherty_collisions`); independent of the numerical
         hypercollision ``nu``. None: no term, bitwise the previous right-hand side.
@@ -106,11 +111,12 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collis
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
                                       Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23=mask23, F0=F0)
-    if collision_model == "dougherty":
+    if collision_model in ("dougherty", "dougherty_g"):
         dCk_s_dt = dCk_s_dt + dougherty_collisions(C.reshape(Ns, Np, Nm, Nn, *C.shape[-3:]), args[28], alpha_s, u_s,
-                                                   Omega_cs, Nn, Nm, Np, Ns, mask23)
+                                                   Omega_cs, Nn, Nm, Np, Ns, mask23,
+                                                   beta=args[29] if collision_model == "dougherty_g" else None)
     elif collision_model is not None:
-        raise ValueError(f"collision_model must be None or 'dougherty', got {collision_model!r}")
+        raise ValueError(f"collision_model must be None, 'dougherty' or 'dougherty_g', got {collision_model!r}")
 
     dBk_dt = -1j * cross_product(nabla, Fk[:3])
     
@@ -124,11 +130,36 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collis
         return dCk_s_dt, dFk_dt, jnp.zeros_like(Ck_Fk[2])
     return dCk_s_dt, dFk_dt
 
-def _stepsize_controller(adaptive_time_step, tolerance, dtmin=None):
-    """PID control at `tolerance` with an optional step floor `dtmin` (None: no floor), or constant steps."""
+def _stepsize_controller(adaptive_time_step, tolerance, dtmin=None, atol=None):
+    """PID control at relative tolerance `tolerance` and absolute tolerance `atol` (default: `tolerance`),
+    with an optional step floor `dtmin` (None: no floor), or constant steps."""
     if not adaptive_time_step:
         return ConstantStepSize()
-    return PIDController(rtol=tolerance, atol=tolerance, dtmin=dtmin, force_dtmin=False)
+    return PIDController(rtol=tolerance, atol=tolerance if atol is None else atol, dtmin=dtmin, force_dtmin=False)
+
+
+class FlooredPIDController(PIDController):
+    """PID control with an extra absolute error floor per state component.
+
+    ``floor`` is a pytree with the structure of the state ``y``; each leaf is an array broadcastable to
+    that component, or None (no floor). A component's error is scaled by ``atol + floor + rtol*|y|``
+    instead of ``atol + rtol*|y|`` (``|y| = max(|y0|, |y1|)``), so round-off in components far below
+    their own natural scale (a species many orders below another) cannot drive the step size.
+    ``floor=None`` gives exactly ``PIDController``. Use it with ``diffrax.diffeqsolve``.
+    """
+
+    floor: object = None
+
+    def adapt_step_size(self, t0, t1, y0, y1_candidate, args, y_error, error_order, controller_state):
+        if self.floor is not None:
+            def shrink(floor, err, a, b):
+                if floor is None:
+                    return err
+                y = jnp.maximum(jnp.abs(a), jnp.abs(jnp.nan_to_num(b)))
+                return err * ((self.atol + self.rtol * y) / (self.atol + floor + self.rtol * y))
+            y_error = jax.tree_util.tree_map(shrink, self.floor, y_error, y0, y1_candidate,
+                                             is_leaf=lambda x: x is None)
+        return super().adapt_step_size(t0, t1, y0, y1_candidate, args, y_error, error_order, controller_state)
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step',
                                 'dtmin', 'max_steps', 'throw', 'adjoint', 'progress_meter', 'frame',
@@ -174,6 +205,12 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         How gradients are taken through the solve. Default `RecursiveCheckpointAdjoint()`;
         pass `RecursiveCheckpointAdjoint(checkpoints=k)` to bound reverse-mode memory, or
         `ForwardMode()` for `jax.jacfwd`. The objective must be a real scalar.
+        Warning: with ``adaptive_time_step=False``, Diffrax 0.7.2 ``RecursiveCheckpointAdjoint`` returns
+        wrong gradients (a few percent; 2.5% for 201 saves at dt = 0.01 in ``tests/test_autodiff.py``) when
+        many save times fall exactly on step ends, as ``linspace(0, t_max, timesteps)`` usually does; the
+        error depends on the checkpoint count. Forward values are correct. For such objectives use
+        ``RecursiveCheckpointAdjoint(checkpoints=max_steps)`` with ``max_steps`` close to the number of
+        steps (exact, one stored state per step), ``DirectAdjoint()`` or ``ForwardMode()``.
     progress_meter : diffrax.AbstractProgressMeter, optional
         Default `TqdmProgressMeter()`; `NoProgressMeter()` inside optimisation loops.
     frame : {None, "fixed", "pump"}, optional
@@ -189,7 +226,10 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         self-consistent moments) operator with frequencies ``input_parameters["nu_dougherty"]``,
         a scalar (self collisions of every species) or an ``(Ns, Ns)`` matrix (diagonal: self;
         upper triangle ``[s, r]``: pair frequency ``nu_sr``, ``nu_rs`` from momentum conservation).
-        From a TOML file: ``[collisions] model = "dougherty", nu = ...``.
+        From a TOML file: ``[collisions] model = "dougherty", nu = ...``. ``"dougherty_g"``: same, with the
+        LBO-G cross-species moments of Francisquez et al. (JPP 88, 905880303) and ``input_parameters["beta_dougherty"]``
+        (default 0, which matches both Coulomb relaxation rates for ``nu_sr = alpha_E (m_s+m_r)/(m_s n_s)``); TOML:
+        ``cross_species = "francisquez_g"``, ``beta = 0.0``.
 
     Returns
     -------
@@ -233,9 +273,11 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     if collision_model is not None:
         nu_D = jnp.asarray(parameters.get("nu_dougherty", 0.0), dtype=float)
         args = args + (jnp.eye(Ns) * nu_D if nu_D.ndim == 0 else nu_D.reshape(Ns, Ns),)
+        if collision_model == "dougherty_g":  # Francisquez et al. LBO-G; beta = 0 matches the Morse rates
+            args = args + (jnp.asarray(parameters.get("beta_dougherty", 0.0), dtype=float),)
     
 
-    stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_tolerance"], dtmin)
+    stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_rtol"], dtmin, parameters["ode_atol"])
 
     # Solve the ODE system
     ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns, frame=frame or "fixed",

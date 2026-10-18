@@ -9,7 +9,8 @@ import diffrax
 import inspect
 from .midpoint_solver import ImplicitMidpoint
 
-__all__ = ["load_parameters", "initialize_simulation_parameters", "hypercollision_spectrum"]
+__all__ = ["load_parameters", "initialize_simulation_parameters", "hypercollision_spectrum",
+           "filter_spectrum", "exponential_filter", "species_initial_state"]
 
 
 def hypercollision_spectrum(Nn, Nm, Np, order=2):
@@ -36,6 +37,44 @@ def hypercollision_spectrum(Nn, Nm, Np, order=2):
     m = jnp.arange(Nm)[None, :, None]
     n = jnp.arange(Nn)[None, None, :]
     return axis(Nn, n) + axis(Nm, m) + axis(Np, p)
+
+def filter_spectrum(Nn, Nm, Np, order=36, keep=2):
+    """Shape ``s(n)`` of a Hou-Li-type exponential filter, shape ``(Np, Nm, Nn)``.
+
+    Per velocity axis with N modes, ``s_i(n) = (n/(N-1))**order`` for ``n > keep`` and exactly 0 for
+    ``n <= keep``; the axes are summed. One filter application is ``C <- exp(-strength * s) C``
+    (:func:`exponential_filter`; Hou & Li use ``strength = order = 36``). With ``keep = 2`` every moment
+    of total degree <= 2 (density, momentum, full pressure tensor) is untouched for any basis centre and
+    width. Applying it as a right-hand-side damping, i.e. passing it as ``"collision_matrix"`` with
+    ``nu = rate``, is the continuous form: over a time ``dt`` it equals the filter with
+    ``strength = rate * dt``.
+    """
+    if int(order) != order or order < 1:
+        raise ValueError(f"filter order must be a positive integer, got {order}")
+    if int(keep) != keep or keep < 2:
+        raise ValueError(f"keep must be an integer >= 2 (density, momentum, energy), got {keep}")
+
+    def axis(N, i):
+        return jnp.where(i > keep, (i / max(N - 1, 1)) ** order, 0.0)
+
+    p = jnp.arange(Np)[:, None, None]
+    m = jnp.arange(Nm)[None, :, None]
+    n = jnp.arange(Nn)[None, None, :]
+    return axis(Nn, n) + axis(Nm, m) + axis(Np, p)
+
+
+def exponential_filter(Ck, strength, spectrum):
+    """Apply ``C <- exp(-strength * spectrum) C`` to every species and Fourier mode, between steps.
+
+    ``Ck`` has shape ``(Ns * Np * Nm * Nn, ...)`` or ``(Ns, Np, Nm, Nn, ...)``; ``spectrum`` is
+    :func:`filter_spectrum`. ``strength = 0`` returns ``Ck`` unchanged (bitwise).
+    """
+    Np, Nm, Nn = spectrum.shape
+    shape = Ck.shape
+    C = Ck.reshape(-1, Np, Nm, Nn, *shape[-3:])
+    sigma = jnp.exp(-strength * spectrum)[None, :, :, :, None, None, None]
+    return (C * sigma).astype(Ck.dtype).reshape(shape)
+
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz','Nn', 'Nm', 'Np', 'Ns', 'timesteps'])
 def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, timesteps=500, dt=0.01):
@@ -93,6 +132,8 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "dn1": 0.001,
         "dn2": 0.001,
         "ode_tolerance": 1e-12,
+        "ode_rtol": lambda p: p["ode_tolerance"],
+        "ode_atol": lambda p: p["ode_tolerance"],
         "vte": lambda p: p["alpha_s"][0] / jnp.sqrt(2),
         "vti": lambda p: p["vte"] * jnp.sqrt(1 / p["mi_me"]),
     }
@@ -171,14 +212,73 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
 
     return parameters
 
-def load_parameters(input_file):
+def species_initial_state(species, Lx=4 * jnp.pi, Ly=1.0, Lz=1.0, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1,
+                          Omega_ce=1.0, B0=(0.0, 0.0, 0.0)):
+    """Build the SPECTRAX initial state from a physical description of each species.
+
+    Each species is a mapping with ``charge`` and ``mass`` (in units of the electron charge and mass),
+    ``density`` (in units of the reference density that defines the electron plasma frequency),
+    ``vth`` (thermal speed sqrt(2 T / m) over c, a number or one value per axis, which is also the Hermite
+    width), ``drift`` (mean velocity over c, a number for x or one value per axis) and optionally a density
+    perturbation ``density * (1 + perturbation_amplitude * cos(2 pi perturbation_mode x / L))`` along
+    ``perturbation_axis`` ("x", "y" or "z"). The first species must have unit mass: it sets the field units,
+    in which the electric field is c B and ``Omega_ce`` is the gyrofrequency of the reference field over the
+    plasma frequency. ``B0`` is a uniform background magnetic field in those units.
+
+    Each species is expanded in its own Maxwellian, so only its zeroth Hermite coefficient is nonzero. The
+    electric field solves Gauss's law, i k . E_k = rho_k / Omega_ce, so the state is consistent from t = 0.
+    Returns the ``input_parameters`` entries ``qs``, ``ms``, ``Omega_cs``, ``alpha_s``, ``u_s``, ``Ck_0`` and
+    ``Fk_0``.
+    """
+    species = list(species.values()) if isinstance(species, dict) else list(species)
+    if float(species[0].get("mass", 1.0)) != 1.0:
+        raise ValueError("The first species sets the field units and must have unit mass (electrons).")
+    per_axis = lambda value: [float(value), 0.0, 0.0] if jnp.ndim(jnp.asarray(value)) == 0 else [float(v) for v in value]
+    qs = jnp.array([float(sp.get("charge", -1.0)) for sp in species])
+    ms = jnp.array([float(sp.get("mass", 1.0)) for sp in species])
+    vth = [jnp.asarray(sp.get("vth", 0.707107)) for sp in species]
+    alpha_s = jnp.concatenate([jnp.broadcast_to(v, (3,)) for v in vth]).astype(float)
+    u_s = jnp.array(sum((per_axis(sp.get("drift", 0.0)) for sp in species), []))
+    lengths, sizes = (Lx, Ly, Lz), (Nx, Ny, Nz)
+    y, x, z = jnp.meshgrid(*(jnp.arange(N) * L / N for L, N in ((Ly, Ny), (Lx, Nx), (Lz, Nz))), indexing="ij")
+    position = dict(x=(x, Lx), y=(y, Ly), z=(z, Lz))
+    H = Nn * Nm * Np
+    Ck_0 = jnp.zeros((len(species) * H, Ny, Nx // 2 + 1, Nz), dtype=jnp.complex128)
+    rho_k = 0.0
+    for s, sp in enumerate(species):
+        coordinate, L = position[sp.get("perturbation_axis", "x")]
+        n = float(sp.get("density", 1.0)) * (1 + float(sp.get("perturbation_amplitude", 0.0))
+                                                * jnp.cos(2 * jnp.pi * float(sp.get("perturbation_mode", 1)) * coordinate / L))
+        n_k = jnp.fft.rfftn(n, axes=(-1, -3, -2), norm="forward")
+        Ck_0 = Ck_0.at[s * H].set(n_k / jnp.prod(alpha_s[3 * s:3 * s + 3]))
+        rho_k = rho_k + qs[s] * n_k
+    kx, ky, kz = (2 * jnp.pi * f(N) * N / L for f, N, L in ((jnp.fft.rfftfreq, Nx, Lx), (jnp.fft.fftfreq, Ny, Ly), (jnp.fft.fftfreq, Nz, Lz)))
+    ky, kx, kz = jnp.meshgrid(ky, kx, kz, indexing="ij")
+    k2 = kx**2 + ky**2 + kz**2
+    E_k = -1j * jnp.stack([kx, ky, kz]) * rho_k / (Omega_ce * jnp.where(k2 > 0, k2, 1.0))
+    Fk_0 = jnp.zeros((6, Ny, Nx // 2 + 1, Nz), dtype=jnp.complex128).at[:3].set(E_k)
+    Fk_0 = Fk_0.at[3:, 0, 0, 0].set(jnp.asarray(B0, dtype=float))
+    return dict(qs=qs, ms=ms, Omega_cs=Omega_ce / ms, alpha_s=alpha_s, u_s=u_s, Ck_0=Ck_0, Fk_0=Fk_0)
+
+
+def load_parameters(input_file, **overrides):
     """
     Load simulation input parameters and solver configuration from a TOML file.
+
+    The file has an ``[input_parameters]`` table (box lengths ``Lx``, ``Ly``, ``Lz``, ``t_max``, ``nu``,
+    ``D``, ``ode_tolerance``, and with species also ``Omega_ce`` and ``B0``) and a ``[solver_parameters]``
+    table (``Nx``, ``Ny``, ``Nz``, ``Nn``, ``Nm``, ``Np``, ``timesteps``, ``dt``, ``solver``). Species may be
+    given physically, one ``[species.<name>]`` table each, and the initial state is then built by
+    :func:`species_initial_state`; otherwise ``qs``, ``alpha_s``, ``u_s``, ``Omega_cs`` and the initial
+    coefficients are taken as given.
 
     Parameters
     ----------
     input_file : str or pathlib.Path
         Path to the TOML file containing simulation parameters.
+    **overrides
+        Values that replace those in the file before the initial state is built, for parameter scans. A
+        ``species`` mapping updates entries of the named species tables.
 
     Returns
     -------
@@ -187,13 +287,30 @@ def load_parameters(input_file):
         includes an instantiated Diffrax solver ready for `diffeqsolve`.
     """
     parameters = tomllib.load(open(input_file, "rb"))
-    input_parameters = parameters['input_parameters']
-    solver_parameters = parameters['solver_parameters']
+    input_parameters = parameters.get('input_parameters', {})
+    solver_parameters = parameters.get('solver_parameters', {})
+    solver_keys = ("Nx", "Ny", "Nz", "Nn", "Nm", "Np", "Ns", "timesteps", "dt", "solver", "adaptive_time_step")
+    for key, value in overrides.items():          # e.g. load_parameters("input.toml", Lx=2.0, Nn=64) for scans
+        if key == "species":                      # species={"electrons": {"vth": 0.2}} updates those entries
+            for name, entries in value.items():
+                parameters["species"][name].update(entries)
+        else:
+            (solver_parameters if key in solver_keys else input_parameters)[key] = value
+    if "species" in parameters:              # physical species description: build the initial state here
+        grid = {key: solver_parameters.get(key, default) for key, default in
+                dict(Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1).items()}
+        geometry = {key: input_parameters[key] for key in ("Lx", "Ly", "Lz", "Omega_ce", "B0") if key in input_parameters}
+        input_parameters.update(species_initial_state(parameters["species"], **geometry, **grid))
+        input_parameters.pop("Omega_ce", None), input_parameters.pop("B0", None)
+        solver_parameters["Ns"] = len(parameters["species"])
 
     # Physical collisions: [collisions] model = "dougherty", nu = scalar or Ns x Ns matrix.
     collisions = parameters.get("collisions")
     if collisions and collisions.get("model", "none") != "none":
         solver_parameters["collision_model"] = collisions["model"]
+        if collisions.get("cross_species") == "francisquez_g":  # LBO-G cross-species moments, free parameter beta
+            solver_parameters["collision_model"] = "dougherty_g"
+            input_parameters["beta_dougherty"] = collisions.get("beta", 0.0)
         input_parameters["nu_dougherty"] = collisions.get("nu", 0.0)
 
     # Whether to use adaptive time-stepping or constant dt.

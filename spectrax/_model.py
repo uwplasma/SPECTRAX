@@ -298,7 +298,7 @@ def uniform_acceleration(F, u_s, qs, Omega_cs, Ns):
     return accel.reshape(3 * Ns), F0
 
 
-def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c):
+def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c, u_s=None, magnetic=False):
     """
     Per-species closure rate that follows the field, for the asymmetric-Hermite top-mode instability.
 
@@ -324,13 +324,33 @@ def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c):
         ``|q/m|_s = |qs * Omega_cs|`` in SPECTRAX units.
     c : float
         Dimensionless strength.
+    u_s : jnp.ndarray, shape (3 * Ns,), optional
+        Basis centres; only used with ``magnetic=True`` (default zero).
+    magnetic : bool
+        Also scale with the non-uniform magnetic force. On axis ``i`` the field scale
+        ``max_x |E_i - <E_i>|`` becomes ``max_x |E_i - <E_i>| + sum_{j != i} V_j max_x |B_l - <B_l>|``
+        (``i, j, l`` a permutation), ``V_j = |u_j| + a_j sqrt(2 N_j)`` the largest velocity the kept
+        ladder on axis ``j`` represents (turning point of its top Hermite function). The ``v x B`` term
+        gives the same non-normal top-mode growth as ``E`` once ``B`` is non-uniform (e.g. Weibel past
+        U_B ~ 1e-3, where the electric-only rate leaves it unchanged). Default ``False`` is the
+        electric-only rate above, unchanged.
     """
-    E = F[:3]
-    dE = jnp.max(jnp.abs(E - jnp.mean(E, axis=(-3, -2, -1), keepdims=True)), axis=(-3, -2, -1))  # (3,)
     N = jnp.array([Nn, Nm, Np], dtype=float)
     a = alpha_s.reshape(Ns, 3)
+    if magnetic:
+        dev = jnp.max(jnp.abs(F - jnp.mean(F, axis=(-3, -2, -1), keepdims=True)), axis=(-3, -2, -1))  # (6,)
+        dE, dB = dev[:3], dev[3:6]
+        u = jnp.zeros_like(a) if u_s is None else u_s.reshape(Ns, 3)
+        V = jnp.abs(u) + a * jnp.sqrt(2 * N)[None, :]
+        scale = dE[None, :] + jnp.stack([V[:, 1] * dB[2] + V[:, 2] * dB[1],
+                                         V[:, 2] * dB[0] + V[:, 0] * dB[2],
+                                         V[:, 0] * dB[1] + V[:, 1] * dB[0]], axis=1)
+    else:
+        E = F[:3]
+        dE = jnp.max(jnp.abs(E - jnp.mean(E, axis=(-3, -2, -1), keepdims=True)), axis=(-3, -2, -1))  # (3,)
+        scale = jnp.broadcast_to(dE[None, :], a.shape)
     active = (N > 3)[None, :]
-    per_axis = jnp.where(active, jnp.sqrt(2 * N)[None, :] * dE[None, :] / a, 0.0)
+    per_axis = jnp.where(active, jnp.sqrt(2 * N)[None, :] * scale / a, 0.0)
     rate = c * jnp.abs(qs * Omega_cs) * jnp.max(per_axis, axis=1)
     return rate.reshape(Ns, 1, 1, 1, 1, 1, 1)
 
@@ -412,7 +432,7 @@ def dougherty_rate_real(C, U, theta, nu, alpha_s, u_s, Nn, Nm, Np, Ns):
     return jnp.asarray(nu)[:, None, None, None] * out if jnp.ndim(nu) else nu * out
 
 
-def dougherty_cross_moments(dens, U, theta, ms, s, r, active):
+def dougherty_cross_moments(dens, U, theta, ms, s, r, active, beta=None):
     """
     Pair moments ``(u_sr, theta_sr, theta_rs)`` that make ``C_sr + C_rs`` conserve momentum and energy.
 
@@ -423,17 +443,33 @@ def dougherty_cross_moments(dens, U, theta, ms, s, r, active):
 
     makes the exchanges cancel, ``Q_sr + Q_rs = 0`` (``T = m theta``; ``d`` and the drift difference run over
     the ``active`` velocity axes, those with ``N_i >= 3``, the only ones on which the operator acts).
-    This is Greene's form with ``beta = 0``.
+    With ``beta=None`` this is the LBO-EM form of Francisquez et al. (JPP 88, 905880303, 2022, eqs. 2.18-2.20); its
+    momentum relaxation matches the Coulomb (Morse) rate for ``nu_sr = alpha_E (m_s + m_r)/(m_s n_s)`` but its
+    temperature-difference relaxation is twice the Morse rate.
+
+    With a number ``beta`` it is their LBO-G (eqs. 2.8-2.9 with ``delta_s = 1``), which matches both Morse rates
+    for ``beta = 0``. Returns then ``(u_sr, theta_sr, theta_rs, u_rs)`` with, ``w = (1 + beta)/2``,
+
+        u_sr = U_s + w (U_r - U_s),   T_sr = T_s + w m_s/(m_s + m_r) [T_r - T_s + m_r |U_s - U_r|^2 / d],
+
+    and the mirrored expressions for ``(s, r)`` exchanged. Both conserve momentum and energy when
+    ``m_s n_s nu_sr = m_r n_r nu_rs``.
     """
-    usr = 0.5 * (U[s] + U[r])
     d = len(active)
     du2 = sum((U[s, i] - U[r, i]) ** 2 for i in active)
+    if beta is not None:
+        w = 0.5 * (1.0 + beta)
+        Ts, Tr = ms[s] * theta[s], ms[r] * theta[r]
+        Tsr = Ts + w * ms[s] / (ms[s] + ms[r]) * (Tr - Ts + ms[r] * du2 / d)
+        Trs = Tr + w * ms[r] / (ms[s] + ms[r]) * (Ts - Tr + ms[s] * du2 / d)
+        return U[s] + w * (U[r] - U[s]), Tsr / ms[s], Trs / ms[r], U[r] + w * (U[s] - U[r])
+    usr = 0.5 * (U[s] + U[r])
     T = ms[s] * ms[r] * (theta[s] + theta[r]) / (ms[s] + ms[r]) \
         + ms[s] * ms[r] * du2 / (2 * d * (ms[s] + ms[r]))
     return usr, T / ms[s], T / ms[r]
 
 
-def dougherty_collisions(C, nu_matrix, alpha_s, u_s, Omega_cs, Nn, Nm, Np, Ns, mask23):
+def dougherty_collisions(C, nu_matrix, alpha_s, u_s, Omega_cs, Nn, Nm, Np, Ns, mask23, beta=None):
     """
     Spectral Dougherty collision rate ``dCk/dt`` of all species (self and pair collisions), de-aliased.
 
@@ -441,6 +477,7 @@ def dougherty_collisions(C, nu_matrix, alpha_s, u_s, Omega_cs, Nn, Nm, Np, Ns, m
     ``nu_rs = nu_sr m_s n_s / (m_r n_r)`` is set pointwise (momentum conservation), the lower triangle is
     ignored. Masses are ``m_s = 1 / Omega_cs`` (SPECTRAX units). Moments and products are formed in real
     space from the masked state and the result is transformed and masked with the same strict 2/3 mask.
+    ``beta=None``: LBO-EM cross moments; a number selects Francisquez's LBO-G (see :func:`dougherty_cross_moments`).
     """
     dens, U, theta = dougherty_moments(C, alpha_s, u_s, Nn, Nm, Np, Ns)
     nu_matrix = jnp.asarray(nu_matrix, dtype=float)
@@ -450,11 +487,13 @@ def dougherty_collisions(C, nu_matrix, alpha_s, u_s, Omega_cs, Nn, Nm, Np, Ns, m
     active = tuple(i for i, _, _ in _dougherty_axes(Nn, Nm, Np))
     for s in range(Ns):
         for r in range(s + 1, Ns):
-            usr, th_sr, th_rs = dougherty_cross_moments(dens, U, theta, ms, s, r, active)
+            cm = dougherty_cross_moments(dens, U, theta, ms, s, r, active, beta)
+            usr, th_sr, th_rs = cm[:3]
+            usr_rs = cm[3] if beta is not None else usr
             nu_sr = nu_matrix[s, r]
             nu_rs = nu_sr * ms[s] * dens[s] / (ms[r] * dens[r])
-            for a_, b_, th, nu in ((s, r, th_sr, nu_sr), (r, s, th_rs, nu_rs)):
-                one = dougherty_rate_real(C[a_:a_ + 1], usr[None], th[None], jnp.broadcast_to(nu, th.shape)[None],
+            for a_, b_, th, nu, uu in ((s, r, th_sr, nu_sr, usr), (r, s, th_rs, nu_rs, usr_rs)):
+                one = dougherty_rate_real(C[a_:a_ + 1], uu[None], th[None], jnp.broadcast_to(nu, th.shape)[None],
                                           alpha_s.reshape(Ns, 3)[a_], u_s.reshape(Ns, 3)[a_], Nn, Nm, Np, 1)
                 rate = rate.at[a_].add(one[0])
     return jnp.fft.rfftn(rate, axes=(-1, -3, -2), norm="forward") * mask23

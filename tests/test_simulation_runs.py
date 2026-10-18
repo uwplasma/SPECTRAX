@@ -126,6 +126,34 @@ def test_implicit_midpoint_evaluates_rhs_at_midpoint_time():
     )[0]
     assert jnp.allclose(y1, 0.02, rtol=0, atol=1e-12)
 
+def test_separate_rtol_atol_default_to_ode_tolerance():
+    """ode_rtol/ode_atol default to ode_tolerance (bitwise the old run); a looser atol alone takes fewer steps."""
+    kw = dict(Nx=9, Nn=8, timesteps=3)
+    base = {"t_max": 2.0, "ode_tolerance": 1e-9}
+    ref = simulation(base, **kw)
+    same = simulation({**base, "ode_rtol": 1e-9, "ode_atol": 1e-9}, **kw)
+    assert bool(jnp.all(ref["Ck"] == same["Ck"])) and bool(jnp.all(ref["Fk"] == same["Fk"]))
+    assert float(ref["ode_rtol"]) == float(ref["ode_atol"]) == 1e-9
+    loose = simulation({**base, "ode_atol": 1e-3}, **kw)
+    assert int(loose["solver_stats"]["num_steps"]) < int(ref["solver_stats"]["num_steps"])
+
+def test_floored_pid_controller():
+    """floor=None (or all-None leaves) is bitwise PIDController; a floor on a tiny component stops it driving dt."""
+    from diffrax import ODETerm, Dopri8, diffeqsolve, PIDController, SaveAt
+    from spectrax import FlooredPIDController
+    term = ODETerm(lambda t, y, args: {"big": jnp.cos(t) * y["big"], "tiny": -30.0 * jnp.sin(30.0 * t) * y["tiny"]})
+    y0 = {"big": jnp.array([1.0, 2.0]), "tiny": jnp.array([1e-12])}
+    solve = lambda c: diffeqsolve(term, Dopri8(), 0.0, 5.0, 1e-3, y0, stepsize_controller=c, saveat=SaveAt(t1=True))
+    tol = dict(rtol=1e-10, atol=1e-16)
+    ref = solve(PIDController(**tol))
+    for floor in (None, {"big": None, "tiny": None}):
+        sol = solve(FlooredPIDController(**tol, floor=floor))
+        assert int(sol.stats["num_steps"]) == int(ref.stats["num_steps"])
+        assert all(bool(jnp.all(a == b)) for a, b in zip(sol.ys.values(), ref.ys.values()))
+    floored = solve(FlooredPIDController(**tol, floor={"big": None, "tiny": jnp.array(1e-10 * 1.0)}))
+    assert int(floored.stats["num_steps"]) < int(ref.stats["num_steps"]) // 2
+    assert bool(jnp.allclose(floored.ys["big"], ref.ys["big"], rtol=1e-8, atol=0))
+
 if __name__ == "__main__":
     pytest.main()
 
@@ -178,3 +206,32 @@ def test_continuation_from_output_matches_single_run():
                         **g, timesteps=2, **kw)
     assert jnp.allclose(second["Ck"][-1], full["Ck"][-1], rtol=0, atol=1e-13)
     assert jnp.allclose(second["Fk"][-1], full["Fk"][-1], rtol=0, atol=1e-13)
+
+
+def test_species_toml_builds_a_gauss_consistent_state_and_damps_at_the_landau_rate(tmp_path):
+    """A physical species table gives the right densities, satisfies Gauss's law, and Landau damps at k lambda_D = 0.5."""
+    import numpy as np
+    from spectrax import load_parameters, simulation
+    toml = tmp_path / "landau.toml"
+    toml.write_text("[input_parameters]\nLx = 1.2566370614359172\nt_max = 20.0\nnu = 2.0\n"
+                    "[solver_parameters]\nNx = 9\nNn = 64\ntimesteps = 201\n"
+                    "[species.electrons]\ncharge = -1\nvth = 0.1414213562\nperturbation_amplitude = 0.01\n"
+                    "[species.protons]\ncharge = 1\nmass = 1836\nvth = 0.0033002\n")
+    p, s = load_parameters(toml)
+    assert s["Ns"] == 2
+    density = [np.asarray(p["Ck_0"][i * 64, 0, :, 0]) * np.prod(np.asarray(p["alpha_s"][3 * i:3 * i + 3])) for i in range(2)]
+    np.testing.assert_allclose([density[0][0], density[0][1], density[1][1]], [1.0, 0.005, 0.0], atol=1e-12)
+    k = 2 * np.pi / p["Lx"]
+    np.testing.assert_allclose(1j * k * p["Fk_0"][0, 0, 1, 0], -density[0][1] + density[1][1], atol=1e-14)
+    out = simulation(p, **s)
+    t, E = np.asarray(out["time"]), np.abs(np.asarray(out["Fk"][:, 0, 0, 1, 0]))
+    peaks = [i for i in range(1, len(E) - 1) if E[i] > E[i - 1] and E[i] > E[i + 1]]
+    np.testing.assert_allclose(np.polyfit(t[peaks], np.log(E[peaks]), 1)[0], -0.1533, rtol=0.02)
+    np.testing.assert_allclose(np.pi / np.mean(np.diff(t[peaks])), 1.4156, rtol=0.01)
+
+
+def test_the_first_species_must_set_the_field_units():
+    import pytest
+    from spectrax import species_initial_state
+    with pytest.raises(ValueError):
+        species_initial_state({"ions": dict(charge=1, mass=1836)})
