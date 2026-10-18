@@ -308,6 +308,9 @@ def load_parameters(input_file, **overrides):
     collisions = parameters.get("collisions")
     if collisions and collisions.get("model", "none") != "none":
         solver_parameters["collision_model"] = collisions["model"]
+        if collisions.get("cross_species") == "francisquez_g":  # LBO-G cross-species moments, free parameter beta
+            solver_parameters["collision_model"] = "dougherty_g"
+            input_parameters["beta_dougherty"] = collisions.get("beta", 0.0)
         input_parameters["nu_dougherty"] = collisions.get("nu", 0.0)
 
     # Whether to use adaptive time-stepping or constant dt.
