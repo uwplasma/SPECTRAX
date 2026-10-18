@@ -80,7 +80,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collis
         Cached parameter tuple produced in `simulation` providing physical constants,
         grids, and helper arrays. With ``collision_model="dougherty"`` its last entry is the
         ``(Ns, Ns)`` Dougherty collision-frequency matrix.
-    collision_model : {None, "dougherty"}
+    collision_model : {None, "dougherty", "dougherty_g"}
         Physical collision operator added to the kinetic right-hand side (see
         :func:`spectrax._model.dougherty_collisions`); independent of the numerical
         hypercollision ``nu``. None: no term, bitwise the previous right-hand side.
@@ -112,11 +112,12 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collis
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
                                       Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23=mask23, F0=F0)
-    if collision_model == "dougherty":
+    if collision_model in ("dougherty", "dougherty_g"):
         dCk_s_dt = dCk_s_dt + dougherty_collisions(C.reshape(Ns, Np, Nm, Nn, *C.shape[-3:]), args[28], alpha_s, u_s,
-                                                   Omega_cs, Nn, Nm, Np, Ns, mask23)
+                                                   Omega_cs, Nn, Nm, Np, Ns, mask23,
+                                                   beta=args[29] if collision_model == "dougherty_g" else None)
     elif collision_model is not None:
-        raise ValueError(f"collision_model must be None or 'dougherty', got {collision_model!r}")
+        raise ValueError(f"collision_model must be None, 'dougherty' or 'dougherty_g', got {collision_model!r}")
 
     dBk_dt = -1j * cross_product(nabla, Fk[:3])
     
@@ -226,7 +227,10 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         self-consistent moments) operator with frequencies ``input_parameters["nu_dougherty"]``,
         a scalar (self collisions of every species) or an ``(Ns, Ns)`` matrix (diagonal: self;
         upper triangle ``[s, r]``: pair frequency ``nu_sr``, ``nu_rs`` from momentum conservation).
-        From a TOML file: ``[collisions] model = "dougherty", nu = ...``.
+        From a TOML file: ``[collisions] model = "dougherty", nu = ...``. ``"dougherty_g"``: same, with the
+        LBO-G cross-species moments of Francisquez et al. (JPP 88, 905880303) and ``input_parameters["beta_dougherty"]``
+        (default 0, which matches both Coulomb relaxation rates for ``nu_sr = alpha_E (m_s+m_r)/(m_s n_s)``); TOML:
+        ``cross_species = "francisquez_g"``, ``beta = 0.0``.
 
     Returns
     -------
@@ -270,6 +274,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     if collision_model is not None:
         nu_D = jnp.asarray(parameters.get("nu_dougherty", 0.0), dtype=float)
         args = args + (jnp.eye(Ns) * nu_D if nu_D.ndim == 0 else nu_D.reshape(Ns, Ns),)
+        if collision_model == "dougherty_g":  # Francisquez et al. LBO-G; beta = 0 matches the Morse rates
+            args = args + (jnp.asarray(parameters.get("beta_dougherty", 0.0), dtype=float),)
     
 
     stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_rtol"], dtmin, parameters["ode_atol"])
