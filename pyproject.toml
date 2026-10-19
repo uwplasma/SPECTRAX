@@ -29,9 +29,13 @@ keywords = ["Plasma",
      "Simulation",
      "JAX"]
  
-dependencies = [ "jax", "jaxlib", "jax_tqdm", "matplotlib"]
- 
+dependencies = [ "jax>=0.7", "jaxlib", "numpy>=2", "jax_tqdm", "diffrax", "orthax", "matplotlib"]
+
 requires-python = ">=3.5"
+
+[project.optional-dependencies]
+# NVIDIA GPUs on Linux: pip install "spectrax[gpu]"
+gpu = [ "jax[cuda12]>=0.7" ]
 
 [project.urls]
 Homepage = "https://github.com/uwplasma/SPECTRAX"

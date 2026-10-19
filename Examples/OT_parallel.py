@@ -1,12 +1,12 @@
 """Example: 2D Orszag–Tang vortex, split across several devices.
 
 Same setup as ``2D_Orszag_Tang.py``, run in parallel. The ``[parallel]`` table in ``input_OT_parallel.toml``
-chooses how the simulation is divided: here the 2 species and the 24 x 24 elements are split over a
-2 x 2 x 2 mesh of 8 devices, so each device holds one species and a 12 x 12 block of elements.
+chooses the device type (``device = "cpu"`` or ``"gpu"``), how many devices to use (``num_devices``), and how
+the simulation is divided between them: here the 2 species and the 64 x 64 elements are split over a
+2 x 2 x 2 mesh of 8 devices, so each device holds one species and a 32 x 32 block of elements.
 
-On a machine without GPUs, ``cpu_devices = 8`` in the input file creates 8 virtual CPU devices. That checks
-the parallel setup, but gives little speedup, because a single CPU device already uses most of the cores.
-On a multi-GPU machine the mesh is built from the GPUs instead.
+With ``device = "cpu"`` the CPU is split into virtual devices. That checks the parallel setup, but gives little
+speedup, because a single CPU device already uses most of the cores; real speedups need several GPUs.
 
 The returned ``Ck`` and ``Fk`` stay distributed over the devices. The post-processing below works on them
 directly, and converting them with ``numpy.asarray`` (as the plotting helpers do) gathers them.
@@ -28,14 +28,14 @@ from orszag_tang_data_analysis import (
         plot_Jz_slice, animate_Jz
     )
 
-# Read from input_OT_parallel.toml. This has to happen before any other JAX computation, because the
-# `cpu_devices` setting can only take effect while JAX has not run anything yet.
+# Read from input_OT_parallel.toml. This has to happen before any other JAX computation, because the devices
+# chosen in its [parallel] table can only be set up while JAX has not run anything yet.
 toml_file = os.path.join(os.path.dirname(__file__), 'input_OT_parallel.toml')
 input_parameters, solver_parameters = load_parameters(toml_file)
 
 mesh = solver_parameters.get("mesh")
 if mesh is None:
-    print('No [parallel] table in the input file: running on a single device.')
+    print('Running on a single device.')
 else:
     print(f'Splitting the simulation over {mesh.devices.size} {mesh.devices.flat[0].platform.upper()} devices: '
           f'{mesh.shape["s"]} along species, {mesh.shape["x"]} along x, {mesh.shape["y"]} along y, {mesh.shape["z"]} along z.')

@@ -8,7 +8,7 @@ except ModuleNotFoundError: import pip._vendor.tomli as tomllib
 import diffrax
 import inspect
 from .midpoint_solver import ImplicitMidpoint
-from ._parallel import setup_cpu_devices, make_mesh
+from ._parallel import setup_devices, make_mesh
 from math import comb
 from jax.scipy.special import factorial
 
@@ -232,21 +232,23 @@ def compute_A_pm_matrices(Nn, Nm, Np, alpha, u):
     Ay_mat = alpha[:, 1, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Nm, Nm)), axis=-1)) + u[:, 1, None, None] * jnp.eye(Nm)
     Az_mat = alpha[:, 2, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Np, Np)), axis=-1)) + u[:, 2, None, None] * jnp.eye(Np)
 
+    # The matrices are symmetric, so eigh applies: it runs on every backend (unlike eig, GPU support for which
+    # depends on the JAX version) and returns orthonormal U, whose transpose is its inverse.
     # Each returned matrix has shape (Ns, N, N), indexed [species, output mode, input mode].
-    Lam, U = jnp.linalg.eig(Ax_mat)
+    Lam, U = jnp.linalg.eigh(Ax_mat)
     D_mat = Lam[:, :, None] * jnp.eye(Nn)
-    Ax_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)
-    Ax_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)
+    Ax_p = U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2
+    Ax_m = U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2
 
-    Lam, U = jnp.linalg.eig(Ay_mat)
+    Lam, U = jnp.linalg.eigh(Ay_mat)
     D_mat = Lam[:, :, None] * jnp.eye(Nm)
-    Ay_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)
-    Ay_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)
+    Ay_p = U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2
+    Ay_m = U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2
 
-    Lam, U = jnp.linalg.eig(Az_mat)
+    Lam, U = jnp.linalg.eigh(Az_mat)
     D_mat = Lam[:, :, None] * jnp.eye(Np)
-    Az_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)
-    Az_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)
+    Az_p = U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2
+    Az_m = U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2
 
     return Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m
 
@@ -258,10 +260,10 @@ def compute_R_pm_matrices(upwind=False):
 
     # R_p, R_m have shape (3, 6, 6), indexed [direction, output field, input field].
     if upwind: # upwind flux
-        Lam, U = jnp.linalg.eig(R_mat)
+        Lam, U = jnp.linalg.eigh(R_mat)
         D = Lam[:, :, None] * jnp.eye(6)
-        R_p = jnp.real(U @ (D + jnp.abs(D)) @ jnp.transpose(U, (0, 2, 1)) / 2)
-        R_m = jnp.real(U @ (D - jnp.abs(D)) @ jnp.transpose(U, (0, 2, 1)) / 2)
+        R_p = U @ (D + jnp.abs(D)) @ jnp.transpose(U, (0, 2, 1)) / 2
+        R_m = U @ (D - jnp.abs(D)) @ jnp.transpose(U, (0, 2, 1)) / 2
     else: # central flux
         R_p = R_mat / 2
         R_m = R_mat / 2
@@ -287,8 +289,8 @@ def DG_project(f, input_parameters, solver_parameters):
     jnp.ndarray
         DG coefficients with shape `(..., Ny, Nx, Nz, Nl)`.
     """
-    # Imported here because importing orthax creates JAX arrays, which fixes the number of CPU devices;
-    # importing spectrax must leave that open so `setup_cpu_devices` can still be called.
+    # Imported here because importing orthax creates JAX arrays, which starts JAX; importing spectrax must leave
+    # JAX unstarted so that `setup_devices` can still create virtual CPU devices.
     from orthax.legendre import leggauss, legvander
 
     p = {**input_parameters, **solver_parameters}
@@ -333,26 +335,28 @@ def load_parameters(input_file):
 
     Notes
     -----
-    An optional ``[parallel]`` table sets how the simulation is split across devices:
-    ``species``, ``x``, ``y`` and ``z`` give the number of devices along each mesh axis (default 1), and
-    ``cpu_devices`` exposes that many virtual CPU devices (see `setup_cpu_devices`). When any of
-    ``species``, ``x``, ``y`` or ``z`` exceeds 1, `solver_parameters` gets a ``"mesh"`` entry from `make_mesh`.
-    Because ``cpu_devices`` must take effect before JAX runs any computation, call this function before
-    other JAX operations when using it.
+    An optional ``[parallel]`` table chooses the devices and how the simulation is split across them:
+    ``device`` (``"cpu"`` or ``"gpu"``) and ``num_devices`` are required, and ``species``, ``x``, ``y`` and ``z``
+    give the number of devices along each mesh axis (default 1; their product must equal ``num_devices``).
+    The devices are set up with `setup_devices`, and when ``num_devices`` exceeds 1, `solver_parameters` gets a
+    ``"mesh"`` entry from `make_mesh`. Because the devices must be set up before JAX runs any computation, call
+    this function before other JAX operations when the table is present.
     """
     parameters = tomllib.load(open(input_file, "rb"))
     input_parameters = parameters['input_parameters']
     solver_parameters = parameters['solver_parameters']
 
-    parallel = parameters.get('parallel', {})
-    unknown = set(parallel) - {"species", "x", "y", "z", "cpu_devices"}
-    if unknown:
-        raise ValueError(f"Unknown entries {sorted(unknown)} in the [parallel] table; allowed are species, x, y, z and cpu_devices.")
-    if "cpu_devices" in parallel:
-        setup_cpu_devices(parallel["cpu_devices"])
-    mesh_shape = {axis: parallel.get(axis, 1) for axis in ("species", "x", "y", "z")}
-    if any(size > 1 for size in mesh_shape.values()):
-        solver_parameters["mesh"] = make_mesh(**mesh_shape)
+    parallel = parameters.get('parallel')
+    if parallel is not None:
+        allowed = {"device", "num_devices", "species", "x", "y", "z"}
+        if set(parallel) - allowed:
+            raise ValueError(f"Unknown entries {sorted(set(parallel) - allowed)} in the [parallel] table; allowed are {sorted(allowed)}.")
+        missing = {"device", "num_devices"} - set(parallel)
+        if missing:
+            raise ValueError(f"The [parallel] table must set {sorted(missing)}.")
+        devices = setup_devices(parallel["device"], parallel["num_devices"])
+        if len(devices) > 1:
+            solver_parameters["mesh"] = make_mesh(devices, **{axis: parallel.get(axis, 1) for axis in ("species", "x", "y", "z")})
 
     # Whether to use adaptive time-stepping or constant dt.
     # Default is True.

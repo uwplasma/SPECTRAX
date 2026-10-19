@@ -29,11 +29,12 @@ dt = 0.00001
 solver = "Dopri8"
 
 [parallel]
-# Number of devices along each axis of the mesh: 2 x 2 x 2 = 8 devices, each holding one species
-# and a 12 x 12 block of elements. Axes left out (here z) default to 1.
+# Device type ("cpu" or "gpu") and how many devices to use. A CPU is split into that many virtual devices;
+# for "gpu", at least that many GPUs must be present.
+device = "cpu"
+num_devices = 8
+# Number of devices along each axis of the mesh; their product must equal num_devices. Here 2 x 2 x 2 = 8,
+# so each device holds one species and a 32 x 32 block of elements. Axes left out (here z) default to 1.
 species = 2
 x = 2
 y = 2
-# Virtual CPU devices, for running on a machine without GPUs. On a multi-GPU machine the mesh uses the
-# GPUs instead, and this setting has no effect on them.
-cpu_devices = 8
