@@ -11,5 +11,6 @@ from ._diagnostics import *
 from ._initialize_maxwellian import *
 from ._inverse_transform import *
 from ._model import *
+from ._parallel import *
 from ._plot import *
 from ._simulation import *

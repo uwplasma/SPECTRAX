@@ -1,0 +1,39 @@
+[input_parameters]
+Lx = 50.0
+Ly = 50.0
+Lz = 1.0
+ms = [1.0, 25.0]
+qs = [-1.0, 1.0]
+alpha_s = [0.25, 0.25, 0.25, 0.05, 0.05, 0.05]
+u_s = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+Omega_ce = 0.5
+nu = 1.0
+D = 0.0
+t_max = 50.0
+ode_tolerance = 1e-7
+
+[solver_parameters]
+# Nx, Ny and Ns must be divisible by the number of devices along x, y and species below
+# (the serial example's 25 x 25 grid cannot be split).
+Nx = 64
+Ny = 64
+Nz = 1
+Nn = 6
+Nm = 6
+Np = 6
+Ns = 2
+N_DG=1
+dims=2
+timesteps = 3
+dt = 0.00001
+solver = "Dopri8"
+
+[parallel]
+# Number of devices along each axis of the mesh: 2 x 2 x 2 = 8 devices, each holding one species
+# and a 12 x 12 block of elements. Axes left out (here z) default to 1.
+species = 2
+x = 2
+y = 2
+# Virtual CPU devices, for running on a machine without GPUs. On a multi-GPU machine the mesh uses the
+# GPUs instead, and this setting has no effect on them.
+cpu_devices = 8

@@ -8,9 +8,9 @@ except ModuleNotFoundError: import pip._vendor.tomli as tomllib
 import diffrax
 import inspect
 from .midpoint_solver import ImplicitMidpoint
+from ._parallel import setup_cpu_devices, make_mesh
 from math import comb
 from jax.scipy.special import factorial
-from orthax.legendre import leggauss, legvander
 
 __all__ = ["load_parameters", "initialize_simulation_parameters", "construct_idx_array", "DG_project"]
 
@@ -287,6 +287,10 @@ def DG_project(f, input_parameters, solver_parameters):
     jnp.ndarray
         DG coefficients with shape `(..., Ny, Nx, Nz, Nl)`.
     """
+    # Imported here because importing orthax creates JAX arrays, which fixes the number of CPU devices;
+    # importing spectrax must leave that open so `setup_cpu_devices` can still be called.
+    from orthax.legendre import leggauss, legvander
+
     p = {**input_parameters, **solver_parameters}
     Lx, Ly, Lz = p["Lx"], p["Ly"], p["Lz"]
     Nx, Ny, Nz = p["Nx"], p["Ny"], p["Nz"]
@@ -326,10 +330,29 @@ def load_parameters(input_file):
     tuple[dict, dict]
         A pair `(input_parameters, solver_parameters)` where `solver_parameters`
         includes an instantiated Diffrax solver ready for `diffeqsolve`.
+
+    Notes
+    -----
+    An optional ``[parallel]`` table sets how the simulation is split across devices:
+    ``species``, ``x``, ``y`` and ``z`` give the number of devices along each mesh axis (default 1), and
+    ``cpu_devices`` exposes that many virtual CPU devices (see `setup_cpu_devices`). When any of
+    ``species``, ``x``, ``y`` or ``z`` exceeds 1, `solver_parameters` gets a ``"mesh"`` entry from `make_mesh`.
+    Because ``cpu_devices`` must take effect before JAX runs any computation, call this function before
+    other JAX operations when using it.
     """
     parameters = tomllib.load(open(input_file, "rb"))
     input_parameters = parameters['input_parameters']
     solver_parameters = parameters['solver_parameters']
+
+    parallel = parameters.get('parallel', {})
+    unknown = set(parallel) - {"species", "x", "y", "z", "cpu_devices"}
+    if unknown:
+        raise ValueError(f"Unknown entries {sorted(unknown)} in the [parallel] table; allowed are species, x, y, z and cpu_devices.")
+    if "cpu_devices" in parallel:
+        setup_cpu_devices(parallel["cpu_devices"])
+    mesh_shape = {axis: parallel.get(axis, 1) for axis in ("species", "x", "y", "z")}
+    if any(size > 1 for size in mesh_shape.values()):
+        solver_parameters["mesh"] = make_mesh(**mesh_shape)
 
     # Whether to use adaptive time-stepping or constant dt.
     # Default is True.
