@@ -1,0 +1,51 @@
+# Input for Examples/OT_parallel.py: the 2D Orszag-Tang vortex of input_2D_orszag_tang.toml on several
+# LOCAL devices of one process. Physics and solver settings are identical to that file; the ONLY change is the
+# resolution Nx = Ny = 25 -> 32, so that the grid divides evenly over 2 and 4 devices (25 does not).
+# This is a functionality example, not a scaling benchmark (see Examples/benchmark_OT_parallel.py).
+
+[input_parameters]
+Lx = 50.0
+Ly = 50.0
+Lz = 1.0
+ms = [1.0, 25.0]
+qs = [-1.0, 1.0]
+alpha_s = [0.25, 0.25, 0.25, 0.05, 0.05, 0.05]
+u_s = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+Omega_ce = 0.5
+nu = 1.0
+D = 0.0
+t_max = 50.0
+ode_tolerance = 1e-7
+
+[solver_parameters]
+Nx = 32
+Ny = 32
+Nz = 1
+Nn = 5
+Nm = 5
+Np = 5
+Ns = 2
+N_DG = 1
+dims = 2
+timesteps = 3
+dt = 0.00001
+solver = "Dopri8"
+adaptive_time_step = true
+
+# Device selection. num_devices = species_partitions * px * py * pz is the EXACT number of LOCAL devices of the
+# chosen backend used by this one process (not nodes, cores or scheduler slots). Edit this table to change the
+# layout; nothing else changes. Omit the whole table for one automatically selected device.
+[parallel]
+device = "cpu"            # "cpu", "gpu" or "auto"; on CPU the logical devices are created for you
+num_devices = 4
+species_partitions = 1    # ps; must divide Ns = 2
+mesh_shape = [2, 2, 1]    # spatial factors [px, py, pz]; px | Nx, py | Ny, pz | Nz (Nz = 1 -> pz = 1)
+
+# Hybrid, same four devices (2 species groups x 2 x-slabs): replace the four lines above by
+#   num_devices = 4,  species_partitions = 2,  mesh_shape = [2, 1, 1]
+# Species only, two devices (the original Nx = Ny = 25 grid also works here): replace them by
+#   num_devices = 2,  species_partitions = 2,  mesh_shape = [1, 1, 1]
+# One device: species_partitions = 1 and num_devices = 1, with mesh_shape = [1, 1, 1] or removed (a leftover
+#   [2, 2, 1] is rejected, never silently changed).
+# GPUs: device = "gpu" and a num_devices no larger than the visible GPUs (CUDA_VISIBLE_DEVICES is respected).
+# mesh_shape may be omitted; it is then chosen automatically for the given species_partitions.
