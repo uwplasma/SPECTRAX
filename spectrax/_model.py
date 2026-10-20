@@ -1,15 +1,15 @@
 """Hermite–Disontinuous_Galerkin model operators for the Vlasov–Maxwell system.
 
 This module contains the right-hand side of the Hermite–DG moment
-equations (:func:`Hermite_DG_system`).
+equations: :func:`Hermite_DG_rhs` is the shared shaped kernel returning the
+``(dCk_dt, dFk_dt)`` pair and :func:`Hermite_DG_system` is its flat adapter.
 """
 
 import jax.numpy as jnp
 from jax import vmap, jit, debug
 from functools import partial
-from jax.lax import cond
 
-__all__ = ['Hermite_DG_system']
+__all__ = ['Hermite_DG_rhs', 'Hermite_DG_system']
 
 def _pad_hermite_axes(Ck):
     """Pad Hermite axes (p, m, n) by one cell on both sides.
@@ -54,17 +54,17 @@ def cross_product(k_vec, F_vec):
     Fx, Fy, Fz = F_vec
     return jnp.array([ky * Fz - kz * Fy, kz * Fx - kx * Fz, kx * Fy - ky * Fx])
 
-@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
-def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx, 
+@partial(jit, static_argnames=['Nn', 'Nm', 'Np'])
+def Hermite_DG_rhs(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx, 
                         inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product, Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
-                           Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np, Ns):
+                           Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np):
     """
     Evaluate the right-hand side of the coupled Hermite-DG moment equations.
 
     Parameters
     ----------
     Ck : jnp.ndarray
-        Hermite-DG coefficients with shape `(Ns * Np * Nm * Nn, Ny, Nx, Nz, Nl)`.
+        Hermite-DG coefficients with shape `(Ns, Np * Nm * Nn, Ny, Nx, Nz, Nl)`.
     Fk : jnp.ndarray
         DG coefficient-space electromagnetic fields with shape `(6, Ny, Nx, Nz, Nl)` ordered
         as `(Ex, Ey, Ez, Bx, By, Bz)`.
@@ -95,22 +95,24 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
     D : float
         Hyper-diffusion coefficient.
     alpha_s, u_s : jnp.ndarray
-        Thermal scaling parameters and drift velocities per species.
+        Thermal scaling parameters and drift velocities per species, shape `(Ns, 3)` or flat `(3 * Ns,)`.
     ms : jnp.ndarray
         Species masses.
     qs : jnp.ndarray
         Species charges.
     Omega_ce : jnp.ndarray
         Electron cyclotron frequency.
-    Nn, Nm, Np, Ns : int
-        Number of Hermite modes and species.
+    Nn, Nm, Np : int
+        Number of Hermite modes along each velocity-space axis.
 
     Returns
     -------
-    jnp.ndarray
-        Flattened Time derivative array `(dCk/dt, dFk/dt)` with length `(Ns * Np * Nm * Nn + 6) * Ny * Nx * Nz * Nl)`.
+    tuple[jnp.ndarray, jnp.ndarray]
+        Time derivatives `(dCk/dt, dFk/dt)` with the shapes of `Ck` and `Fk`.
     """
 
+    Ns = Ck.shape[0]
+    Ck_shape = Ck.shape
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-4:])
     Ny, Nx, Nz = Ck.shape[-4], Ck.shape[-3], Ck.shape[-2]
     dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz 
@@ -242,14 +244,16 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
 
     ####################### Field evolution equations (Maxwell) #####################
     
-    Cn1 = cond(Nn > 1, lambda x: Ck[:, 0, 0, 1], lambda x: jnp.zeros_like(Ck[:, 0, 0, 0]), operand=None) # Only use first order mode for current if it exists
-    Cm1 = cond(Nm > 1, lambda x: Ck[:, 0, 1, 0], lambda x: jnp.zeros_like(Ck[:, 0, 0, 0]), operand=None)
-    Cp1 = cond(Np > 1, lambda x: Ck[:, 1, 0, 0], lambda x: jnp.zeros_like(Ck[:, 0, 0, 0]), operand=None)
-
-    source_x = jnp.sum((q * a0 * a1 * a2)[:, 0, 0, 0] * (Ck[:, 0, 0, 0] * u0[:, 0, 0, 0] + a0[:, 0, 0, 0] * Cn1 / jnp.sqrt(2)), axis=0)
-    source_y = jnp.sum((q * a0 * a1 * a2)[:, 0, 0, 0] * (Ck[:, 0, 0, 0] * u1[:, 0, 0, 0] + a1[:, 0, 0, 0] * Cm1 / jnp.sqrt(2)), axis=0)
-    source_z = jnp.sum((q * a0 * a1 * a2)[:, 0, 0, 0] * (Ck[:, 0, 0, 0] * u2[:, 0, 0, 0] + a2[:, 0, 0, 0] * Cp1 / jnp.sqrt(2)), axis=0)
-    source = -(1 / Omega_ce) * jnp.stack((source_x, source_y, source_z, jnp.zeros_like(source_x), jnp.zeros_like(source_y), jnp.zeros_like(source_z)))
+    # Per-species current from the low-order moments, stacked as (Ns, 3, Ny, Nx, Nz, Nl) and summed over species once.
+    C0 = Ck[:, 0, 0, 0]
+    zero = jnp.zeros_like(C0)
+    Cn1 = Ck[:, 0, 0, 1] if Nn > 1 else zero # Only use first order mode for current if it exists
+    Cm1 = Ck[:, 0, 1, 0] if Nm > 1 else zero
+    Cp1 = Ck[:, 1, 0, 0] if Np > 1 else zero
+    al, ud = alpha[:, :, None, None, None, None], u[:, :, None, None, None, None]
+    J_species = (q * a0 * a1 * a2)[:, 0, 0, 0, None] * (C0[:, None] * ud + al * jnp.stack((Cn1, Cm1, Cp1), axis=1) / jnp.sqrt(2))
+    J = jnp.sum(J_species, axis=0)
+    source = -(1 / Omega_ce) * jnp.concatenate((J, jnp.zeros_like(J)))
 
     ex = jnp.array([1, 0, 0])
     ey = jnp.array([0, 1, 0])
@@ -281,4 +285,22 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
     dF_bdy = dF_bdy_xp + dF_bdy_yp + dF_bdy_zp - (dF_bdy_xm + dF_bdy_ym + dF_bdy_zm)
 
     dFk_dt = inv_m * (dF_integral - dF_bdy) + source
-    return jnp.concatenate([dCk_s_dt.reshape(-1), dFk_dt.reshape(-1)])
+    return dCk_s_dt.reshape(Ck_shape), dFk_dt
+
+@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
+def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx, 
+                        inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product, Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
+                           Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np, Ns):
+    """
+    Flat adapter around :func:`Hermite_DG_rhs` with `Ck` of shape `(Ns * Np * Nm * Nn, Ny, Nx, Nz, Nl)`.
+    Parameters are as in :func:`Hermite_DG_rhs`, plus the number of species `Ns`.
+
+    Returns
+    -------
+    jnp.ndarray
+        Flattened Time derivative array `(dCk/dt, dFk/dt)` with length `(Ns * Np * Nm * Nn + 6) * Ny * Nx * Nz * Nl)`.
+    """
+    dCk_dt, dFk_dt = Hermite_DG_rhs(Ck.reshape(Ns, -1, *Ck.shape[-4:]), Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus,
+                                    sqrt_p_plus, sqrt_p_minus, basis_idx, inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product,
+                                    Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m, Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np)
+    return jnp.concatenate([dCk_dt.reshape(-1), dFk_dt.reshape(-1)])
