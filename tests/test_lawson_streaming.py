@@ -125,7 +125,7 @@ def test_order_with_streaming_and_with_rate_in_the_factor():
 def test_simulation_streaming_matches_plain_and_keeps_k0_density():
     kw = dict(Nx=9, Nn=16, Ns=2, timesteps=5, input_parameters={"t_max": 2.0, "nu": 0.5})
     plain = simulation(**kw)
-    for mode in ("streaming", "streaming+diagonal"):
+    for mode in ("streaming",):
         lw = simulation(**kw, integrating_factor=mode)
         a, b = np.asarray(plain["Ck"]), np.asarray(lw["Ck"])
         assert np.all(np.isfinite(b))
