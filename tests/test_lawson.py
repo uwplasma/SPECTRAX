@@ -109,3 +109,16 @@ def test_simulation_stiff_hypercollision_matches_plain_with_fewer_steps():
     scale = np.abs(np.asarray(plain["Ck"])).max()
     assert np.abs(np.asarray(lw["Ck"]) - np.asarray(plain["Ck"])).max() < 1e-6 * scale
     assert int(lw["solver_stats"]["num_steps"]) * 2 < int(plain["solver_stats"]["num_steps"])
+
+
+def test_exp_overflow_step_is_rejected_not_accepted():
+    """Adaptive stepping past r h ~ 700 used to accept an inf step (scale = inf => zero scaled error) and then reject
+    forever; now the overflowing step is rejected, shrunk, and the solve finishes with a finite result."""
+    r = jnp.array([1.0e4, 3.0])
+    f = lambda t, y, a: -r * y + jnp.array([0.0, 1.0])
+    ls = LawsonSolver(diffrax.Dopri8(), lambda t, y, a: r)
+    sol = diffrax.diffeqsolve(diffrax.ODETerm(f), ls, 0.0, 2.0, 1e-3, jnp.ones(2),
+                              stepsize_controller=diffrax.PIDController(rtol=1e-6, atol=1e-9), max_steps=5000)
+    out = np.asarray(sol.ys[0])
+    assert np.all(np.isfinite(out)) and abs(out[0]) < 1e-12
+    np.testing.assert_allclose(out[1], 1.0 / 3.0 + (2.0 / 3.0) * np.exp(-6.0), rtol=1e-4)

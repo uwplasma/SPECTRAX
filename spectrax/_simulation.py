@@ -7,6 +7,7 @@ from jax import jit, config
 config.update("jax_enable_x64", True)
 from functools import partial
 from ._lawson import LawsonSolver, hypercollision_rate
+from ._lawson_streaming import hermite_streaming_factor
 from diffrax import (diffeqsolve, Dopri8, ODETerm, SaveAt, PIDController, TqdmProgressMeter,
                      NoProgressMeter, ConstantStepSize, ClipStepSizeController, RecursiveCheckpointAdjoint)
 from ._initialization import initialize_simulation_parameters
@@ -237,6 +238,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         Runge-Kutta solver) in :class:`spectrax.LawsonSolver` so the diagonal hypercollision ``nu * col`` and
         hyper-diffusion ``D k^2`` damping is integrated exactly (rate frozen at the step start; see
         ``spectrax._lawson`` for order and limits). The fields, basis state and non-diagonal terms stay explicit.
+        ``"streaming"`` / ``"streaming+diagonal"``: additionally integrate the Hermite free streaming exactly per Fourier
+        mode (``spectrax._lawson_streaming``; moving-basis widths and drifts taken from the state at the step start).
 
     Returns
     -------
@@ -293,7 +296,14 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         stepsize_controller = ClipStepSizeController(stepsize_controller, step_ts=time)
     if integrating_factor:
         zero = (0.0,) * (len(initial_conditions) - 1)
-        solver = LawsonSolver(solver, lambda t, y, a: (hypercollision_rate(a[8], a[21], a[9], a[19]),) + zero)
+        if integrating_factor in ("streaming", "streaming+diagonal"):
+            shape = initial_conditions[0].shape
+            crate = None if integrating_factor == "streaming" else (
+                lambda t, y, a: hypercollision_rate(a[8], a[21], a[9], a[19]))
+            basis = None if frame is None else (lambda t, y, a: (jnp.real(y[2][1]), jnp.real(y[2][0])))
+            solver = LawsonSolver(solver, factor_fn=hermite_streaming_factor("first", shape, crate, basis))
+        else:
+            solver = LawsonSolver(solver, lambda t, y, a: (hypercollision_rate(a[8], a[21], a[9], a[19]),) + zero)
     sol = diffeqsolve(
         ODETerm(ode_system_partial), solver=solver,
         stepsize_controller=stepsize_controller,

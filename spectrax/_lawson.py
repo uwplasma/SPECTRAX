@@ -31,7 +31,8 @@ Dense output. The interpolant of ``w`` is a polynomial, so ``y(t)`` between step
 one or less; saves on step ends are exact. Use ``diffrax.ClipStepSizeController(controller, step_ts=save_times)`` (the
 ``integrating_factor`` options of ``simulation`` and Dark-SPECTRAX ``run`` do) whenever a stiff rate is present.
 
-Limits. ``r h`` must stay below about 700 (``exp`` overflow in float64). The wrapped solver may be FSAL (e.g.
+Limits. ``r h`` must stay below about 700 (``exp`` overflow in float64); a step that overflows is rejected and shrunk
+(see ``_guard``), it is never accepted. The wrapped solver may be FSAL (e.g.
 ``Dopri8``); the first-same-as-last stage is then recomputed each step (one extra right-hand-side evaluation per
 step) because the stage derivative lives in the transformed variable. Only ``ODETerm`` problems are supported.
 """
@@ -46,7 +47,7 @@ from diffrax import ODETerm
 from diffrax._local_interpolation import AbstractLocalInterpolation
 from diffrax._solver.base import AbstractAdaptiveSolver, AbstractWrappedSolver
 
-__all__ = ["LawsonSolver", "hypercollision_rate"]
+__all__ = ["LawsonSolver", "hypercollision_rate", "simulation_rate"]
 
 
 def _scale(rate, y, tau):
@@ -56,6 +57,20 @@ def _scale(rate, y, tau):
 
 def _mul(a, b):
     return jtu.tree_map(lambda x, y: x * y, a, b)
+
+
+def _guard(y0, y1, y_err):
+    """Overflow guard: if ``exp(r h)`` overflowed (non-finite candidate or error), return ``y0`` with a huge finite error
+    estimate (1e30; an infinite one poisons Diffrax's PID memory with a zero inverse error and the next step becomes inf)
+    so the step controller rejects and shrinks the step. Without it a non-finite candidate gives
+    ``scale = inf`` and a zero scaled error, i.e. an accepted garbage step. Finite steps pass through bitwise."""
+    if y_err is None:
+        return y1, y_err
+    leaves = jtu.tree_leaves((y1, y_err))
+    ok = jnp.all(jnp.stack([jnp.all(jnp.isfinite(x)) for x in leaves]))
+    y1 = jtu.tree_map(lambda a, b: jnp.where(ok, a, b), y1, y0)
+    y_err = jtu.tree_map(lambda e: jnp.where(ok, e, jnp.full_like(e, 1e30)), y_err)
+    return y1, y_err
 
 
 class _LawsonInterpolation(AbstractLocalInterpolation):
@@ -68,6 +83,8 @@ class _LawsonInterpolation(AbstractLocalInterpolation):
         if t1 is not None:
             return self.evaluate(t1, left=left) - self.evaluate(t0, left=left)
         w = self.base.evaluate(t0, left=left)
+        if hasattr(self.rate, "phi"):  # general integrating factor: y = Phi(t - t0) w
+            return self.rate.phi(t0 - self.t0, w)
         return _mul(_scale(self.rate, w, -(t0 - self.t0)), w)
 
 
@@ -78,6 +95,10 @@ class LawsonSolver(AbstractAdaptiveSolver, AbstractWrappedSolver):
     ----------
     solver : diffrax.AbstractSolver
         Explicit Runge-Kutta solver (e.g. ``diffrax.Dopri8()``) with error estimate.
+    factor_fn : callable ``(t, y, args) -> factor``, optional
+        General integrating factor (instead of ``rate_fn``): an object with ``phi(tau, w) = Phi(tau) w`` and
+        ``rhs(vf, t, tau, w, args) = Phi^{-1}(f(t, Phi w) - Phi' w)`` (``tau = t - t0``); see :func:`spectrax.hermite_streaming_factor`
+        (exact Hermite free streaming, optionally with the diagonal rate inside).
     rate_fn : callable ``(t, y, args) -> rate``
         Diagonal damping rates ``r >= 0`` (the term ``-r * y`` is treated exactly), a pytree with the structure
         of ``y`` whose leaves broadcast against the leaves of ``y`` (use ``0.0`` for states outside the
@@ -86,7 +107,8 @@ class LawsonSolver(AbstractAdaptiveSolver, AbstractWrappedSolver):
     """
 
     solver: diffrax.AbstractSolver
-    rate_fn: object = eqx.field(static=True)
+    rate_fn: object = eqx.field(static=True, default=None)
+    factor_fn: object = eqx.field(static=True, default=None)
 
     term_structure = ODETerm
 
@@ -117,8 +139,14 @@ class LawsonSolver(AbstractAdaptiveSolver, AbstractWrappedSolver):
 
     def step(self, terms, t0, t1, y0, args, solver_state, made_jump):
         del made_jump  # always True for the wrapped solver: its cached first stage is in another variable
-        rate = self.rate_fn(t0, y0, args)
         vf = terms.vf
+        if self.factor_fn is not None:  # general integrating factor Phi(tau) (e.g. exact Hermite streaming)
+            factor = self.factor_fn(t0, y0, args)
+            vf_f = lambda tau, w, a: factor.rhs(vf, tau, tau - t0, w, a)
+            w1, w_err, dense, state, result = self.solver.step(ODETerm(vf_f), t0, t1, y0, args, solver_state, True)
+            y_err = None if w_err is None else factor.phi(t1 - t0, w_err)
+            return factor.phi(t1 - t0, w1), y_err, {"base": dense, "rate": factor}, state, result
+        rate = self.rate_fn(t0, y0, args)
 
         def vf_w(tau, w, a):
             grow = _scale(rate, w, tau - t0)
@@ -132,14 +160,25 @@ class LawsonSolver(AbstractAdaptiveSolver, AbstractWrappedSolver):
         back = _scale(rate, w1, -(t1 - t0))
         y1 = _mul(back, w1)
         y_err = None if w_err is None else _mul(back, w_err)
+        y1, y_err = _guard(y0, y1, y_err)
         return y1, y_err, {"base": dense, "rate": rate}, state, result
 
 
 def hypercollision_rate(nu, col, D=0.0, k2_grid=None):
     """Diagonal rate ``nu * col + D * k^2`` of the SPECTRAX kinetic right-hand side (not broadcast to the full state).
 
-    ``nu`` is a scalar or per-species ``(Ns, 1, 1, 1, 1, 1, 1)``, ``col`` the ``(Np, Nm, Nn)`` spectrum from
-    :func:`hypercollision_spectrum`, as in ``Hermite_Fourier_system`` (``Col = -nu col Ck``, ``Diff = -D k2 Ck``).
+    ``nu`` is a scalar or per-species ``(Ns, 1, 1, 1, 1, 1, 1)``, ``col`` the ``(Np, Nm, Nn)`` collision spectrum
+    (``parameters["collision_matrix"]``), as in ``Hermite_Fourier_system`` (``Col = -nu col Ck``,
+    ``Diff = -D k2 Ck``). The result broadcasts against ``Ck`` of shape ``(Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz)``.
     """
     rate = jnp.asarray(nu) * col[None, :, :, :, None, None, None]
     return rate if k2_grid is None else rate + D * k2_grid
+
+
+def simulation_rate(args, Ns, Nn, Nm, Np, Ny, Nx, Nz):
+    """Rate for the flat ``[Ck, Fk]`` state of :func:`spectrax.simulation`: hypercollision plus hyper-diffusion
+    on every Hermite coefficient, zero on the six field components (they are never damped)."""
+    nkx = Nx // 2 + 1
+    r = hypercollision_rate(args[8], args[21], args[9], args[19])
+    r = jnp.broadcast_to(r, (Ns, Np, Nm, Nn, Ny, nkx, Nz)).reshape(-1)
+    return jnp.concatenate([r, jnp.zeros(6 * Ny * nkx * Nz, dtype=r.dtype)])
