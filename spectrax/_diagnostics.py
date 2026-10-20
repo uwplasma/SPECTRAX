@@ -17,7 +17,9 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+import jax
 import jax.numpy as jnp
+jax.config.update("jax_enable_x64", True)
 
 __all__ = ["diagnostics"]
 

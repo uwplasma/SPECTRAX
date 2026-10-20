@@ -1,16 +1,15 @@
 """Simulation parameter initialization and TOML configuration loading."""
 
 import jax.numpy as jnp
-from jax import jit, vmap
+from jax import jit, vmap, config
+config.update("jax_enable_x64", True)
 from functools import partial
-try: import tomllib
-except ModuleNotFoundError: import pip._vendor.tomli as tomllib
+import tomllib
 import diffrax
 import inspect
 from .midpoint_solver import ImplicitMidpoint
 from math import comb
 from jax.scipy.special import factorial
-from orthax.legendre import leggauss, legvander
 
 __all__ = ["load_parameters", "initialize_simulation_parameters", "construct_idx_array", "DG_project"]
 
@@ -281,6 +280,7 @@ def DG_project(f, input_parameters, solver_parameters):
     jnp.ndarray
         DG coefficients with shape `(..., Ny, Nx, Nz, Nl)`.
     """
+    from orthax.legendre import leggauss, legvander # Imported lazily: importing orthax initializes the JAX backend.
     p = {**input_parameters, **solver_parameters}
     Lx, Ly, Lz = p["Lx"], p["Ly"], p["Lz"]
     Nx, Ny, Nz = p["Nx"], p["Ny"], p["Nz"]

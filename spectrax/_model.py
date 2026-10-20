@@ -6,7 +6,8 @@ equations: :func:`Hermite_DG_rhs` is the shared shaped kernel returning the
 """
 
 import jax.numpy as jnp
-from jax import vmap, jit, debug
+from jax import vmap, jit, debug, config
+config.update("jax_enable_x64", True)
 from functools import partial
 
 __all__ = ['Hermite_DG_rhs', 'Hermite_DG_system']
