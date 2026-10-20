@@ -223,29 +223,28 @@ def compute_basis_products(dx, dy, dz, basis_idx):
 
     return inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product
 
+def split_flux_matrix(M):
+    """Split real symmetric matrices `M` (..., N, N) into parts with positive and negative eigenvalues (M = M_p + M_m).
+
+    Uses `eigh` (orthonormal eigenvectors, portable across CPU/GPU) instead of a general `eig`.
+    """
+    Lam, U = jnp.linalg.eigh(M)
+    part = lambda lam: (U * lam[..., None, :]) @ jnp.swapaxes(U, -1, -2)
+    return part(jnp.maximum(Lam, 0)), part(jnp.minimum(Lam, 0))
+
 def compute_A_pm_matrices(Nn, Nm, Np, alpha, u):
     def compute_A_off(idx):
         i, j = idx
         return jnp.where((j == i + 1) | (j == i - 1), jnp.sqrt(jnp.maximum(i, j) / 2), 0)
-    
+
     Ax_mat = alpha[:, 0, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Nn, Nn)), axis=-1)) + u[:, 0, None, None] * jnp.eye(Nn)
     Ay_mat = alpha[:, 1, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Nm, Nm)), axis=-1)) + u[:, 1, None, None] * jnp.eye(Nm)
     Az_mat = alpha[:, 2, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Np, Np)), axis=-1)) + u[:, 2, None, None] * jnp.eye(Np)
 
-    Lam, U = jnp.linalg.eig(Ax_mat)
-    D_mat = Lam[:, :, None] * jnp.eye(Nn)
-    Ax_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, None, :, :, None, None, None, None, None]
-    Ax_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, None, :, :, None, None, None, None, None]
-
-    Lam, U = jnp.linalg.eig(Ay_mat)
-    D_mat = Lam[:, :, None] * jnp.eye(Nm)
-    Ay_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, :, :, None, None, None, None, None, None]
-    Ay_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, :, :, None, None, None, None, None, None]
-
-    Lam, U = jnp.linalg.eig(Az_mat)
-    D_mat = Lam[:, :, None] * jnp.eye(Np)
-    Az_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None, None, None]
-    Az_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None, None, None]
+    # Species stay on the first axis; Hermite matrix axes are placed at (n, n'), (m, m') or (p, p').
+    Ax_p, Ax_m = (A[:, None, None, :, :, None, None, None, None, None] for A in split_flux_matrix(Ax_mat))
+    Ay_p, Ay_m = (A[:, None, :, :, None, None, None, None, None, None] for A in split_flux_matrix(Ay_mat))
+    Az_p, Az_m = (A[:, :, :, None, None, None, None, None, None, None] for A in split_flux_matrix(Az_mat))
 
     return Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m
 
@@ -256,10 +255,7 @@ def compute_R_pm_matrices(upwind=False):
     R_mat = jnp.stack([Rx_mat, Ry_mat, Rz_mat])
 
     if upwind: # upwind flux
-        Lam, U = jnp.linalg.eig(R_mat)
-        D = Lam[:, :, None] * jnp.eye(6)
-        R_p = jnp.real(U @ (D + jnp.abs(D)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None]
-        R_m = jnp.real(U @ (D - jnp.abs(D)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None]
+        R_p, R_m = (R[:, :, :, None, None, None, None, None] for R in split_flux_matrix(R_mat))
     else: # central flux
         R_p = (R_mat / 2)[:, :, :, None, None, None, None, None]
         R_m = (R_mat / 2)[:, :, :, None, None, None, None, None]
