@@ -38,11 +38,15 @@ def test_generator_equals_streaming_part_of_the_rhs():
     """G Ck equals dCk/dt of the real ode_system with Fk = 0, nu = D = 0 (3-D, drifts, unequal widths, Nm,Np > 1)."""
     p, args, shape = _setup(params={"nu": 0.0, "alpha_s": jnp.array([0.7, 0.9, 1.1, 0.5, 0.6, 0.8])})
     Ck = _rand(shape)
-    y = jnp.concatenate([Ck.reshape(-1), jnp.zeros(6 * shape[-3] * shape[-2] * shape[-1], dtype=complex)])
-    dy = ode_system(*args[:7], 0.0, y, args)
+    Fk0 = jnp.zeros((6, *shape[-3:]), dtype=complex)
+    try:  # flat [Ck, Fk] state (main)
+        dy = ode_system(*args[:7], 0.0, jnp.concatenate([Ck.reshape(-1), Fk0.reshape(-1)]), args)
+        dck = dy[:Ck.size].reshape(shape)
+    except Exception:  # tuple state (integration lineage)
+        dck = ode_system(*args[:7], 0.0, (Ck, Fk0), args)[0].reshape(shape)
     fac = _factor(args, shape)
     # the 2/3 mask only enters the force terms (all multiplied by F = 0)
-    np.testing.assert_allclose(dy[:Ck.size].reshape(shape), fac.streaming(Ck), rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(dck, fac.streaming(Ck), rtol=1e-12, atol=1e-12)
 
 
 def test_B_is_unitary_semigroup_and_matches_expm():
