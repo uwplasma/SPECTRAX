@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
@@ -37,10 +39,42 @@ def _infer_Ns(output: Mapping[str, Any]) -> int:
     """
     u_s = output["u_s"]
     # `u_s.shape` is static information under JAX tracing.
-    n = int(u_s.shape[0])
+    n = int(u_s.size)
     if (n % 3) != 0:
         raise ValueError(f"Cannot infer Ns from u_s of length {n}; expected multiple of 3.")
     return n // 3
+
+@partial(jax.jit, static_argnames=("Ns", "Nn", "Nm", "Np"))
+def _energies(Ck, Fk, alpha_s, u_s, ms, Omega_ce, basis_idx, Ns, Nn, Nm, Np):
+    """Per-species kinetic energy ``(Nt, Ns)`` and field energy ``(Nt,)`` as global reductions.
+
+    Only the cell-mean (DG mode 0) of a few low-order Hermite modes is read and reduced over space, so the sharded
+    ``Ck`` history is never gathered: the compiler adds small all-reduces over the spatial mesh axes (``(Nt, Ns)``
+    payload). ``Fk`` is replicated across species groups, and a global sum counts it once.
+    """
+    Nt, Htot, Ny, Nx, Nz, Nl = Ck.shape
+    Ck_rs = Ck.reshape(Nt, Ns, Htot // Ns, Ny, Nx, Nz, Nl)  # whole species blocks, so ownership is preserved
+
+    def _take_mode(n, m, p):
+        """Domain average of the cell-mean coefficient ``C_{nmp}`` per species, ``(Nt, Ns)``; zero if not retained."""
+        if n >= Nn or m >= Nm or p >= Np:
+            return jnp.zeros((Nt, Ns), Ck.dtype)
+        return jnp.sum(Ck_rs[:, :, n + Nn * m + Nn * Nm * p, :, :, :, 0], axis=(-3, -2, -1)) / (Nx * Ny * Nz)
+
+    C000, C100, C010, C001 = _take_mode(0, 0, 0), _take_mode(1, 0, 0), _take_mode(0, 1, 0), _take_mode(0, 0, 1)
+    C200, C020, C002 = _take_mode(2, 0, 0), _take_mode(0, 2, 0), _take_mode(0, 0, 2)
+
+    a0, a1, a2 = alpha_s.reshape(Ns, 3).T
+    u0, u1, u2 = u_s.reshape(Ns, 3).T
+    pref = 0.5 * ms * a0 * a1 * a2  # (Ns,)
+
+    term0 = (0.5 * (a0**2 + a1**2 + a2**2) + (u0**2 + u1**2 + u2**2)) * C000  # (Nt, Ns)
+    term1 = jnp.sqrt(2.0) * (a0 * u0 * C100 + a1 * u1 * C010 + a2 * u2 * C001)  # (Nt, Ns)
+    term2 = (1.0 / jnp.sqrt(2.0)) * (a0**2 * C200 + a1**2 * C020 + a2**2 * C002)  # (Nt, Ns)
+
+    # Field energy, normalized by the global cell count.
+    EM_energy = 0.5 * Omega_ce ** 2 * jnp.sum(jnp.abs(Fk) ** 2 / ((1 + 2 * basis_idx[:, 0]) * (1 + 2 * basis_idx[:, 1]) * (1 + 2 * basis_idx[:, 2])), axis=(-5, -4, -3, -2, -1)) / (Nx * Ny * Nz)
+    return pref * (term0 + term1 + term2), EM_energy
 
 def diagnostics(output: dict) -> None:
     """Compute and attach common diagnostics to ``output`` (mutates in-place).
@@ -114,9 +148,7 @@ def diagnostics(output: dict) -> None:
     # Nn/Nm/Np define the flattening order for Hermite modes:
     #   idx = n + Nn*m + Nn*Nm*p
     # If missing, we fall back to a 1D Hermite layout (Nm=Np=1, Nn=Hs).
-    Nn = jnp.asarray(output.get("Nn", Hs), dtype=jnp.int32)
-    Nm = jnp.asarray(output.get("Nm", 1), dtype=jnp.int32)
-    Np = jnp.asarray(output.get("Np", 1), dtype=jnp.int32)
+    Nn, Nm, Np = (int(output.get(k, d)) for k, d in (("Nn", Hs), ("Nm", 1), ("Np", 1)))
 
     # Debye length:
     # - For Ns==2, preserve the legacy electron/ion expression when mi_me is provided.
@@ -127,60 +159,8 @@ def diagnostics(output: dict) -> None:
     # Original k_norm convention (species 0, x thermal).
     k_norm = jnp.sqrt(2.0) * jnp.pi * alpha_s[0] / Lx
 
-    # Reshape Ck into species blocks along Hermite axis:
-    # (Nt, Htot, Ny, Nx, Nz, Nl) -> (Nt, Ns, Hs, Ny, Nx, Nz, Nl)
-    Ck_rs = Ck.reshape(Ck.shape[0], Ns, Hs, Ny, Nx, Nz, Nl)
-
-    def _take_mode(offset: Any) -> jnp.ndarray:
-        """Gather a Hermite coefficient at a given per-species flattened index.
-
-        This helper is used to safely extract low-order Hermite moments such as
-        ``C000`` and ``C100`` even when the Hermite basis is truncated so that
-        some offsets fall out of range.
-
-        Returns
-        -------
-        jnp.ndarray
-            Array of shape ``(Nt, Ns)`` giving the coefficient's average value over the domain
-        """
-        offset = jnp.asarray(offset, dtype=jnp.int32)
-        off_clip = jnp.clip(offset, 0, Hs - 1)
-        gathered = jnp.take(Ck_rs, off_clip, axis=2, mode="clip")  # (Nt, Ns, Ny, Nx, Nz, Nl)
-        k0 = jnp.sum(gathered[:, :, :, :, :, 0], axis=(-3, -2, -1)) / (Nx * Ny * Nz) # (Nt, Ns)
-        mask = (offset >= 0) & (offset < Hs)
-        return k0 * mask.astype(k0.dtype)
-
-    # Low-order Hermite moments in flattened (n,m,p) indexing:
-    # idx = n + Nn*m + Nn*Nm*p
-    C000 = _take_mode(0)
-    C100 = _take_mode(1)
-    C010 = _take_mode(Nn)
-    C001 = _take_mode(Nn * Nm)
-
-    C200 = _take_mode(2)
-    C020 = _take_mode(2 * Nn)
-    C002 = _take_mode(2 * Nn * Nm)
-
-    # Species parameters
-    alpha = alpha_s.reshape(Ns, 3)
-    u = u_s.reshape(Ns, 3)
-    masses = ms
-
-    a0, a1, a2 = alpha[:, 0], alpha[:, 1], alpha[:, 2]
-    u0, u1, u2 = u[:, 0], u[:, 1], u[:, 2]
-
-    pref = 0.5 * masses * a0 * a1 * a2  # (Ns,)
-
-    term0 = (0.5 * (a0**2 + a1**2 + a2**2) + (u0**2 + u1**2 + u2**2)) * C000  # (Nt, Ns)
-    term1 = jnp.sqrt(2.0) * (a0 * u0 * C100 + a1 * u1 * C010 + a2 * u2 * C001)  # (Nt, Ns)
-    term2 = (1.0 / jnp.sqrt(2.0)) * (a0**2 * C200 + a1**2 * C020 + a2**2 * C002)  # (Nt, Ns)
-
-    kinetic_energy_species = pref[None, :] * (term0 + term1 + term2)  # (Nt, Ns)
-    kinetic_energy = jnp.sum(kinetic_energy_species, axis=1)  # (Nt,)
-    # Field energy
-    basis_idx = output["basis_idx"]
-    EM_energy = 0.5 * Omega_ce ** 2 * jnp.sum(jnp.abs(Fk) ** 2 / ((1 + 2 * basis_idx[:, 0]) * (1 + 2 * basis_idx[:, 1]) * (1 + 2 * basis_idx[:, 2])), axis=(-5, -4, -3, -2, -1)) / (Nx * Ny * Nz) # (Nt,)
-
+    kinetic_energy_species, EM_energy = _energies(Ck, Fk, alpha_s, u_s, ms, Omega_ce, output["basis_idx"], Ns, Nn, Nm, Np)
+    kinetic_energy = jnp.sum(kinetic_energy_species, axis=1)  # (Nt,): species summed once, after the per-species energies
     total_energy = kinetic_energy + EM_energy
 
     output.update({
