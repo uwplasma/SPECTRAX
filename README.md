@@ -39,6 +39,7 @@
   - [Installation](#installation)
   - [Usage](#usage)
     - [Command‑line Interface](#commandline-interface)
+  - [Multi-device execution](#multi-device-execution)
   - [Testing](#testing)
 - [Input File Format](#input-file-format)
 - [Contributing](#contributing)
@@ -165,6 +166,16 @@ python example_script.py
 
 The `simulation` function returns a dictionary containing the evolved Hermite coefficients `Ck`, electromagnetic coefficients `Fk`, time array, the input parameters and diagnostic quantities.
 
+
+### Multi-device execution
+
+One Python process can spread a simulation over several local CPU or GPU devices (physical space, species, or both) by adding an optional `[parallel]` table to the input TOML, e.g. `device = "cpu"`, `num_devices = 4`, `species_partitions = 1`, `mesh_shape = [2, 2, 1]`. Load the input with `load_parameters` before any JAX computation and start each run in a fresh process:
+
+```sh
+python Examples/OT_parallel.py        # Orszag-Tang vortex on four CPU devices (32x32 cells)
+```
+
+See [docs/parallel.rst](docs/parallel.rst) for the configuration rules, layouts, communication pattern, GPU setup, limitations (single host only) and the design sources.
 
 ###  Testing
 Run the test suite using the following command:
