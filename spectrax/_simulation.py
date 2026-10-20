@@ -8,7 +8,7 @@ config.update("jax_enable_x64", True)
 from functools import partial
 from ._lawson import LawsonSolver, hypercollision_rate
 from diffrax import (diffeqsolve, Dopri8, ODETerm, SaveAt, PIDController, TqdmProgressMeter,
-                     NoProgressMeter, ConstantStepSize, RecursiveCheckpointAdjoint)
+                     NoProgressMeter, ConstantStepSize, ClipStepSizeController, RecursiveCheckpointAdjoint)
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system, uniform_acceleration, dougherty_collisions
 from ._diagnostics import diagnostics
@@ -289,6 +289,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     # Solve the ODE system
     ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns, frame=frame or "fixed",
                                  collision_model=collision_model)
+    if integrating_factor and adaptive_time_step:  # Lawson dense output is accurate only for r h <~ 1: step onto the saves
+        stepsize_controller = ClipStepSizeController(stepsize_controller, step_ts=time)
     if integrating_factor:
         zero = (0.0,) * (len(initial_conditions) - 1)
         solver = LawsonSolver(solver, lambda t, y, a: (hypercollision_rate(a[8], a[21], a[9], a[19]),) + zero)

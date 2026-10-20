@@ -99,3 +99,13 @@ def test_gradient_smoke():
     eps = 1e-5
     fd = (loss(3.0 + eps) - loss(3.0 - eps)) / (2 * eps)
     np.testing.assert_allclose(g, fd, rtol=1e-5)
+
+
+def test_simulation_stiff_hypercollision_matches_plain_with_fewer_steps():
+    kw = dict(Nx=9, Nn=12, Ns=2, timesteps=5, input_parameters={"t_max": 2.0, "nu": 4000.0},
+              progress_meter=diffrax.NoProgressMeter())
+    plain = simulation(**kw)
+    lw = simulation(**kw, integrating_factor=True)
+    scale = np.abs(np.asarray(plain["Ck"])).max()
+    assert np.abs(np.asarray(lw["Ck"]) - np.asarray(plain["Ck"])).max() < 1e-6 * scale
+    assert int(lw["solver_stats"]["num_steps"]) * 2 < int(plain["solver_stats"]["num_steps"])

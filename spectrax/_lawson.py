@@ -27,6 +27,10 @@ truncation instability (the exponential is exact), and it does not conserve any 
 order of the scheme. Rows that must not be damped (density, momentum and energy rows, field, ledger/work
 states) get rate zero; for those ``exp(0) = 1`` and the arithmetic is bitwise that of the wrapped solver.
 
+Dense output. The interpolant of ``w`` is a polynomial, so ``y(t)`` between step ends is accurate only for ``r h`` of order
+one or less; saves on step ends are exact. Use ``diffrax.ClipStepSizeController(controller, step_ts=save_times)`` (the
+``integrating_factor`` options of ``simulation`` and Dark-SPECTRAX ``run`` do) whenever a stiff rate is present.
+
 Limits. ``r h`` must stay below about 700 (``exp`` overflow in float64). The wrapped solver may be FSAL (e.g.
 ``Dopri8``); the first-same-as-last stage is then recomputed each step (one extra right-hand-side evaluation per
 step) because the stage derivative lives in the transformed variable. Only ``ODETerm`` problems are supported.
