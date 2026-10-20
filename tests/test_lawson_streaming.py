@@ -148,3 +148,15 @@ def test_gradient_wrt_width_matches_finite_difference():
     eps = 1e-6
     fd = (loss(1.2 + eps) - loss(1.2 - eps)) / (2 * eps)
     np.testing.assert_allclose(g, fd, rtol=1e-5)
+
+
+def test_basis_fn_overrides_args_basis():
+    p, args, shape = _setup(Nx=5, Ny=1, Nz=1, Nn=6, Nm=1, Np=1, Ns=1, params={"u_s": jnp.zeros(3), "alpha_s": jnp.ones(3),
+                            "qs": jnp.array([-1]), "Omega_cs": jnp.array([1.0])})
+    st = (jnp.zeros(shape, dtype=complex),)
+    f1 = hermite_streaming_factor("first", shape)(0.0, st, args)
+    f2 = hermite_streaming_factor("first", shape, basis_fn=lambda t, y, a: (2.0 * jnp.ones(3), 0.5 * jnp.ones(3)))(0.0, st, args)
+    z = _rand(shape, 7)
+    assert float(jnp.abs(f1.B(1.0, z) - f2.B(1.0, z)).max()) > 1e-3
+    np.testing.assert_allclose(f2.a, 2.0)
+    np.testing.assert_allclose(f2.u, 0.5)

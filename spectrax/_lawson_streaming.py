@@ -152,7 +152,7 @@ class StreamingFactor(eqx.Module):
         return self.from_ck(f, out)
 
 
-def hermite_streaming_factor(layout="flat", shape=None, rate_fn=None):
+def hermite_streaming_factor(layout="flat", shape=None, rate_fn=None, basis_fn=None):
     """Return a ``factor_fn(t, y, args) -> StreamingFactor`` for ``LawsonSolver(solver, factor_fn=...)``.
 
     Parameters
@@ -165,6 +165,10 @@ def hermite_streaming_factor(layout="flat", shape=None, rate_fn=None):
     rate_fn : callable ``(t, y, args) -> rate`` or None
         Diagonal closure rate (>= 0, broadcastable to ``Ck``, already part of the right-hand side as ``-r y``) put
         inside the factor. None: streaming only; the damping then stays explicit in the Runge-Kutta stages.
+    basis_fn : callable ``(t, y, args) -> (a, u)`` or None
+        Hermite widths and drifts, each ``(3 * Ns,)``, taken at the step start (a moving / pump-frame basis stored
+        in the state). None: ``args[11]`` and ``args[12]`` (fixed basis). The basis change over the step stays
+        in the explicit part (the factor is an exact identity for any frozen ``a, u``).
 
     ``args`` is the SPECTRAX argument tuple (``nabla = args[20]``, ``alpha_s = args[11]``, ``u_s = args[12]``).
     """
@@ -190,9 +194,10 @@ def hermite_streaming_factor(layout="flat", shape=None, rate_fn=None):
         Ns = ck.shape[0]
         eig = [hermite_axis_eig(ck.shape[ax]) for ax in _AXES]
         nabla = args[20]
+        a_s, u_s = (args[11], args[12]) if basis_fn is None else basis_fn(t, y, args)
         return StreamingFactor(
             kappa=(nabla[0], nabla[1], nabla[2]),
-            a=jnp.asarray(args[11]).reshape(Ns, 3), u=jnp.asarray(args[12]).reshape(Ns, 3),
+            a=jnp.asarray(a_s).reshape(Ns, 3), u=jnp.asarray(u_s).reshape(Ns, 3),
             rate=None if rate_fn is None else jnp.asarray(rate_fn(t, y, args)),
             lam=tuple(tuple(float(x) for x in e[0]) for e in eig),
             V=tuple(tuple(tuple(float(x) for x in row) for row in e[1]) for e in eig),
