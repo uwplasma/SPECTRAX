@@ -1,6 +1,5 @@
 """Time integration driver for the spectral Vlasov–Maxwell system."""
 
-import numpy as np
 import jax.numpy as jnp
 from jax import jit, config
 config.update("jax_enable_x64", True)
@@ -141,9 +140,10 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         hyper-diffusion ``D k^2`` damping is integrated exactly (rate frozen at the step start; see
         ``spectrax._lawson`` for order and limits). Fields and all non-diagonal terms stay explicit. Steps are
         clipped onto the save times (Lawson dense output is accurate only for ``rate * h`` of order one).
-        ``"streaming"``: also integrate the free-streaming operator exactly per Fourier mode (Hermite tridiagonal
-        eigendecomposition, ``spectrax._lawson_streaming``), damping left explicit; ``"streaming+diagonal"``: streaming and
-        the damping together in a Strang-composed factor. Helps when ``nu * h`` would otherwise limit the step; no effect on cost otherwise.
+        ``"streaming"``: integrate the free-streaming operator exactly per Fourier mode (Hermite tridiagonal
+        eigendecomposition, ``spectrax._lawson_streaming``), damping left explicit (putting the damping into the same
+        factor is available through ``hermite_streaming_factor(rate_fn=...)`` but measured harmful when ``h k a sqrt(2 Nn)``
+        and the rate are both large). Helps when ``nu * h`` would otherwise limit the step; no effect on cost otherwise.
 
     Returns
     -------
@@ -185,11 +185,9 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns)
     if integrating_factor:
         rate = lambda t, y, a: simulation_rate(a, Ns, Nn, Nm, Np, Ny, Nx, Nz)
-        if integrating_factor in ("streaming", "streaming+diagonal"):
+        if integrating_factor == "streaming":
             shape = (Ns, Np, Nm, Nn, Ny, Nx // 2 + 1, Nz)
-            crate = None if integrating_factor == "streaming" else (
-                lambda t, y, a: simulation_rate(a, Ns, Nn, Nm, Np, Ny, Nx, Nz)[:int(np.prod(shape))].reshape(shape))
-            solver = LawsonSolver(solver, factor_fn=hermite_streaming_factor("flat", shape, crate))
+            solver = LawsonSolver(solver, factor_fn=hermite_streaming_factor("flat", shape))
         else:
             solver = LawsonSolver(solver, rate)
         if adaptive_time_step:
