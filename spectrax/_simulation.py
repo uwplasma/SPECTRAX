@@ -1,21 +1,28 @@
 """Time integration driver for the spectral Vlasov–Discontinuous_Galerkin system."""
 
+import inspect
+import jax
 import jax.numpy as jnp
 from jax import jit, config
 config.update("jax_enable_x64", True)
-from functools import partial
-from diffrax import (diffeqsolve, Dopri8, ODETerm,
+from functools import lru_cache, partial
+from jax.sharding import NamedSharding, PartitionSpec as P
+from diffrax import (diffeqsolve, Dopri8, ODETerm, is_okay,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
+from ._runtime import bootstrap, make_mesh, named_sharding
 from ._initialization import initialize_simulation_parameters
-from ._model import Hermite_DG_system
+from ._model import Hermite_DG_system, Hermite_DG_rhs
 from ._diagnostics import diagnostics
 
-__all__ = ["ode_system", "simulation"]
+__all__ = ["ode_system", "simulation", "state_rms_norm"]
+
+RHS_ARGS = list(inspect.signature(Hermite_DG_rhs).parameters)[2:-3] # Arrays passed to the RHS by name, between (Ck, Fk) and (Nn, Nm, Np).
+SPECIES_ARGS = {"Ax_p", "Ax_m", "Ay_p", "Ay_m", "Az_p", "Az_m", "alpha_s", "u_s", "ms", "qs"} # Species on the first axis.
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'Nl'])
 def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl, t, Ck_Fk, args):
     """
-    Right-hand side for the coupled Vlasov-Maxwell system expressed in spectral-FE form.
+    Legacy flat right-hand side for the coupled Vlasov-Maxwell system (not used by `simulation`).
 
     Parameters
     ----------
@@ -33,8 +40,8 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl, t, Ck_Fk, args):
         Flattened state vector containing concatenated Hermite coefficients followed
         by electromagnetic field coefficients.
     args : tuple
-        Cached parameter tuple produced in `simulation` providing physical constants,
-        grids, and helper arrays.
+        Parameter tuple `(Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl, ms, qs, nu, D, Omega_ce, alpha_s, u_s,
+        Lx, Ly, Lz, col, sqrt_*, basis_idx, inner_*, di_inner_product, triple_product, A*_p/m, R_p, R_m)`.
 
     Returns
     -------
@@ -42,9 +49,9 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl, t, Ck_Fk, args):
         Flattened derivative vector matching the shape of `Ck_Fk`.
     """
 
-    (ms, qs, nu, D, Omega_ce, alpha_s, u_s, Lx, Ly, Lz, col, 
-    sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
-    basis_idx, inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product, 
+    (ms, qs, nu, D, Omega_ce, alpha_s, u_s, Lx, Ly, Lz, col,
+    sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus,
+    basis_idx, inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product,
     Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m
     ) = args[8:]
 
@@ -52,15 +59,59 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl, t, Ck_Fk, args):
     Ck = Ck_Fk[:total_Ck_size].reshape(Nn * Nm * Np * Ns, Ny, Nx, Nz, Nl)
     Fk = Ck_Fk[total_Ck_size:].reshape(6, Ny, Nx, Nz, Nl)
 
-    dy_dt = Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx, 
-                                inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product, 
+    dy_dt = Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx,
+                                inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product,
                                 Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
                                     Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np, Ns)
 
     return dy_dt
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'N_DG', 'dims', 'timesteps', 'solver', 'adaptive_time_step'])
-def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, N_DG=2, dims=1, timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True):
+def _sum_dot(x, y):
+    """Real part of sum(conj(x) * y) over all leaves, reducing each leaf in its own (possibly sharded) shape."""
+    return sum(jnp.sum(jnp.real(jnp.conj(a) * b)) for a, b in zip(jax.tree_util.tree_leaves(x), jax.tree_util.tree_leaves(y)))
+
+@jax.custom_jvp
+def state_rms_norm(error):
+    """
+    Global RMS norm sqrt(sum_i |e_i|^2 / n) over all leaves of a PyTree, e.g. `(Ck, Fk)`.
+
+    Same value as the default flattened Diffrax/Optimistix RMS norm, but no leaf is raveled
+    or concatenated, so sharded leaves need only scalar all-reduces and a field replicated
+    across species groups is counted once. The derivative is zero-safe like lineax's `two_norm`.
+    """
+    count = sum(jnp.size(e) for e in jax.tree_util.tree_leaves(error))
+    return jnp.sqrt(_sum_dot(error, error) / count) if count else jnp.array(0.0)
+
+@state_rms_norm.defjvp
+def _state_rms_norm_jvp(primals, tangents):
+    (error,), (t_error,) = primals, tangents
+    out = state_rms_norm(error)
+    pred = (out == 0) | jnp.isinf(out) # Zero rather than NaN derivative, as in lineax/optimistix.
+    count = max(sum(jnp.size(e) for e in jax.tree_util.tree_leaves(error)), 1)
+    return out, jnp.where(pred, 0, _sum_dot(error, t_error) / (count * jnp.where(pred, 1, out)))
+
+@lru_cache(maxsize=None)
+def _compiled_solve(mesh, solver, adaptive_time_step, timesteps, progress_meter, max_steps, Nn, Nm, Np):
+    """Jitted global solve of Y = (Ck, Fk) on `mesh`, cached on static settings so repeated runs reuse it."""
+    replicated, by_species = NamedSharding(mesh, P()), NamedSharding(mesh, P("species"))
+    in_shardings = ((named_sharding(mesh, 6, species=True), named_sharding(mesh, 5)),
+                    {k: by_species if k in SPECIES_ARGS else replicated for k in RHS_ARGS}, replicated, replicated, replicated)
+    out_shardings = (named_sharding(mesh, 6, species=True, lead=1), named_sharding(mesh, 6, lead=1), replicated, replicated, replicated)
+
+    def solve(y0, args, t_max, dt, tolerance):
+        time = jnp.linspace(0, t_max, timesteps)
+        stepsize_controller = PIDController(rtol=tolerance, atol=tolerance, norm=state_rms_norm) if adaptive_time_step else ConstantStepSize()
+        sol = diffeqsolve(
+            ODETerm(lambda t, y, args: Hermite_DG_rhs(*y, **args, Nn=Nn, Nm=Nm, Np=Np)), solver=solver,
+            stepsize_controller=stepsize_controller, t0=0, t1=t_max, dt0=dt, y0=y0, args=args,
+            saveat=SaveAt(ts=time), max_steps=max_steps, progress_meter=progress_meter, throw=False)
+        Ck, Fk = sol.ys # Merge only the (sharded) species and (local) Hermite axes for the public history shape.
+        return Ck.reshape(timesteps, -1, *Ck.shape[-4:]), Fk, time, sol.result, sol.stats["num_steps"]
+
+    return jit(solve, in_shardings=in_shardings, out_shardings=out_shardings), in_shardings
+
+def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, N_DG=2, dims=1, timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True,
+               parallel=None, progress_meter=TqdmProgressMeter(), max_steps=1000000):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -87,61 +138,49 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
         Diffrax solver instance controlling the time integration.
     adaptive_time_step : bool, optional
         Toggle for using an adaptive time step versus a fixed one.
+    parallel : dict or spectrax.ParallelConfig, optional
+        Device layout (`device`, `num_devices`, `species_partitions`, `mesh_shape`), as in a
+        TOML `[parallel]` section. Default: one device of JAX's preferred backend.
+    progress_meter : diffrax.AbstractProgressMeter, optional
+        Use `diffrax.NoProgressMeter()` for headless runs and benchmarks.
+    max_steps : int, optional
+        Maximum number of integration steps.
 
     Returns
     -------
     dict
         Dictionary containing the evolved coefficients (`Ck`, `Fk`), time samples,
-        perturbation diagnostics, and all simulation parameters.
+        number of steps, energy diagnostics, and all simulation parameters. `Ck` and `Fk`
+        stay distributed over the selected devices.
+
+    Notes
+    -----
+    This is a host-side wrapper (setup, placement, status check), not meant to be called
+    inside `jax.jit`; it synchronizes once, on the scalar solver status. The state
+    Y = (Ck, Fk) is integrated by one global Diffrax solve with Ck of shape
+    (Ns, Np*Nm*Nn, Ny, Nx, Nz, Nl) sharded over species and space, and Fk of shape
+    (6, Ny, Nx, Nz, Nl) sharded over space and replicated across species groups.
     """
-    
-    # **Initialize simulation parameters**
-    parameters = initialize_simulation_parameters(input_parameters, Nx, Ny, Nz, Nn, Nm, Np, Ns, N_DG, dims, timesteps, dt)
+    parallel = bootstrap(parallel, Nx, Ny, Nz, Ns) # Validated device layout (configures CPU devices if JAX is not yet initialized).
+    mesh = make_mesh(parallel)
+    # Supplied initial states keep their public shapes and go straight to their shards (species prefix, spatial suffix);
+    # default ones are projected sharded.
+    input_parameters = {**input_parameters, **{k: jax.device_put(v, named_sharding(mesh, jnp.ndim(v), species=k == "Ck_0"))
+                                               for k, v in input_parameters.items() if k in ("Ck_0", "Fk_0")}}
+    with jax.default_device(mesh.devices.flat[0]): # Small setup tables live on the selected backend.
+        parameters = initialize_simulation_parameters(input_parameters, Nx, Ny, Nz, Nn, Nm, Np, Ns, N_DG, dims, timesteps, dt, parallel=parallel)
+    y0 =(parameters["Ck_0"].reshape(Ns, -1, *parameters["Fk_0"].shape[-4:]), parameters["Fk_0"])
+    args = {k: parameters["collision_matrix" if k == "col" else k] for k in RHS_ARGS}
+    args["alpha_s"], args["u_s"] = args["alpha_s"].reshape(Ns, 3), args["u_s"].reshape(Ns, 3)
 
-    # Combine initial conditions.
-    initial_conditions = jnp.concatenate([parameters["Ck_0"].flatten(), parameters["Fk_0"].flatten()])
-
-    # Define the time array for data output.
-    time = jnp.linspace(0, parameters["t_max"], timesteps)
-    
-    # Define total number of basis modes
-    Nl = parameters["basis_idx"].shape[0]
-
-    # Arguments for the ODE system.
-    args = (Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl, parameters["ms"], parameters["qs"], parameters["nu"], parameters["D"], parameters["Omega_ce"], parameters["alpha_s"],
-            parameters["u_s"], parameters["Lx"], parameters["Ly"], parameters["Lz"], parameters["collision_matrix"], 
-            parameters["sqrt_n_plus"], parameters["sqrt_n_minus"], parameters["sqrt_m_plus"], parameters["sqrt_m_minus"], 
-            parameters["sqrt_p_plus"], parameters["sqrt_p_minus"], parameters["basis_idx"], 
-            parameters["inner_mm"], parameters["inner_pm"], parameters["inner_mp"], parameters["inner_pp"], parameters["di_inner_product"],
-            parameters["triple_product"], parameters["Ax_p"], parameters["Ax_m"], 
-            parameters["Ay_p"], parameters["Ay_m"], parameters["Az_p"], parameters["Az_m"], parameters["R_p"], parameters["R_m"]
-            )
-    
-    controllers = {
-    True: PIDController(
-        rtol=parameters["ode_tolerance"],
-        atol=parameters["ode_tolerance"],
-    ),
-    False: ConstantStepSize(),
-    }
-    stepsize_controller = controllers[adaptive_time_step]
-    
     # Solve the ODE system
-    ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns, Nl)
-    sol = diffeqsolve(
-        ODETerm(ode_system_partial), solver=solver,
-        stepsize_controller=stepsize_controller,
-        t0=0, t1=parameters["t_max"], dt0=dt,
-        y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
-        max_steps=1000000, progress_meter=TqdmProgressMeter())
-    
-    # Reshape the solution to extract Ck and Fk
-    Ck = sol.ys[:,:(-6 * Nx * Ny * Nz * Nl)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx, Nz, Nl)
-    Fk = sol.ys[:,(-6 * Nx * Ny * Nz * Nl):].reshape(len(sol.ts), 6, Ny, Nx, Nz, Nl)
-    
+    solve, in_shardings = _compiled_solve(mesh, solver, adaptive_time_step, timesteps, progress_meter, max_steps, Nn, Nm, Np)
+    Ck, Fk, time, result, num_steps = solve(*jax.device_put((y0, args, parameters["t_max"], dt, parameters["ode_tolerance"]), in_shardings))
+    if not is_okay(result): # One scalar synchronization; the solution itself is not transferred.
+        raise RuntimeError(f"Diffrax solve failed after {int(num_steps)} steps: {result}")
+
     # Output results
-    temporary_output = {"Ck": Ck, "Fk": Fk, "time": time}
-    output = {**temporary_output, **parameters}
+    output = {"Ck": Ck, "Fk": Fk, "time": time, "num_steps": num_steps, **parameters}
     diagnostics(output)
-    
+
     return output
