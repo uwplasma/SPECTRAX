@@ -4,8 +4,9 @@ import jax.numpy as jnp
 from jax import jit, config
 config.update("jax_enable_x64", True)
 from functools import partial
-from diffrax import (diffeqsolve, Dopri8, ODETerm,
+from diffrax import (diffeqsolve, Dopri8, ODETerm, ClipStepSizeController,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
+from ._lawson import LawsonSolver, simulation_rate
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
 from ._diagnostics import diagnostics
@@ -107,9 +108,11 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
 
     return dy_dt
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step'])
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step',
+                                'integrating_factor'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
-               timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True):
+               timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True,
+               integrating_factor=False):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -130,6 +133,13 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         Initial integration step size.
     solver : diffrax.AbstractSolver, optional
         Diffrax solver instance controlling the time integration.
+    integrating_factor : bool, optional
+        False (default): the solver is used as given, bitwise unchanged. True: wrap ``solver`` (an explicit
+        Runge-Kutta solver) in :class:`spectrax.LawsonSolver` so the diagonal hypercollision ``nu * col`` and
+        hyper-diffusion ``D k^2`` damping is integrated exactly (rate frozen at the step start; see
+        ``spectrax._lawson`` for order and limits). Fields and all non-diagonal terms stay explicit. Steps are
+        clipped onto the save times (Lawson dense output is accurate only for ``rate * h`` of order one).
+        Helps when ``nu * h`` would otherwise limit the step; no effect on cost otherwise.
 
     Returns
     -------
@@ -169,6 +179,10 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
 
     # Solve the ODE system
     ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns)
+    if integrating_factor:
+        solver = LawsonSolver(solver, lambda t, y, a: simulation_rate(a, Ns, Nn, Nm, Np, Ny, Nx, Nz))
+        if adaptive_time_step:
+            stepsize_controller = ClipStepSizeController(stepsize_controller, step_ts=time)
     sol = diffeqsolve(
         ODETerm(ode_system_partial), solver=solver,
         stepsize_controller=stepsize_controller,
