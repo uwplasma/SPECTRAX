@@ -46,6 +46,65 @@ LOAD = """
     out(cfg=[cfg.device, cfg.num_devices, cfg.species_partitions, list(cfg.mesh_shape)], **mesh_info(cfg))
 """
 
+# ---------------------------------------------------------------- fresh-process tests through load_parameters
+@pytest.mark.parametrize("device", ["cpu", "auto"])
+@pytest.mark.parametrize("n, shape", [(1, [1, 1, 1, 1]), (2, [1, 2, 1, 1]), (4, [1, 4, 1, 1])])
+def test_toml_logical_cpu_devices(tmp_path, device, n, shape):
+    res = run(tmp_path, LOAD, f'[parallel]\ndevice = "{device}"\nnum_devices = {n}\n')
+    assert res["ndev"] == n and res["shape"] == shape and res["platforms"] == ["cpu"]
+    assert res["names"] == ["species", "x", "y", "z"] and set(res["types"]) == {"AxisType.Auto"}
+
+@pytest.mark.parametrize("parallel, shape", [
+    ('device = "cpu"\nnum_devices = 4\nmesh_shape = [2, 2, 1]', [1, 2, 2, 1]),
+    ('device = "cpu"\nnum_devices = 4\nspecies_partitions = 2\nmesh_shape = [2, 1, 1]', [2, 2, 1, 1]),
+    ('device = "auto"\nnum_devices = 2\nspecies_partitions = 2', [2, 1, 1, 1])])
+def test_toml_species_and_spatial_layouts(tmp_path, parallel, shape):
+    assert run(tmp_path, LOAD, "[parallel]\n" + parallel)["shape"] == shape
+
+def test_no_parallel_section_is_single_auto_device(tmp_path):
+    res = run(tmp_path, LOAD)
+    assert res["cfg"] == ["auto", 1, 1, [1, 1, 1]] and res["shape"] == [1, 1, 1, 1] and res["ndev"] == 1
+
+def test_lazy_imports_do_not_initialize_backend(tmp_path):
+    res = run(tmp_path, """
+        import spectrax
+        no_jax = "jax" not in sys.modules
+        from spectrax import load_parameters, simulation, DG_project
+        cfg = load_parameters(P)[1]["parallel"]
+        out(no_jax=no_jax, **mesh_info(cfg))
+    """, '[parallel]\ndevice = "cpu"\nnum_devices = 4\n')
+    assert res["no_jax"] and res["ndev"] == 4
+
+def test_standalone_dg_project_bootstraps_and_submodule_imports_enable_x64(tmp_path):
+    res = run(tmp_path, """
+        from spectrax._model import Hermite_DG_rhs  # direct submodule import still enables x64
+        import jax.numpy as jnp
+        from spectrax import DG_project
+        c = DG_project(lambda x, y, z: jnp.sin(x), {"Lx": 1.0, "Ly": 1.0, "Lz": 1.0},
+                       {"Nx": 8, "Ny": 1, "Nz": 1, "N_DG": 2, "dims": 1, "parallel": {"device": "cpu", "num_devices": 4}})
+        out(dtype=str(c.dtype), ndev=len(c.sharding.device_set))
+    """)
+    assert res == {"dtype": "float64", "ndev": 4}
+
+def test_late_incompatible_backend_gives_fresh_process_error(tmp_path):
+    res = run(tmp_path, """
+        import jax; jax.devices()                    # backend initialized with 1 CPU device
+        from spectrax import load_parameters
+        cfg = load_parameters(P)[1]["parallel"]
+        try: mesh_info(cfg)
+        except RuntimeError as e: out(msg=str(e))
+    """, '[parallel]\ndevice = "cpu"\nnum_devices = 4\n')
+    assert "fresh" in res["msg"] and "num_devices=4" in res["msg"] and "1 local cpu" in res["msg"]
+
+def test_gpu_unavailable_no_fallback(tmp_path):
+    res = run(tmp_path, """
+        from spectrax import load_parameters
+        cfg = load_parameters(P)[1]["parallel"]
+        try: mesh_info(cfg)
+        except RuntimeError as e: out(msg=str(e))
+    """, '[parallel]\ndevice = "gpu"\nnum_devices = 1\n')
+    assert "'gpu'" in res["msg"] and "no fallback" in res["msg"]
+
 # ---------------------------------------------------------------- fresh-process tests using only _runtime
 def test_read_input_bootstraps_four_cpu_devices(tmp_path):
     res = run(tmp_path, """

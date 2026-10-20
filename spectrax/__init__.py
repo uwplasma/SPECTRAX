@@ -15,7 +15,7 @@ _EXPORTS = {
     "_inverse_transform": "inverse_HDG_transform",
     "_model": "Hermite_DG_system Hermite_DG_rhs",
     "_plot": "plot",
-    "_simulation": "ode_system simulation",
+    "_simulation": "ode_system simulation state_rms_norm",
     "_runtime": "bootstrap ParallelConfig make_mesh",
 }
 _LAZY = {name: module for module, names in _EXPORTS.items() for name in names.split()}
