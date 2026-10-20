@@ -83,6 +83,8 @@ class _LawsonInterpolation(AbstractLocalInterpolation):
         if t1 is not None:
             return self.evaluate(t1, left=left) - self.evaluate(t0, left=left)
         w = self.base.evaluate(t0, left=left)
+        if hasattr(self.rate, "phi"):  # general integrating factor: y = Phi(t - t0) w
+            return self.rate.phi(t0 - self.t0, w)
         return _mul(_scale(self.rate, w, -(t0 - self.t0)), w)
 
 
@@ -93,6 +95,10 @@ class LawsonSolver(AbstractAdaptiveSolver, AbstractWrappedSolver):
     ----------
     solver : diffrax.AbstractSolver
         Explicit Runge-Kutta solver (e.g. ``diffrax.Dopri8()``) with error estimate.
+    factor_fn : callable ``(t, y, args) -> factor``, optional
+        General integrating factor (instead of ``rate_fn``): an object with ``phi(tau, w) = Phi(tau) w`` and
+        ``rhs(vf, t, tau, w, args) = Phi^{-1}(f(t, Phi w) - Phi' w)`` (``tau = t - t0``); see :func:`spectrax.hermite_streaming_factor`
+        (exact Hermite free streaming, optionally with the diagonal rate inside).
     rate_fn : callable ``(t, y, args) -> rate``
         Diagonal damping rates ``r >= 0`` (the term ``-r * y`` is treated exactly), a pytree with the structure
         of ``y`` whose leaves broadcast against the leaves of ``y`` (use ``0.0`` for states outside the
@@ -101,7 +107,8 @@ class LawsonSolver(AbstractAdaptiveSolver, AbstractWrappedSolver):
     """
 
     solver: diffrax.AbstractSolver
-    rate_fn: object = eqx.field(static=True)
+    rate_fn: object = eqx.field(static=True, default=None)
+    factor_fn: object = eqx.field(static=True, default=None)
 
     term_structure = ODETerm
 
@@ -132,8 +139,14 @@ class LawsonSolver(AbstractAdaptiveSolver, AbstractWrappedSolver):
 
     def step(self, terms, t0, t1, y0, args, solver_state, made_jump):
         del made_jump  # always True for the wrapped solver: its cached first stage is in another variable
-        rate = self.rate_fn(t0, y0, args)
         vf = terms.vf
+        if self.factor_fn is not None:  # general integrating factor Phi(tau) (e.g. exact Hermite streaming)
+            factor = self.factor_fn(t0, y0, args)
+            vf_f = lambda tau, w, a: factor.rhs(vf, tau, tau - t0, w, a)
+            w1, w_err, dense, state, result = self.solver.step(ODETerm(vf_f), t0, t1, y0, args, solver_state, True)
+            y_err = None if w_err is None else factor.phi(t1 - t0, w_err)
+            return factor.phi(t1 - t0, w1), y_err, {"base": dense, "rate": factor}, state, result
+        rate = self.rate_fn(t0, y0, args)
 
         def vf_w(tau, w, a):
             grow = _scale(rate, w, tau - t0)
