@@ -25,3 +25,4 @@ using a Hermite-Fourier decomposition.
    :caption: Contents:
 
    getting_started
+   parallel

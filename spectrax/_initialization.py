@@ -1,21 +1,23 @@
 """Simulation parameter initialization and TOML configuration loading."""
 
+import jax
 import jax.numpy as jnp
-from jax import jit, vmap
+from jax import jit, vmap, config
+config.update("jax_enable_x64", True)
+from jax.lax import with_sharding_constraint
+from jax.sharding import NamedSharding, PartitionSpec as P
 from functools import partial
-try: import tomllib
-except ModuleNotFoundError: import pip._vendor.tomli as tomllib
 import diffrax
 import inspect
 from .midpoint_solver import ImplicitMidpoint
+from ._runtime import read_input, bootstrap, make_mesh, named_sharding
 from math import comb
 from jax.scipy.special import factorial
-from orthax.legendre import leggauss, legvander
 
 __all__ = ["load_parameters", "initialize_simulation_parameters", "construct_idx_array", "DG_project"]
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz','Nn', 'Nm', 'Np', 'Ns', 'N_DG', 'dims', 'timesteps'])
-def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, N_DG=2, dims=1, timesteps=500, dt=0.01):
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz','Nn', 'Nm', 'Np', 'Ns', 'N_DG', 'dims', 'timesteps', 'parallel'])
+def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, N_DG=2, dims=1, timesteps=500, dt=0.01, parallel=None):
     """
     Assemble the parameter dictionary used to run a Hermite-DG Vlasov-Maxwell
     simulation, starting from library defaults and overriding them with user input.
@@ -43,13 +45,22 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         Number of time samples to store in the solution.
     dt : float, optional
         Initial guess for the integrator time step.
+    parallel : spectrax.ParallelConfig, optional
+        Device layout used to shard the default initial projections (one device if omitted).
 
     Returns
     -------
     dict
         Dictionary containing the merged parameters, derived helper arrays, and
         initial spectral-DG coefficients such as `Ck_0` and `Fk_0`.
+
+    Notes
+    -----
+    Default `Ck_0`/`Fk_0` are only projected when not supplied. The defaults describe
+    two species, so `Ns != 2` requires user-supplied `ms`, `qs`, `alpha_s`, `u_s` and `Ck_0`.
     """
+    if Ns != 2 and (missing := [k for k in ("ms", "qs", "alpha_s", "u_s", "Ck_0", "Fk_0") if k not in user_parameters]):
+        raise ValueError(f"Ns={Ns} requires user-supplied {missing}; the default initial condition has two species.")
     # Define all default parameters in a single dictionary
     default_parameters = {
         "Lx": 4 * jnp.pi,
@@ -82,18 +93,21 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     nx      = default_parameters["nx"]
     alpha_e = default_parameters["alpha_e"]
     Lx, Ly, Lz = default_parameters["Lx"], default_parameters["Ly"], default_parameters["Lz"]
-    values  = -(dn1 + dn2) * Lx / (2 * jnp.pi * nx * default_parameters["Omega_ce"])
-    F0 = lambda x, y, z: jnp.concatenate([jnp.array([values * jnp.sin(2*jnp.pi*nx*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
-    grid_parameters = {"Nx": Nx, "Ny": Ny, "Nz": Nz, "N_DG": N_DG, "dims": dims}
-    Fk_0 = DG_project(F0, default_parameters, grid_parameters)
+    grid_parameters = {"Nx": Nx, "Ny": Ny, "Nz": Nz, "N_DG": N_DG, "dims": dims, "Ns": Ns, "parallel": parallel}
+    if "Fk_0" not in user_parameters:
+        values  = -(dn1 + dn2) * Lx / (2 * jnp.pi * nx * default_parameters["Omega_ce"])
+        F0 = lambda x, y, z: jnp.concatenate([jnp.array([values * jnp.sin(2*jnp.pi*nx*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
+        default_parameters["Fk_0"] = DG_project(F0, default_parameters, grid_parameters)
 
-    C10 = lambda x: 1 / (alpha_e[0] ** 3) + dn1 * (1 / (alpha_e[0] ** 3)) * jnp.cos(2*jnp.pi*nx*x/Lx)
-    C20 = lambda x: 1 / (alpha_e[0] ** 3) + dn2 * (1 / (alpha_e[0] ** 3)) * jnp.cos(2*jnp.pi*nx*x/Lx)
-    C0 = lambda x, y, z: jnp.concatenate([jnp.array([C10(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape), jnp.array([C20(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape)])
-    Ck_0 = DG_project(C0, default_parameters, grid_parameters)
-    
+    if "Ck_0" not in user_parameters:
+        C10 = lambda x: 1 / (alpha_e[0] ** 3) + dn1 * (1 / (alpha_e[0] ** 3)) * jnp.cos(2*jnp.pi*nx*x/Lx)
+        C20 = lambda x: 1 / (alpha_e[0] ** 3) + dn2 * (1 / (alpha_e[0] ** 3)) * jnp.cos(2*jnp.pi*nx*x/Lx)
+        h = jnp.arange(2 * Nn)[:, None, None, None, None, None, None] # Species-major Hermite index. Broadcasting (not concatenating) keeps species shards local.
+        C0 = lambda x, y, z: jnp.where(h == 0, C10(x), jnp.where(h == Nn, C20(x), 0.0))
+        default_parameters["Ck_0"] = DG_project(C0, default_parameters, grid_parameters, species=True)
+
     default_parameters.update({
-        "Ck_0": Ck_0, "Fk_0": Fk_0, "Ns": Ns,
+        "Ns": Ns,
         "timesteps": timesteps, "dt": dt, 
         "Nx": Nx, "Ny": Ny, "Nz": Nz,
         "Nn": Nn, "Nm": Nm, "Np": Np,
@@ -110,6 +124,14 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
             parameters[key] = value(parameters)
         if isinstance(value, list):
             parameters[key] = jnp.array(value)
+
+    # Species-dependent inputs and initial states must match Ns and the grid exactly (no padding or truncation).
+    X, Nv = (Ny, Nx, Nz, basis_idx.shape[0]), Np * Nm * Nn
+    shapes = {"ms": [(Ns,)], "qs": [(Ns,)], "alpha_s": [(3 * Ns,), (Ns, 3)], "u_s": [(3 * Ns,), (Ns, 3)],
+              "Ck_0": [(Ns * Nv, *X), (Ns, Nv, *X), (Ns, Np, Nm, Nn, *X)], "Fk_0": [(6, *X)]}
+    if bad := {k: jnp.shape(parameters[k]) for k, allowed in shapes.items() if jnp.shape(parameters[k]) not in allowed}:
+        raise ValueError(f"Inconsistent shapes {bad}; expected one of {({k: shapes[k] for k in bad})}"
+                         + (" (the default Ck_0 supports Nm = Np = 1 only)" if "Ck_0" in bad and "Ck_0" not in user_parameters else ""))
 
     def precompute_collisions(Nn, Nm, Np):
         p = jnp.arange(Np)[:, None, None]
@@ -223,29 +245,28 @@ def compute_basis_products(dx, dy, dz, basis_idx):
 
     return inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product
 
+def split_flux_matrix(M):
+    """Split real symmetric matrices `M` (..., N, N) into parts with positive and negative eigenvalues (M = M_p + M_m).
+
+    Uses `eigh` (orthonormal eigenvectors, portable across CPU/GPU) instead of a general `eig`.
+    """
+    Lam, U = jnp.linalg.eigh(M)
+    part = lambda lam: (U * lam[..., None, :]) @ jnp.swapaxes(U, -1, -2)
+    return part(jnp.maximum(Lam, 0)), part(jnp.minimum(Lam, 0))
+
 def compute_A_pm_matrices(Nn, Nm, Np, alpha, u):
     def compute_A_off(idx):
         i, j = idx
         return jnp.where((j == i + 1) | (j == i - 1), jnp.sqrt(jnp.maximum(i, j) / 2), 0)
-    
+
     Ax_mat = alpha[:, 0, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Nn, Nn)), axis=-1)) + u[:, 0, None, None] * jnp.eye(Nn)
     Ay_mat = alpha[:, 1, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Nm, Nm)), axis=-1)) + u[:, 1, None, None] * jnp.eye(Nm)
     Az_mat = alpha[:, 2, None, None] * vmap(vmap(compute_A_off))(jnp.stack(jnp.indices((Np, Np)), axis=-1)) + u[:, 2, None, None] * jnp.eye(Np)
 
-    Lam, U = jnp.linalg.eig(Ax_mat)
-    D_mat = Lam[:, :, None] * jnp.eye(Nn)
-    Ax_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, None, :, :, None, None, None, None, None]
-    Ax_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, None, :, :, None, None, None, None, None]
-
-    Lam, U = jnp.linalg.eig(Ay_mat)
-    D_mat = Lam[:, :, None] * jnp.eye(Nm)
-    Ay_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, :, :, None, None, None, None, None, None]
-    Ay_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, None, :, :, None, None, None, None, None, None]
-
-    Lam, U = jnp.linalg.eig(Az_mat)
-    D_mat = Lam[:, :, None] * jnp.eye(Np)
-    Az_p = jnp.real(U @ (D_mat + jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None, None, None]
-    Az_m = jnp.real(U @ (D_mat - jnp.abs(D_mat)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None, None, None]
+    # Species stay on the first axis; Hermite matrix axes are placed at (n, n'), (m, m') or (p, p').
+    Ax_p, Ax_m = (A[:, None, None, :, :, None, None, None, None, None] for A in split_flux_matrix(Ax_mat))
+    Ay_p, Ay_m = (A[:, None, :, :, None, None, None, None, None, None] for A in split_flux_matrix(Ay_mat))
+    Az_p, Az_m = (A[:, :, :, None, None, None, None, None, None, None] for A in split_flux_matrix(Az_mat))
 
     return Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m
 
@@ -256,19 +277,20 @@ def compute_R_pm_matrices(upwind=False):
     R_mat = jnp.stack([Rx_mat, Ry_mat, Rz_mat])
 
     if upwind: # upwind flux
-        Lam, U = jnp.linalg.eig(R_mat)
-        D = Lam[:, :, None] * jnp.eye(6)
-        R_p = jnp.real(U @ (D + jnp.abs(D)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None]
-        R_m = jnp.real(U @ (D - jnp.abs(D)) @ jnp.transpose(U, (0, 2, 1)) / 2)[:, :, :, None, None, None, None, None]
+        R_p, R_m = (R[:, :, :, None, None, None, None, None] for R in split_flux_matrix(R_mat))
     else: # central flux
         R_p = (R_mat / 2)[:, :, :, None, None, None, None, None]
         R_m = (R_mat / 2)[:, :, :, None, None, None, None, None]
 
     return R_p, R_m
 
-def DG_project(f, input_parameters, solver_parameters):
+def DG_project(f, input_parameters, solver_parameters, species=False):
     """
     Project a function of space onto the Legendre DG basis on every element.
+
+    The projection is compiled on the device mesh of `solver_parameters["parallel"]`
+    (one device if absent): element centres, the evaluated integrand and the result are
+    sharded over the spatial mesh axes, so the full array is never built on one device.
 
     Parameters
     ----------
@@ -278,7 +300,11 @@ def DG_project(f, input_parameters, solver_parameters):
     input_parameters : Mapping
         Physical parameters.
     solver_parameters : Mapping
-        Resolution parameters.
+        Resolution parameters (and optionally `parallel`, `Ns`).
+    species : bool, optional
+        If True, the leading output axis indexes species, e.g. `(Ns, Np, Nm, Nn, ...)` or
+        species-major `(Ns*Nv, ...)`, and is sharded over the "species" mesh axis.
+        Otherwise (e.g. fields) the result is replicated across species groups.
 
     Returns
     -------
@@ -289,26 +315,34 @@ def DG_project(f, input_parameters, solver_parameters):
     Lx, Ly, Lz = p["Lx"], p["Ly"], p["Lz"]
     Nx, Ny, Nz = p["Nx"], p["Ny"], p["Nz"]
     N_DG, dims = p["N_DG"], p["dims"]
-    basis_idx = construct_idx_array(dims, N_DG) # Array of combinations of Legendre polynomial orders, shape (Nl, 3)
+    mesh = make_mesh(bootstrap(p.get("parallel"), Nx, Ny, Nz, p.get("Ns", 2)))
+    from orthax.legendre import leggauss, legvander # Imported after bootstrap: importing orthax initializes the JAX backend.
+    with jax.default_device(mesh.devices.flat[0]): # Small setup tables live on the selected backend.
+        basis_idx = construct_idx_array(dims, N_DG) # Array of combinations of Legendre polynomial orders, shape (Nl, 3)
 
-    Nq = N_DG + 2 # Number of quadrature points used to approximate inner products.
-    dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz
-    x_elements = dx / 2 + jnp.linspace(0, Lx, Nx, endpoint=False)
-    y_elements = dy / 2 + jnp.linspace(0, Ly, Ny, endpoint=False)
-    z_elements = dz / 2 + jnp.linspace(0, Lz, Nz, endpoint=False)
-    quad_points, w_quad = leggauss(Nq) # Gauss-Legendre quadrature points and weights on [-1, 1]
-    leg_vals = legvander(quad_points, N_DG - 1).T # Create array of shape (N_DG, Nq) evaluating the n'th Legendre polynomial at each quadrature point
-    leg_vals3d = leg_vals[basis_idx[:, 1], :][:, :, None, None] * leg_vals[basis_idx[:, 0], :][:, None, :, None] * leg_vals[basis_idx[:, 2], :][:, None, None, :] # create values of evaluated Legendre polynomials on 3d local grid. Shape (Nl, Nq, Nq, Nq) where Nq is the number of quadrature points.
-    leg_vals3d = jnp.transpose(leg_vals3d, (1, 2, 3, 0))
-    w_array = w_quad[:, None, None] * w_quad[None, :, None] * w_quad[None, None, :]
-    X = x_elements[None, :, None, None, None, None] + quad_points[None, None, None, None, :, None] * dx / 2
-    Y = y_elements[:, None, None, None, None, None] + quad_points[None, None, None, :, None, None] * dy / 2
-    Z = z_elements[None, None, :, None, None, None] + quad_points[None, None, None, None, None, :] * dz / 2
-    X, Y, Z = jnp.broadcast_arrays(X, Y, Z)
-    # Contract f over the three quadrature axes against the weighted basis, without materializing the full (..., Nq, Nq, Nq, Nl) product
-    Uk_0 = (basis_idx[:, 0] + 0.5) * (basis_idx[:, 1] + 0.5) * (basis_idx[:, 2] + 0.5) * jnp.einsum('...abc,abcl->...l', f(X, Y, Z), leg_vals3d * w_array[:, :, :, None])
+        Nq = N_DG + 2 # Number of quadrature points used to approximate inner products.
+        dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz
+        x_elements = dx / 2 + jnp.linspace(0, Lx, Nx, endpoint=False)
+        y_elements = dy / 2 + jnp.linspace(0, Ly, Ny, endpoint=False)
+        z_elements = dz / 2 + jnp.linspace(0, Lz, Nz, endpoint=False)
+        quad_points, w_quad = leggauss(Nq) # Gauss-Legendre quadrature points and weights on [-1, 1]
+        leg_vals = legvander(quad_points, N_DG - 1).T # Create array of shape (N_DG, Nq) evaluating the n'th Legendre polynomial at each quadrature point
+        leg_vals3d = leg_vals[basis_idx[:, 1], :][:, :, None, None] * leg_vals[basis_idx[:, 0], :][:, None, :, None] * leg_vals[basis_idx[:, 2], :][:, None, None, :] # create values of evaluated Legendre polynomials on 3d local grid. Shape (Nl, Nq, Nq, Nq) where Nq is the number of quadrature points.
+        leg_vals3d = jnp.transpose(leg_vals3d, (1, 2, 3, 0))
+        w_array = w_quad[:, None, None] * w_quad[None, :, None] * w_quad[None, None, :]
 
-    return Uk_0
+        def project(x_elements, y_elements, z_elements):
+            X = x_elements[None, :, None, None, None, None] + quad_points[None, None, None, None, :, None] * dx / 2
+            Y = y_elements[:, None, None, None, None, None] + quad_points[None, None, None, :, None, None] * dy / 2
+            Z = z_elements[None, None, :, None, None, None] + quad_points[None, None, None, None, None, :] * dz / 2
+            X, Y, Z = (with_sharding_constraint(c, named_sharding(mesh, 6, tail=3)) for c in jnp.broadcast_arrays(X, Y, Z))
+            values = f(X, Y, Z)
+            values = with_sharding_constraint(values, named_sharding(mesh, values.ndim, species, tail=3))
+            # Contract f over the three quadrature axes against the weighted basis, without materializing the full (..., Nq, Nq, Nq, Nl) product
+            Uk_0 = (basis_idx[:, 0] + 0.5) * (basis_idx[:, 1] + 0.5) * (basis_idx[:, 2] + 0.5) * jnp.einsum('...abc,abcl->...l', values, leg_vals3d * w_array[:, :, :, None])
+            return with_sharding_constraint(Uk_0, named_sharding(mesh, Uk_0.ndim, species))
+
+        return jit(project, in_shardings=tuple(NamedSharding(mesh, P(axis)) for axis in "xyz"))(x_elements, y_elements, z_elements)
 
 def load_parameters(input_file):
     """
@@ -323,11 +357,15 @@ def load_parameters(input_file):
     -------
     tuple[dict, dict]
         A pair `(input_parameters, solver_parameters)` where `solver_parameters`
-        includes an instantiated Diffrax solver ready for `diffeqsolve`.
+        includes an instantiated Diffrax solver ready for `diffeqsolve` and the
+        validated `[parallel]` device layout under `"parallel"`.
+
+    Notes
+    -----
+    This also configures the JAX devices requested in `[parallel]`, so call it in a
+    fresh process before any JAX computation.
     """
-    parameters = tomllib.load(open(input_file, "rb"))
-    input_parameters = parameters['input_parameters']
-    solver_parameters = parameters['solver_parameters']
+    input_parameters, solver_parameters = read_input(input_file)
 
     # Whether to use adaptive time-stepping or constant dt.
     # Default is True.
