@@ -1,7 +1,6 @@
-jax
-jaxlib
-jax_tqdm
-diffrax
+jax>=0.10
+jaxlib>=0.10
+diffrax>=0.7
 orthax
 matplotlib
-pandas
+tqdm
