@@ -170,8 +170,10 @@ The `simulation` function returns a dictionary containing the evolved Hermite co
 
 The hypercollision `nu * col` and hyper-diffusion `D k^2` terms are diagonal in the Hermite-Fourier state. When
 `nu * dt` is large they, not accuracy, limit the explicit step. `simulation(..., integrating_factor=True)` wraps the
-solver in `spectrax.LawsonSolver`, which integrates `-r y` exactly (`f = -r y + N`, rate frozen at the step start, order of
-the wrapped Runge-Kutta method kept, error estimate and dense output mapped back; steps are clipped onto the save times):
+solver in `spectrax.LawsonSolver`, which integrates `-r y` exactly (`f = -r y + N`, rate frozen at the step start; the order of the
+wrapped Runge-Kutta method is retained for h -> 0 at fixed rate (Lawson 1967), with no stiff-order claim when r h >> 1 since the
+stiff order of Lawson methods drops, to 1 for Lawson-Runge (Hochbruck and Ostermann 2010, Acta Numerica 19, Thm 2.17, Ex. 2.32,
+Table 2.2); empirical support is measured agreement with plain Dopri8 records (5e-10 in H05 c=64); error estimate and dense output mapped back; steps are clipped onto the save times):
 
 ```python
 from spectrax import simulation, LawsonSolver
