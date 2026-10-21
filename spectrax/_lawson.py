@@ -13,18 +13,21 @@ variation of the true rate over the step. This is an exact identity for any ``r`
 
 and one step of the wrapped Runge-Kutta method is taken on ``w`` from ``w(t0) = y0``; then ``y1 = exp(-r h) w1``.
 
-Order and consistency. For a fixed ``r`` this is the classical Lawson-RK method built on the wrapped tableau, which has
-the order ``p`` of that tableau for the problem ``y' = -r y + N(y)``. Because the split is an identity for every
-``r``, taking ``r = r(y0)`` (a smooth function of the step-start state, chosen before the stages) does not change
-the order: the step map is a ``p``-th order RK map in ``w`` with a parameter. Constants contain ``|r| h`` through
-the exponentials, which is the point (the stiff part is not in the stability condition). The embedded error estimate is
+Order and consistency. The split is an identity for every ``r``, so the step is the wrapped explicit RK tableau
+(order ``p``) applied to ``w`` with a parameter ``r = r(y0)``. Lawson (1967, SIAM J. Numer. Anal. 4, 372-380) shows that
+the order ``p`` of the underlying RK method is kept for a fixed linear part as ``h -> 0``; here the rate is the
+step-start rate (Lawson's re-evaluated-A form). This is a statement about ``h -> 0`` at fixed rate only. No stiff-order
+claim is made when ``r h >> 1``: Hochbruck and Ostermann (2010, Acta Numerica 19, 209-286; Thm 2.17, Ex. 2.32,
+Table 2.2) show that the stiff order of Lawson methods drops (to 1 for Lawson-Runge) when ``||h A||`` is large, because the
+classical order conditions do not carry over. The empirical support here is measured agreement with plain Dopri8
+records (5e-10 in the H05 c=64 case), not a theorem. The embedded error estimate is
 the wrapped one, mapped back with ``exp(-r h)``. The stability function equals that of the wrapped tableau applied to
 ``N`` (Crouseilles-Einkemmer-Massot, arXiv:1910.12720). Dense output is ``exp(-r (t - t0))`` times the wrapped
 interpolant of ``w``, so saves keep the wrapped interpolation order.
 
 What it does not do. It removes the stiffness of the diagonal rate only; it neither removes nor adds damping to a
 truncation instability (the exponential is exact), and it does not conserve any quadratic invariant beyond the
-order of the scheme. Rows that must not be damped (density, momentum and energy rows, field, ledger/work
+order of the scheme (see above for the order statement). Rows that must not be damped (density, momentum and energy rows, field, ledger/work
 states) get rate zero; for those ``exp(0) = 1`` and the arithmetic is bitwise that of the wrapped solver.
 
 Dense output. The interpolant of ``w`` is a polynomial, so ``y(t)`` between step ends is accurate only for ``r h`` of order
