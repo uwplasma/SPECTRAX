@@ -32,7 +32,11 @@ which needs one ``B`` and one ``B^{-1}`` application per Runge-Kutta stage. For 
 Lawson of :mod:`spectrax._lawson`; for ``r = 0`` to ``B^{-1} f(B w) - G w``. The Strang flow equals
 ``exp(tau (G - r) + O(tau^3 [G, [G, r]]))`` (symmetric BCH), so the leftover is ``O((tau |G|)^2 |r|)``: a stiff closure is
 removed completely only while ``h |G|`` is not large; for ``h |G| >~ 1`` the closure part acts as in a Strang split.
-Order of the wrapped Runge-Kutta method is kept (identity), the stability function for the streaming/closure part is
+Order: the step is the wrapped RK tableau applied in transformed variables, so the order of the underlying RK method is
+retained for ``h -> 0`` at a fixed linear part (Lawson 1967, SIAM J. Numer. Anal. 4, 372-380); the rate and ``B`` are
+step-start (Lawson's re-evaluated-A form). No stiff-order claim is made when ``r h >> 1``: the stiff order of Lawson
+methods drops (to 1 for Lawson-Runge; Hochbruck and Ostermann 2010, Acta Numerica 19, 209-286, Thm 2.17, Ex. 2.32,
+Table 2.2). Empirical support is measured agreement with plain Dopri8 records (5e-10 in H05 c=64). The stability function for the streaming/closure part is
 that of the Lawson test equation of the wrapped tableau (arXiv:1910.12720). The unitary ``B`` conserves the
 Euclidean norm of every ``k`` block; the density row at ``k = 0`` (``G = 0``) is untouched.
 
