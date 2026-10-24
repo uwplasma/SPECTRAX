@@ -100,6 +100,13 @@ def test_short_transient_finishes_within_the_step_budget_without_a_default_floor
     assert abs(float(sol.ys[-1]) - (jnp.exp(-t_max / tau) + jnp.sin(t_max))) < 1e-8
     assert solve(_stepsize_controller(True, 1e-10, dtmin=t_max / max_steps)).result == RESULTS.dt_min_reached
 
+def test_implicit_midpoint_accepts_the_structured_state():
+    """ImplicitMidpoint runs on the (Ck, Fk) state and agrees with the default solver."""
+    from spectrax.midpoint_solver import ImplicitMidpoint
+    reference = simulation(timesteps=3)
+    implicit = simulation(timesteps=3, solver=ImplicitMidpoint(rtol=1e-10, atol=1e-10))
+    assert jnp.allclose(implicit["Fk"], reference["Fk"], atol=1e-6)
+
 if __name__ == "__main__":
     pytest.main()
 
