@@ -89,7 +89,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
 
     C10 = lambda x: 1 / (alpha_e[0] ** 3) + dn1 * (1 / (alpha_e[0] ** 3)) * jnp.cos(2*jnp.pi*nx*x/Lx)
     C20 = lambda x: 1 / (alpha_e[0] ** 3) + dn2 * (1 / (alpha_e[0] ** 3)) * jnp.cos(2*jnp.pi*nx*x/Lx)
-    C0 = lambda x, y, z: jnp.concatenate([jnp.array([C10(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape), jnp.array([C20(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape)])
+    C0 = lambda x, y, z: jnp.concatenate([jnp.array([C10(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn * Nm * Np - 1,) + jnp.zeros_like(x).shape), jnp.array([C20(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn * Nm * Np - 1,) + jnp.zeros_like(x).shape)])
     Ck_0 = DG_project(C0, default_parameters, grid_parameters)
     
     default_parameters.update({

@@ -4,6 +4,7 @@ import diffrax
 import jax
 import jax.numpy as jnp
 from jax import lax
+from jax.flatten_util import ravel_pytree
 from jax.scipy.sparse.linalg import gmres
 
 
@@ -37,18 +38,23 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
     def step(self, terms, t0, t1, y0, args, solver_state, made_jump):
         del solver_state, made_jump
 
+        # Work on one flat vector so the state may be any pytree (e.g. the (Ck, Fk) tuple).
+        y0_flat, unravel = ravel_pytree(y0)
+        vf = lambda t, y_flat: ravel_pytree(terms.vf(t, unravel(y_flat), args))[0]
+
         δt = t1 - t0
-        f0 = terms.vf(t0, y0, args)
-        y1_init = y0 + δt * f0
+        f0 = vf(t0, y0_flat)
+        y1_init = y0_flat + δt * f0
 
         # Define F(y1) = y1 - y0 - δt * f(t1, (y0 + y1)/2)
         def F_fn(y1):
-            y_mid = 0.5 * (y0 + y1)
-            return y1 - y0 - δt * terms.vf(t1, y_mid, args)
+            y_mid = 0.5 * (y0_flat + y1)
+            return y1 - y0_flat - δt * vf(t1, y_mid)
 
-        y1 = _newton_gmres(F_fn, y0, y1_init, self.rtol, self.atol, self.max_iters)
+        y1 = _newton_gmres(F_fn, y0_flat, y1_init, self.rtol, self.atol, self.max_iters)
 
-        y_error = y1 - y1_init
+        y_error = unravel(y1 - y1_init)
+        y1 = unravel(y1)
         dense_info = dict(y0=y0, y1=y1)
         return y1, y_error, dense_info, None, diffrax.RESULTS.successful
 

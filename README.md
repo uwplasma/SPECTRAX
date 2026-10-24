@@ -49,6 +49,14 @@
 
 ##  Overview
 
+> **Discontinuous-Galerkin branch.** On this branch `simulation` discretizes configuration space with a
+> Legendre discontinuous-Galerkin method (`N_DG` basis functions per cell, initial data projected with `DG_project`),
+> not Fourier modes; the Hermite velocity expansion is unchanged. DG examples: `Examples/1D_Landau_damping.py`,
+> `1D_two_stream.py`, `1D_Weibel.py`, `2D_Orszag_Tang.py` (with `orszag_tang_data_analysis.py`). `diagnostics`, `plot` and
+> `inverse_HDG_transform` are the DG versions. The growth/decay rate scans (`1D_Landau_damping_dr_curve.py`,
+> `1D_two_stream_gr_curve.py`) exist only on `main` and are not part of this branch. The Fourier description below
+> applies to `main`.
+
 **SPECTRAX** is an open-source spectral kinetic plasma solver written in Python with the [JAX](https://github.com/jax-ml/jax) ecosystem. It solves the collisionless Vlasov–Maxwell equations by evolving the Hermite–Fourier coefficients of the particle distribution function and the electromagnetic fields. This approach was previously implemented in *SpectralPlasmaSolver* (SPS), developed at Los Alamos National Laboratory, and described in [Delzanno (2025)](https://www.sciencedirect.com/science/article/pii/S0021999115004738), [Vencels et al. (2016)](https://iopscience.iop.org/article/10.1088/1742-6596/719/1/012022) and [Roytershteyn & Delzanno (2018)](https://www.frontiersin.org/journals/astronomy-and-space-sciences/articles/10.3389/fspas.2018.00027/full), where the one particle distribution is expanded in asymmetrically weighted (AW) Hermite functions in velocity space and Fourier modes in configuration space. By performing an AW Hermite expansion in velocity space, the method naturally couples fluid and kinetic physics: the lowest‐order Hermite coefficients correspond to fluid moments and higher modes capture kinetic corrections.
 
 SPECTRAX implements a Hermite–Fourier spectral approach for Vlasov–Maxwell simulations in a JAX framework. It uses just‑in‑time compilation to run efficiently on CPUs and GPUs, adopts state‑of‑the‑art ODE solvers from the [Diffrax](https://github.com/patrick-kidger/diffrax) library, and includes utilities for diagnostics and plotting. The code supports multi‑species plasmas and arbitrary spatial dimensionality (1D to 3D) and can serve as a test bed for studying kinetic instabilities, turbulence, and the transition between fluid and kinetic regimes.
@@ -201,6 +209,9 @@ most important keys. Keys absent from the file fall back to sensible defaults sp
 | `dt` | Initial step size provided to the ODE solver. |
 | `solver` | Name of Diffrax solver (e.g., `Tsit5`, `Dopri5`, `Dopri8`, `ImplicitMidpoint`). |
 | `adaptive_time_step` | Timestep adaptability (`true` by default). |
+| `dtmin` | Smallest adaptive step; below it the solve stops with an error instead of stalling. No floor by default. A collapsing step usually signals an under-resolved run (Hermite cutoff or basis width); it is reported, not fixed. |
+| `max_steps` | Step budget (`1000000` by default); exhausting it is reported as `max_steps_reached`, distinct from `dt_min_reached`. |
+| `throw` | `True` (default) raises on a failed solve; `False` returns and reports it in `output["solver_result"]`; only saves with `output["valid_times"]` (the first `num_valid_times`) hold a solution. |
 
 Many of these parameters can be arrays; for example `alpha_s` must contain three values per species (one
 for each velocity dimension) and can be used to represent anisotropic plasmas.
