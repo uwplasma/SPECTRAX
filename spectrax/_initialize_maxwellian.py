@@ -1,26 +1,21 @@
-"""Initialization of Hermite–Fourier coefficients for Maxwellian equilibria."""
+"""Initialization of Hermite coefficients for Maxwellian equilibria."""
 
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax import jit
-from jax.numpy.fft import rfftn
-from jax.scipy.special import factorial
-from functools import partial
 
 __all__ = ['compute_C_nmp']
 
 
-@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
-def compute_C_nmp(Us_grid, alpha_s, u_s, Nn, Nm, Np, Ns):
+def compute_C_nmp(Us, alpha_s, u_s, Nn, Nm, Np, Ns):
     """
-    Build the Hermite-Fourier coefficients for a drifting Maxwellian distribution function.
+    Build the Hermite coefficients for a drifting Maxwellian distribution function.
 
     Parameters
     ----------
-    Us_grid : jnp.ndarray
-        Velocity grid for each species with shape `(Ns, 3, Ny, Nx, Nz)`, containing the
-        phase-space coordinates at which the Maxwellian is sampled.
+    Us : callable
+        Drift velocity field `Us(x, y, z)` returning an array of shape `(Ns, 3, *S)`.
     alpha_s : array-like
         Sequence of thermal scaling parameters flattened as `(3 * Ns,)`, grouped as
         `(alpha_x, alpha_y, alpha_z)` per species.
@@ -34,33 +29,32 @@ def compute_C_nmp(Us_grid, alpha_s, u_s, Nn, Nm, Np, Ns):
 
     Returns
     -------
-    jnp.ndarray
-        Complex Hermite-Fourier coefficients with shape `(Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz)`
-        corresponding to the Maxwellian evaluated on the supplied grid.
+    callable
+        Jitted function `C(x, y, z)` returning the Hermite coefficients with shape
+        `(Ns, Np, Nm, Nn, *S)` corresponding to a Maxwellian with velocity shifts.
     """
-    
-    U_x = Us_grid[:, 0, None, None, None, :, :, :] # shape (Ns, 1, 1, 1, Ny, Nx, Nz)
-    U_y = Us_grid[:, 1, None, None, None, :, :, :] # shape (Ns, 1, 1, 1, Ny, Nx, Nz)
-    U_z = Us_grid[:, 2, None, None, None, :, :, :] # shape (Ns, 1, 1, 1, Ny, Nx, Nz)
 
+    # Same coefficients built by successive multiplication, so no intermediate overflows unless the result does:
+    #   C_nmp = a_n(d_x) * a_m(d_y) * a_p(d_z) / (alpha_x * alpha_y * alpha_z),  d = (U - u) / alpha,
+    #   a_k(d) = (sqrt(2) d)^k / sqrt(k!) = a_{k-1}(d) * sqrt(2 / k) * d,  a_0 = 1.
     alpha = jnp.array(alpha_s).reshape(Ns, 3)
-    alpha_x = alpha[:, 0, None, None, None, None, None, None] # shape (Ns, 1, 1, 1, 1, 1, 1)
-    alpha_y = alpha[:, 1, None, None, None, None, None, None] # shape (Ns, 1, 1, 1, 1, 1, 1)
-    alpha_z = alpha[:, 2, None, None, None, None, None, None] # shape (Ns, 1, 1, 1, 1, 1, 1)
-
     u = jnp.array(u_s).reshape(Ns, 3)
-    u_x = u[:, 0, None, None, None, None, None, None] # shape (Ns, 1, 1, 1, 1, 1, 1)
-    u_y = u[:, 1, None, None, None, None, None, None] # shape (Ns, 1, 1, 1, 1, 1, 1)
-    u_z = u[:, 2, None, None, None, None, None, None] # shape (Ns, 1, 1, 1, 1, 1, 1)
 
-    p = jnp.arange(Np)[None, :, None, None, None, None, None] # shape (1, Np, 1, 1, 1, 1, 1)
-    m = jnp.arange(Nm)[None, None, :, None, None, None, None] # shape (1, 1, Nm, 1, 1, 1, 1)
-    n = jnp.arange(Nn)[None, None, None, :, None, None, None] # shape (1, 1, 1, Nn, 1, 1, 1)
+    def hermite_powers(d, N):
+        """Return a_k(d) for k = 0..N-1 with shape (Ns, N, *d.shape[1:])."""
+        k = jnp.arange(N).reshape((1, N) + (1,) * (d.ndim - 1))
+        steps = jnp.where(k == 0, 1.0, jnp.sqrt(2.0 / jnp.maximum(k, 1)) * d[:, None])
+        return jnp.cumprod(steps, axis=1)
 
-    C = (jnp.sqrt(2 ** (n + m + p) / (factorial(n) * factorial(m) * factorial(p))) 
-        * (1 / (alpha_x ** (n + 1) * alpha_y ** (m + 1) * alpha_z ** (p + 1)))
-        * (U_x - u_x) ** n * (U_y - u_y) ** m * (U_z - u_z) ** p)
-    
-    Ck_0 = rfftn(C, axes=(-1, -3, -2), norm="forward")  # shape (Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz)
-  
-    return Ck_0
+    @jit
+    def C(x, y, z):
+        U = Us(x, y, z)                                     # (Ns, 3, *S)
+        bshape = (Ns, 3) + (1,) * (U.ndim - 2)
+        d = (U - u.reshape(bshape)) / alpha.reshape(bshape) # normalized drift, (Ns, 3, *S)
+        a_n = hermite_powers(d[:, 0], Nn)                   # (Ns, Nn, *S)
+        a_m = hermite_powers(d[:, 1], Nm)                   # (Ns, Nm, *S)
+        a_p = hermite_powers(d[:, 2], Np)                   # (Ns, Np, *S)
+        norm = jnp.prod(alpha, axis=1).reshape((Ns, 1, 1, 1) + (1,) * (U.ndim - 2))
+        return a_p[:, :, None, None] * a_m[:, None, :, None] * a_n[:, None, None, :] / norm  # (Ns, Np, Nm, Nn, *S)
+
+    return C

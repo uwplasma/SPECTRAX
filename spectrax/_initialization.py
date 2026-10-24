@@ -1,5 +1,7 @@
+"""Simulation parameter initialization and TOML configuration loading."""
+
 import jax.numpy as jnp
-from jax import jit, vmap, lax
+from jax import jit, vmap
 from functools import partial
 try: import tomllib
 except ModuleNotFoundError: import pip._vendor.tomli as tomllib
@@ -8,34 +10,45 @@ import inspect
 from .midpoint_solver import ImplicitMidpoint
 from math import comb
 from jax.scipy.special import factorial
-from scipy.special import roots_legendre
+from orthax.legendre import leggauss, legvander
 
-__all__ = ["load_parameters", "initialize_simulation_parameters", "construct_idx_array", "legT"]
+__all__ = ["load_parameters", "initialize_simulation_parameters", "construct_idx_array", "DG_project"]
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz','Nn', 'Nm', 'Np', 'Ns', 'N_DG', 'dims', 'timesteps'])
 def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, N_DG=2, dims=1, timesteps=500, dt=0.01):
     """
-    Initialize the simulation parameters for a Vlasov solver with Hermite polynomials, 
-    combining user-provided values with predefined defaults. This function 
-    ensures all required parameters are set and automatically calculates 
-    derived parameters based on the inputs.
+    Assemble the parameter dictionary used to run a Hermite-DG Vlasov-Maxwell
+    simulation, starting from library defaults and overriding them with user input.
+    The defaults include a two-stream perturbation and
+    helper tables required by the RHS evaluation. Derived quantities are evaluated
+    after merging with any user-provided overrides so that dependent fields remain
+    consistent.
 
-    The function uses lambda functions to define derived parameters that 
-    depend on other parameters. These lambda functions are evaluated after 
-    merging user-provided parameters with the defaults, ensuring derived 
-    parameters are consistent with any overrides.
-
-    Parameters:
+    Parameters
     ----------
-    user_parameters : dict
-        Dictionary containing user-specified parameters. Any parameter not provided
-        will default to predefined values.
+    user_parameters : Mapping, optional
+        Optional dictionary of parameter overrides. Any key present here replaces
+        the corresponding default before derived quantities are computed.
+    Nx, Ny, Nz : int, optional
+        Number of elements along each spatial direction.
+    Nn, Nm, Np : int, optional
+        Number of Hermite modes along each velocity-space axis.
+    Ns : int, optional
+        Number of particle species represented in the simulation.
+    N_DG : int, optional
+        Number of DG element basis function modes in each direction.
+    dims : int, optional
+        Spatial dimensionality of the simulation. Number of dimensions in which more than one basis modes are to be used.
+    timesteps : int, optional
+        Number of time samples to store in the solution.
+    dt : float, optional
+        Initial guess for the integrator time step.
 
-    Returns:
+    Returns
     -------
-    parameters : dict
-        Dictionary containing all simulation parameters, with user-provided values
-        overriding defaults.
+    dict
+        Dictionary containing the merged parameters, derived helper arrays, and
+        initial spectral-DG coefficients such as `Ck_0` and `Fk_0`.
     """
     # Define all default parameters in a single dictionary
     default_parameters = {
@@ -53,31 +66,31 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "Omega_ce": 1.0,
         "nu": 3.0,
         "D": 0.0,
-        "t_max": 0.3,
+        "t_max": 50.0,
         "nx": 1,
         "ny": 0,
         "nz": 0,
         "dn1": 0.001,
         "dn2": 0.001,
         "ode_tolerance": 1e-12,
-        "vte": lambda p: p["alpha_s"][0] / jnp.sqrt(2),
-        "vti": lambda p: p["vte"] * jnp.sqrt(1 / p["ms"][1]),
     }
     
     # Initialize distribution function as a two-stream instability
     basis_idx = construct_idx_array(dims, N_DG) # Construct array of combinations of Legendre coefficients
     dn1     = default_parameters["dn1"]
     dn2     = default_parameters["dn2"]
+    nx      = default_parameters["nx"]
     alpha_e = default_parameters["alpha_e"]
     Lx, Ly, Lz = default_parameters["Lx"], default_parameters["Ly"], default_parameters["Lz"]
-    values  = (dn1 + dn2) * Lx / (4 * jnp.pi * default_parameters["nx"] * default_parameters["Omega_ce"])
-    F0 = lambda x, y, z: jnp.concatenate([jnp.array([2 * values * jnp.cos(2*jnp.pi*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
-    Fk_0 = legT(F0, basis_idx, N_DG, Lx, Nx, Ly, Ny, Lz, Nz)
+    values  = -(dn1 + dn2) * Lx / (2 * jnp.pi * nx * default_parameters["Omega_ce"])
+    F0 = lambda x, y, z: jnp.concatenate([jnp.array([values * jnp.sin(2*jnp.pi*nx*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
+    grid_parameters = {"Nx": Nx, "Ny": Ny, "Nz": Nz, "N_DG": N_DG, "dims": dims}
+    Fk_0 = DG_project(F0, default_parameters, grid_parameters)
 
-    C10 = lambda x: 1 / (alpha_e[0] ** 3) - dn1 * (1 / (alpha_e[0] ** 3)) * jnp.sin(2*jnp.pi*x/Lx)
-    C20 = lambda x: 1 / (alpha_e[0] ** 3) - dn2 * (1 / (alpha_e[0] ** 3)) * jnp.sin(2*jnp.pi*x/Lx)
+    C10 = lambda x: 1 / (alpha_e[0] ** 3) + dn1 * (1 / (alpha_e[0] ** 3)) * jnp.cos(2*jnp.pi*nx*x/Lx)
+    C20 = lambda x: 1 / (alpha_e[0] ** 3) + dn2 * (1 / (alpha_e[0] ** 3)) * jnp.cos(2*jnp.pi*nx*x/Lx)
     C0 = lambda x, y, z: jnp.concatenate([jnp.array([C10(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn * Nm * Np - 1,) + jnp.zeros_like(x).shape), jnp.array([C20(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn * Nm * Np - 1,) + jnp.zeros_like(x).shape)])
-    Ck_0 = legT(C0, basis_idx, N_DG, Lx, Nx, Ly, Ny, Lz, Nz)
+    Ck_0 = DG_project(C0, default_parameters, grid_parameters)
     
     default_parameters.update({
         "Ck_0": Ck_0, "Fk_0": Fk_0, "Ns": Ns,
@@ -126,7 +139,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus = build_coeff_tables(Nn, Nm, Np)
     Lx, Ly, Lz = parameters["Lx"], parameters["Ly"], parameters["Lz"]
     # Precompute matrices for product coefficients between basis functions
-    inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, tripple_product = compute_basis_products(Lx/Nx, Ly/Ny, Lz/Nz, basis_idx)
+    inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product = compute_basis_products(Lx/Nx, Ly/Ny, Lz/Nz, basis_idx)
     
     alpha = parameters["alpha_s"].reshape(Ns, 3)
     u = parameters["u_s"].reshape(Ns, 3)
@@ -141,7 +154,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "basis_idx": basis_idx, "inner_mm": inner_mm,
         "inner_pm": inner_pm, "inner_mp": inner_mp,
         "inner_pp": inner_pp, "di_inner_product": di_inner_product,
-        "tripple_product": tripple_product, "Ax_p": Ax_p,
+        "triple_product": triple_product, "Ax_p": Ax_p,
         "Ax_m": Ax_m, "Ay_p": Ay_p, "Ay_m": Ay_m, "Az_p": Az_p, "Az_m": Az_m,
         "R_p": R_p, "R_m": R_m
     })
@@ -149,24 +162,24 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     return parameters
 
 def construct_idx_array(dims=1, N_DG=2):
-        Nl = comb(N_DG + dims - 1, dims)
-        l = 0
-        indices = jnp.zeros((Nl, 3))
+    Nl = comb(N_DG + dims - 1, dims)
+    l = 0
+    indices = jnp.zeros((Nl, 3))
 
-        if dims == 1:
-            for i in range(N_DG):
-                indices = indices.at[l, :].set([i, 0, 0])
-                l += 1
-        else:
-            for i in range(N_DG):
-                for j in range(N_DG - i):
-                    for k in range(N_DG - i - j):
-                        indices = indices.at[l, :].set([i, j, k])
-                        l += 1
-                        if dims < 3:
-                            break
+    if dims <= 1:
+        for i in range(N_DG):
+            indices = indices.at[l, :].set([i, 0, 0])
+            l += 1
+    else:
+        for i in range(N_DG):
+            for j in range(N_DG - i):
+                for k in range(N_DG - i - j):
+                    indices = indices.at[l, :].set([i, j, k])
+                    l += 1
+                    if dims < 3:
+                        break
         
-        return indices.astype(jnp.int32)
+    return indices.astype(jnp.int32)
 
 def compute_basis_products(dx, dy, dz, basis_idx):
     def wigner(j1, j2, j3): # Special case of wigner 3j symbol where bottom row is zero
@@ -206,9 +219,9 @@ def compute_basis_products(dx, dy, dz, basis_idx):
     inner_pp = inner_mm * ((-1) ** (i + j))
 
     di_inner_product = vmap(vmap(vmap(construct_di_inner)))(jnp.stack(jnp.indices((3, Nl, Nl)), axis=-1)) # Construct matrix of basis-derivative products
-    tripple_product = vmap(vmap(vmap(compute_tp)))(jnp.stack(jnp.indices((Nl, Nl, Nl)), axis=-1)) # Construct matrix of triple products
+    triple_product = vmap(vmap(vmap(compute_tp)))(jnp.stack(jnp.indices((Nl, Nl, Nl)), axis=-1)) # Construct matrix of triple products
 
-    return inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, tripple_product
+    return inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product
 
 def compute_A_pm_matrices(Nn, Nm, Np, alpha, u):
     def compute_A_off(idx):
@@ -253,47 +266,73 @@ def compute_R_pm_matrices(upwind=False):
 
     return R_p, R_m
 
-def legT(f, basis_idx, N_DG, Lx, Nx, Ly=1, Ny=1, Lz=1, Nz=1): # Transform initial values into finite element basis
-        Nq = N_DG # Number of quadrature points needed to project every retained mode
-        dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz
-        x_elements = dx / 2 + jnp.linspace(0, Lx, Nx, endpoint=False)
-        y_elements = dy / 2 + jnp.linspace(0, Ly, Ny, endpoint=False)
-        z_elements = dz / 2 + jnp.linspace(0, Lz, Nz, endpoint=False)
-        quad_points, w_quad = jnp.array(roots_legendre(Nq))
-        def legendre(n, x):
-            def term(k, acc):
-                return acc + (-1)**k * jnp.round(factorial(2*n-2*k) / (factorial(k) * factorial(n-k) * factorial(n-2*k))) * x**(n-2*k)
-            return lax.fori_loop(0, (n // 2) + 1, term, jnp.zeros_like(x)) / 2**n
-        legendre_array = vmap(vmap(legendre, in_axes=(None, 0)), in_axes=(0, None))
-        leg_vals = jnp.array(legendre_array(jnp.arange(N_DG), quad_points)) # Create array of shape (N_DG, Nq) evaluating the n'th Legendre polynomial at each quadrature point
-        leg_vals3d = leg_vals[basis_idx[:, 1], :][:, :, None, None] * leg_vals[basis_idx[:, 0], :][:, None, :, None] * leg_vals[basis_idx[:, 2], :][:, None, None, :] # create values of evaluated Legendre polynomials on 3d local grid. Shape (Nl, Nq, Nq, Nq) where Nq is the number of quadrature points.
-        leg_vals3d = jnp.transpose(leg_vals3d, (1, 2, 3, 0))
-        w_array = w_quad[:, None, None] * w_quad[None, :, None] * w_quad[None, None, :]
-        X = x_elements[None, :, None, None, None, None] + quad_points[None, None, None, None, :, None] * dx / 2
-        Y = y_elements[:, None, None, None, None, None] + quad_points[None, None, None, :, None, None] * dy / 2
-        Z = z_elements[None, None, :, None, None, None] + quad_points[None, None, None, None, None, :] * dz / 2
-        X, Y, Z = jnp.broadcast_arrays(X, Y, Z)
-        Uk_0 = (basis_idx[:, 0] + 0.5) * (basis_idx[:, 1] + 0.5) * (basis_idx[:, 2] + 0.5) * jnp.sum(f(X, Y, Z)[..., None] * leg_vals3d * w_array[:, :, :, None], axis=(-4, -3, -2))
+def DG_project(f, input_parameters, solver_parameters):
+    """
+    Project a function of space onto the Legendre DG basis on every element.
 
-        return Uk_0
+    Parameters
+    ----------
+    f : callable
+        Function `f(x, y, z)` returning an array of shape `(..., Ny, Nx, Nz, Nq, Nq, Nq)`
+        when evaluated on the broadcast element quadrature grid.
+    input_parameters : Mapping
+        Physical parameters.
+    solver_parameters : Mapping
+        Resolution parameters.
+
+    Returns
+    -------
+    jnp.ndarray
+        DG coefficients with shape `(..., Ny, Nx, Nz, Nl)`.
+    """
+    p = {**input_parameters, **solver_parameters}
+    Lx, Ly, Lz = p["Lx"], p["Ly"], p["Lz"]
+    Nx, Ny, Nz = p["Nx"], p["Ny"], p["Nz"]
+    N_DG, dims = p["N_DG"], p["dims"]
+    basis_idx = construct_idx_array(dims, N_DG) # Array of combinations of Legendre polynomial orders, shape (Nl, 3)
+
+    Nq = N_DG + 2 # Number of quadrature points used to approximate inner products.
+    dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz
+    x_elements = dx / 2 + jnp.linspace(0, Lx, Nx, endpoint=False)
+    y_elements = dy / 2 + jnp.linspace(0, Ly, Ny, endpoint=False)
+    z_elements = dz / 2 + jnp.linspace(0, Lz, Nz, endpoint=False)
+    quad_points, w_quad = leggauss(Nq) # Gauss-Legendre quadrature points and weights on [-1, 1]
+    leg_vals = legvander(quad_points, N_DG - 1).T # Create array of shape (N_DG, Nq) evaluating the n'th Legendre polynomial at each quadrature point
+    leg_vals3d = leg_vals[basis_idx[:, 1], :][:, :, None, None] * leg_vals[basis_idx[:, 0], :][:, None, :, None] * leg_vals[basis_idx[:, 2], :][:, None, None, :] # create values of evaluated Legendre polynomials on 3d local grid. Shape (Nl, Nq, Nq, Nq) where Nq is the number of quadrature points.
+    leg_vals3d = jnp.transpose(leg_vals3d, (1, 2, 3, 0))
+    w_array = w_quad[:, None, None] * w_quad[None, :, None] * w_quad[None, None, :]
+    X = x_elements[None, :, None, None, None, None] + quad_points[None, None, None, None, :, None] * dx / 2
+    Y = y_elements[:, None, None, None, None, None] + quad_points[None, None, None, :, None, None] * dy / 2
+    Z = z_elements[None, None, :, None, None, None] + quad_points[None, None, None, None, None, :] * dz / 2
+    X, Y, Z = jnp.broadcast_arrays(X, Y, Z)
+    # Contract f over the three quadrature axes against the weighted basis, without materializing the full (..., Nq, Nq, Nq, Nl) product
+    Uk_0 = (basis_idx[:, 0] + 0.5) * (basis_idx[:, 1] + 0.5) * (basis_idx[:, 2] + 0.5) * jnp.einsum('...abc,abcl->...l', f(X, Y, Z), leg_vals3d * w_array[:, :, :, None])
+
+    return Uk_0
 
 def load_parameters(input_file):
     """
-    Load parameters from a TOML file.
+    Load simulation input parameters and solver configuration from a TOML file.
 
-    Parameters:
+    Parameters
     ----------
-    input_file : str
+    input_file : str or pathlib.Path
         Path to the TOML file containing simulation parameters.
 
-    Returns:
+    Returns
     -------
-    parameters : dict
-        Dictionary containing simulation parameters.
+    tuple[dict, dict]
+        A pair `(input_parameters, solver_parameters)` where `solver_parameters`
+        includes an instantiated Diffrax solver ready for `diffeqsolve`.
     """
     parameters = tomllib.load(open(input_file, "rb"))
     input_parameters = parameters['input_parameters']
     solver_parameters = parameters['solver_parameters']
+
+    # Whether to use adaptive time-stepping or constant dt.
+    # Default is True.
+    adaptive_time_step = solver_parameters.get("adaptive_time_step", True)
+    solver_parameters["adaptive_time_step"] = adaptive_time_step
 
 
     def get_solver_class(name: str):
@@ -301,6 +340,6 @@ def load_parameters(input_file):
             if issubclass(cls, diffrax.AbstractSolver) and cls is not diffrax.AbstractSolver and cls_name == name: return cls()
             elif name == "ImplicitMidpoint": return ImplicitMidpoint(rtol=input_parameters["ode_tolerance"], atol=input_parameters["ode_tolerance"])
         raise ValueError(f"Solver '{name}' is not supported. Choose from Diffrax solvers.")
-    solver_parameters["solver"] = get_solver_class(solver_parameters.get("solver", "Tsit5"))
+    solver_parameters["solver"] = get_solver_class(solver_parameters.get("solver", "Dopri8"))
     
     return input_parameters, solver_parameters

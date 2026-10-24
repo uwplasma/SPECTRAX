@@ -1,23 +1,27 @@
+"""Example: 1D Landau damping.
+
+Runs a 1D Landau damping setup defined in ``input_1D_landau_damping.toml`` and
+plots standard diagnostics.
+"""
+
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-number_of_processors_to_use = 1 # Parallelization, this should divide total resolution
-os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 from jax import block_until_ready
-from spectrax import simulation, load_parameters, plot, construct_idx_array
-from scipy.special import eval_legendre, roots_legendre, eval_hermite
+from spectrax import simulation, load_parameters, DG_project, inverse_HDG_transform
+from scipy.special import eval_hermite
 from matplotlib.animation import FuncAnimation, PillowWriter
-# import pandas as pd
 
 # Read from input.toml
-# input_parameters, solver_parameters = load_parameters('input_1D_landau_damping.toml')
 toml_file = os.path.join(os.path.dirname(__file__), 'input_1D_landau_damping.toml')
 input_parameters, solver_parameters = load_parameters(toml_file)
 
 alpha_s = input_parameters["alpha_s"]
 u_s = input_parameters["u_s"]
+ms = input_parameters["ms"]
 nx = input_parameters["nx"]
 ny = input_parameters["ny"]
 nz = input_parameters["nz"]
@@ -36,74 +40,78 @@ Nt = solver_parameters["timesteps"]
 N_DG = solver_parameters["N_DG"]
 dims = solver_parameters["dims"]
 
-basis_idx = construct_idx_array(dims, N_DG)
-def legT(f, N_DG=3, Nq=10):
-        dx, dy, dz = Lx/Nx, Ly/Ny, Lz/Nz
-        x_elements = dx / 2 + jnp.linspace(0, Lx, Nx, endpoint=False)
-        y_elements = dy / 2 + jnp.linspace(0, Ly, Ny, endpoint=False)
-        z_elements = dz / 2 + jnp.linspace(0, Lz, Nz, endpoint=False)
-        quad_points, w_quad = jnp.array(roots_legendre(Nq))
-        leg_vals = jnp.array(eval_legendre(jnp.arange(N_DG)[:, None], quad_points)) # Create array of shape (N_DG, Nq) evaluating the n'th Legendre polynomial at each quadrature point
-        leg_vals3d = leg_vals[basis_idx[:, 1], :][:, :, None, None] * leg_vals[basis_idx[:, 0], :][:, None, :, None] * leg_vals[basis_idx[:, 2], :][:, None, None, :] # create values of evaluated Legendre polynomials on 3d local grid. Shape (Nl, Nq, Nq, Nq) where Nq is the number of quadrature points.
-        leg_vals3d = jnp.transpose(leg_vals3d, (1, 2, 3, 0))
-        w_array = w_quad[:, None, None] * w_quad[None, :, None] * w_quad[None, None, :]
-        
-        Fk_0 = jnp.zeros((*f(0, 0, 0).shape, Ny, Nx, Nz, basis_idx.shape[0])) # Initialize array
-        for i, x in enumerate(x_elements): # Loop over all elements
-              for j, y in enumerate(y_elements):
-                    for k, z in enumerate(z_elements):
-                          X, Y, Z = jnp.meshgrid(x+dx*quad_points/2, y+dy*quad_points/2, z+dz*quad_points/2, indexing='xy') # Create local mesh
-                          integral = jnp.sum(f(X, Y, Z)[..., None] * leg_vals3d * w_array[:, :, :, None], axis=(-4, -3, -2))
-                          Fk_0 = Fk_0.at[..., j, i, k, :].set((2 * basis_idx[:, 0] + 1) * (2 * basis_idx[:, 1] + 1) * (2 * basis_idx[:, 2] + 1) * integral / 8)
-
-        return Fk_0
-
-F0 = lambda x, y, z: jnp.concatenate([jnp.array([2 * dn * Lx / (4 * jnp.pi * Omega_ce) * jnp.cos(2*jnp.pi*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
-input_parameters["Fk_0"] = legT(F0, N_DG)
+F0 = lambda x, y, z: jnp.concatenate([jnp.array([dn * Lx / (2 * jnp.pi * nx * Omega_ce) * jnp.cos(2*jnp.pi*nx*x/Lx)]), jnp.broadcast_to(jnp.zeros_like(x), (5,) + jnp.zeros_like(x).shape)])
+input_parameters["Fk_0"] = DG_project(F0, input_parameters, solver_parameters)
 
 Ci0_0 = lambda x: 1 / (alpha_s[3] ** 3) * jnp.ones_like(x)
-Ce0_0 = lambda x: 1 / (alpha_s[0] ** 3) * (1 + dn * jnp.sin(2*jnp.pi*x/Lx))
+Ce0_0 = lambda x: 1 / (alpha_s[0] ** 3) * (1 + dn * jnp.sin(2*jnp.pi*nx*x/Lx))
 C0 = lambda x, y, z: jnp.concatenate([jnp.array([Ce0_0(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape), jnp.array([Ci0_0(x)]), jnp.broadcast_to(jnp.zeros_like(x), (Nn-1,) + jnp.zeros_like(x).shape)])
-input_parameters["Ck_0"] = legT(C0, N_DG)
-
-Ue_0 = alpha_s[0]**2 / 4
+input_parameters["Ck_0"] = DG_project(C0, input_parameters, solver_parameters)
 
 # Simulate
 start_time = time()
 output = block_until_ready(simulation(input_parameters, **solver_parameters))
 print(f"Runtime: {time() - start_time} seconds")
 
-Fk = output['Fk'][:, :, 0, :, 0, :]
-Ck = output['Ck'][:, :, 0, :, 0, :]
-C = Ck[:, :, :, 0]
-t = output["time"]
+Fk = output['Fk'][:, :, 0, :, 0, :] # (Nt, 6, Nx, Nl)
+Ck = output['Ck'][:, :, 0, :, 0, :] # (Nt, Ns*Nn, Nx, Nl)
+C = Ck[:, :, :, 0] # (Nt, Ns*Nn, Nx)
+t = output["time"] # (Nt,)
 
-import matplotlib.pyplot as plt
-from jax.scipy.special import factorial
-n_vals = jnp.arange(Nn)
+# Velocity space reconstruction
 v_max = 3 * alpha_s[0]
 Nv = 100
 v = jnp.linspace(-v_max, v_max, Nv)
-xi1 = (v - u_s[0]) / alpha_s[0]
-xi2 = (v + u_s[3]) / alpha_s[3]
-her_vals1 = jnp.array(eval_hermite(n_vals[:, None], xi1[None, :])) * jnp.exp(-xi1**2) / jnp.sqrt(jnp.pi * (2 ** n_vals) * factorial(n_vals))[:, None]
-her_vals2 = jnp.array(eval_hermite(n_vals[:, None], xi2[None, :])) * jnp.exp(-xi2**2) / jnp.sqrt(jnp.pi * (2 ** n_vals) * factorial(n_vals))[:, None]
-f = jnp.tensordot(C[:, :Nn, :], her_vals1, axes=(1, 0))
+Vx, Vy, Vz = jnp.meshgrid(v, jnp.array([0.]), jnp.array([0.]), indexing='xy')
+f_e = inverse_HDG_transform(output['Ck'][:, :Nn*Nm*Np], Nn, Nm, Np,
+                            (Vx - u_s[0]) / alpha_s[0],
+                            (Vy - u_s[1]) / alpha_s[1],
+                            (Vz - u_s[2]) / alpha_s[2])[:, 0, :, 0, 0, :, 0] # (Nt, Nx, Nv)
+
+print(f_e.shape)
+
+# Animate electron f(x, vx) (DG element averages, plotted at element centers)
+x = Lx / Nx * (jnp.arange(Nx) + 0.5)
+# Perturbation relative to the spatial average, since dn is small
+df_e = f_e - jnp.mean(f_e, axis=1, keepdims=True) # (Nt, Nx, Nv)
+frames = range(0, len(t), 5) # Every 5th output time
+
+fig, ax = plt.subplots(1, 2, figsize=(11, 4))
+im_f = ax[0].pcolormesh(x, v, f_e[0].T, cmap='jet', shading='nearest', vmin=jnp.min(f_e), vmax=jnp.max(f_e))
+plt.colorbar(im_f, ax=ax[0], label=r"$f_e$")
+ax[0].set(xlabel=r"$x$", ylabel=r"$v_x$", title=rf"$f_e(x, v_x)$ at $t = {t[0]:.2f}$")
+im_df = ax[1].pcolormesh(x, v, df_e[0].T, cmap='RdBu_r', shading='nearest')
+plt.colorbar(im_df, ax=ax[1], label=r"$\delta f_e$")
+ax[1].set(xlabel=r"$x$", ylabel=r"$v_x$", title=rf"$\delta f_e(x, v_x)$ at $t = {t[0]:.2f}$")
+fig.tight_layout()
+
+def update(frame):
+    im_f.set_array(f_e[frame].T)
+    im_df.set_array(df_e[frame].T)
+    # delta f damps away, so rescale the color limits every frame to keep the structure visible
+    df_max = jnp.max(jnp.abs(df_e[frame]))
+    im_df.set_clim(-df_max, df_max)
+    ax[0].set_title(rf"$f_e(x, v_x)$ at $t = {t[frame]:.2f}$")
+    ax[1].set_title(rf"$\delta f_e(x, v_x)$ at $t = {t[frame]:.2f}$")
+    return im_f, im_df
+
+phase_space_anim = FuncAnimation(fig, update, frames=frames, interval=50)
+phase_space_anim.save(os.path.join(os.path.dirname(__file__), 'Phase_space_Landau.gif'), writer=PillowWriter(fps=20))
 
 # Compute energies
+Ue_0 = alpha_s[0]**2 / 4 # Initial electron kinetic energy
 U_EM = 0.5 * Omega_ce**2 * jnp.sum(jnp.abs(Fk) ** 2 / (1 + 2 * jnp.arange(0, N_DG)), axis=(-2, -1)) / Nx
-ve2 = alpha_s[0] * alpha_s[1] * alpha_s[2] * (alpha_s[0]**2 * Ck[:,2] / jnp.sqrt(2) + jnp.sqrt(2) * u_s[0] * alpha_s[0] * Ck[:,1] + (alpha_s[0]**2 / 2 + u_s[0]**2) * Ck[:,0])
-vi2 = alpha_s[3] * alpha_s[4] * alpha_s[5] * (alpha_s[3]**2 * Ck[:,Nn*Nm*Np+2] / jnp.sqrt(2) + jnp.sqrt(2) * u_s[3] * alpha_s[3] * Ck[:,Nn*Nm*Np+1] + (alpha_s[3]**2 / 2 + u_s[3]**2) * Ck[:,Nn*Nm*Np])
-U_Ke = 0.5 * 1 * jnp.sum(ve2 / (1 + 2 * jnp.arange(0, N_DG)), axis=(-2, -1)) / Nx
-U_Ki = 0.5 * 1836 * jnp.sum(vi2 / (1 + 2 * jnp.arange(0, N_DG)), axis=(-2, -1)) / Nx
+ve2 = alpha_s[0] * alpha_s[1] * alpha_s[2] * (alpha_s[0]**2 * C[:,2] / jnp.sqrt(2) + jnp.sqrt(2) * u_s[0] * alpha_s[0] * C[:,1] + (alpha_s[0]**2 / 2 + u_s[0]**2) * C[:,0])
+vi2 = alpha_s[3] * alpha_s[4] * alpha_s[5] * (alpha_s[3]**2 * C[:,Nn*Nm*Np+2] / jnp.sqrt(2) + jnp.sqrt(2) * u_s[3] * alpha_s[3] * C[:,Nn*Nm*Np+1] + (alpha_s[3]**2 / 2 + u_s[3]**2) * C[:,Nn*Nm*Np])
+U_Ke = 0.5 * ms[0] * jnp.sum(ve2, axis=(-1)) / Nx
+U_Ki = 0.5 * ms[1] * jnp.sum(vi2, axis=(-1)) / Nx
 U_tot = jnp.sum(U_EM, axis=(-1)) + U_Ke + U_Ki
 
 fig, ax = plt.subplots()
-ax.semilogy(t, U_EM[:, 0], label=r"$E_x$ energy")
+ax.plot(t, U_EM[:, 0], label=r"$E_x$ energy")
 ax.set_xlabel(r"$\omega_p t$")
-ax.set_ylabel(r"$E^2/2$")
-ax.set_title("Electric field energy growth: FEM")
-plt.savefig('Ex_growth_Landau.png')
+ax.set_ylabel(r"$\langle E^2 \rangle/2$")
+ax.set_title("Electric field energy growth")
 
 fig, ax = plt.subplots()
 ax.semilogy(t, U_EM[:, 0], label=r"$E_x$ energy")
@@ -114,43 +122,36 @@ ax.semilogy(t, jnp.abs(U_tot / U_tot[0] - 1), label=r"Energy error")
 ax.legend()
 ax.set_xlabel(r"$\omega_p t$")
 ax.set_ylabel(r"Energies")
-ax.set_title("Energies")
-
-Jx = - alpha_s[0] * alpha_s[1] * alpha_s[2] * (u_s[0] * C[:, 0, :] + alpha_s[0] * C[:, 1, :] / jnp.sqrt(2))
-Work = jnp.sum(Jx * Fk[:, 0, :, 0] , axis=(-1)) / Nx
+plt.savefig(os.path.join(os.path.dirname(__file__), 'Energies_Landau.png'))
 
 # Plot perturbation energies
 fig, ax = plt.subplots()
 ax.plot(t, U_Ke - Ue_0, label="Electron perturbation energy")
 ax.plot(t, U_Ki - U_Ki[0], label="Ion perturbation energy")
 ax.plot(t, jnp.sum(U_EM, axis=(-1)), label="Field energy")
-ax.plot(t, Work, label="Work")
 ax.set(xlabel=r"$t\omega_{pe}$", ylabel=r"$U$")
 ax.legend()
 
-fig, ax = plt.subplots()
-im = ax.imshow(jnp.transpose(f[0]), aspect='auto', cmap='jet', interpolation='none', origin='lower', extent=(0, Lx, -v_max, v_max))
-cbar = plt.colorbar(im, ax=ax)
-title = ax.set_title(r"$t = 0$")
-ax.set_xlabel("x/d_e")  # Set x-axis label
-ax.set_ylabel("v/c")  # Set y-axis label
+fig, ax = plt.subplots(1, 2)
 
-def update(frame):
-    im.set_array(jnp.transpose(f[frame]))
-    title.set_text(f"Frame {frame}")
-    return [im, title]
+C_Fourier = jnp.fft.fftshift(jnp.fft.fft(C, axis=-1), axes=-1)
+mode = (Nx - 1) // 2 + nx
 
-# Create the animation
-anim = FuncAnimation(
-    fig, update, frames=f.shape[0], interval=50, blit=True  # Adjust interval as needed
-)
+im = ax[0].imshow(jnp.abs(C_Fourier[:, :Nn, mode] / jnp.max(jnp.abs(C_Fourier[:, :Nn, mode]))), aspect='auto', cmap='jet', interpolation='none', origin='lower', extent=(0, Nn, 0, jnp.max(t)), norm="linear", vmin=1e-6, vmax=1.0)
+cbar = plt.colorbar(im, ax=ax[0])
+title = ax[0].set_title(r"Electron $C_n(t)$")
+ax[0].set_xlabel("n")
+ax[0].set_ylabel("t")
 
-# anim.save("f_Landau.gif", writer=PillowWriter(fps=10))
+im = ax[1].imshow(jnp.abs(C_Fourier[:, Nn:, mode] / jnp.max(jnp.abs(C_Fourier[:, Nn:, mode]))), aspect='auto', cmap='jet', interpolation='none', origin='lower', extent=(0, Nn, 0, jnp.max(t)), norm="linear", vmin=1e-6, vmax=1.0)
+cbar = plt.colorbar(im, ax=ax[1])
+title = ax[1].set_title(r"Ion $C_n(t)$")
+ax[1].set_xlabel("n")
+ax[1].set_ylabel("t")
+
+fig.tight_layout()
 
 plt.show()
-
-# Plot results
-#plot(output)
 
 # print('Saving results...')
 # jnp.savez('output_landau-damping.npz', **output)

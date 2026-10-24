@@ -23,6 +23,6 @@ Np = 10
 Ns = 2
 N_DG=2
 dims=1
-timesteps = 151
+timesteps = 501
 dt = 0.001
 solver = "Dopri8"

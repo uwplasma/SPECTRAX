@@ -1,13 +1,22 @@
+"""Hermite–Disontinuous_Galerkin model operators for the Vlasov–Maxwell system.
+
+This module contains the right-hand side of the Hermite–DG moment
+equations (:func:`Hermite_DG_system`).
+"""
+
 import jax.numpy as jnp
 from jax import vmap, jit, debug
 from functools import partial
-from jax.lax import dynamic_slice, cond
-from jax.scipy.signal import convolve
+from jax.lax import cond
 
 __all__ = ['Hermite_DG_system']
 
 def _pad_hermite_axes(Ck):
-    # pad +1 on both sides for n,m,p only
+    """Pad Hermite axes (p, m, n) by one cell on both sides.
+
+    This padding enables safe slicing for the zero-padded shift operator used in
+    :func:`shift_multi`.
+    """
     return jnp.pad(
         Ck,
         ((0,0), (1,1), (1,1), (1,1), (0,0), (0,0), (0,0), (0,0))
@@ -47,16 +56,59 @@ def cross_product(k_vec, F_vec):
 
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
 def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx, 
-                        inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, tripple_product, Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
+                        inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product, Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
                            Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np, Ns):
     """
-    Computes the time derivative of a single Hermite-DG coefficient Ck[n, m, p] for species s
-    in a Vlasov-Maxwell spectral solver using a Hermite velocity, Galerkin space decomposition
+    Evaluate the right-hand side of the coupled Hermite-DG moment equations.
+
+    Parameters
+    ----------
+    Ck : jnp.ndarray
+        Hermite-DG coefficients with shape `(Ns * Np * Nm * Nn, Ny, Nx, Nz, Nl)`.
+    Fk : jnp.ndarray
+        DG coefficient-space electromagnetic fields with shape `(6, Ny, Nx, Nz, Nl)` ordered
+        as `(Ex, Ey, Ez, Bx, By, Bz)`.
+    col : jnp.ndarray
+        Precomputed collision coefficients.
+    sqrt_* : jnp.ndarray
+        Square-root ladder coefficients for the Hermite recurrences along each axis.
+    basis_idx : jnp.ndarray
+        Index array of each direction's mode for each basis index
+    inner_* : jnp.ndarray
+        Array of basis function evaluations at element boundary for each direction and basis index. 
+        m="minus": using value approaching element boundary from below.
+        p="plus": using value from above.
+    di_inner_product : jnp.ndarray
+        Array of inner products between one basis element and the derivative in one of the directions of another basis element.
+    triple_product : jnp.ndarray
+        Array of integrals of three multiplied basis elements.
+    A* : jnp.ndarray
+        Velocity-space Hermite-coefficient matrix for coefficient time derivative. (x,y,z) = derivative in (x,y,z) direction. 
+        (p,m) = matrix decomposition into positive and negative eigenvalue parts, respectively, for upwinding scheme.
+    R_* : jnp.ndarray
+        EM-field derivative coupling matrix (through curl E / curl B). 
+        (p,m) = matrix decomposition into positive and negative eigenvalue parts, respectively.
+    Lx, Ly, Lz : float
+        Domain lengths in each spatial direction.
+    nu : float
+        Collision frequency.
+    D : float
+        Hyper-diffusion coefficient.
+    alpha_s, u_s : jnp.ndarray
+        Thermal scaling parameters and drift velocities per species.
+    ms : jnp.ndarray
+        Species masses.
+    qs : jnp.ndarray
+        Species charges.
+    Omega_ce : jnp.ndarray
+        Electron cyclotron frequency.
+    Nn, Nm, Np, Ns : int
+        Number of Hermite modes and species.
 
     Returns
     -------
-    dCk_s_dt : jax.Array, shape (Ny, Nx, Nz, Nl)
-        Time derivative of the Hermite-Galerkin coefficient Ck[p, m, n] for species s.
+    jnp.ndarray
+        Flattened Time derivative array `(dCk/dt, dFk/dt)` with length `(Ns * Np * Nm * Nn + 6) * Ny * Nx * Nz * Nl)`.
     """
 
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-4:])
@@ -130,28 +182,59 @@ def Hermite_DG_system(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_
         jnp.sqrt(2) * sqrt_m_minus * (u0 / a1) * shift_multi(Ck, dn=0, dm=-1, dp=0))
 
     ECx = Fk[0, None, None, None, None, :, :, :, :, None] * shift_multi(Ck, dn=-1, dm=0, dp=0)[:, :, :, :, :, :, :, None, :]    
-    Ex_term = (sqrt_n_minus * jnp.sqrt(2) / a0) * jnp.tensordot(ECx, tripple_product, axes=([-2, -1], [0, 1]))
+    Ex_term = (sqrt_n_minus * jnp.sqrt(2) / a0) * jnp.tensordot(ECx, triple_product, axes=([-2, -1], [0, 1]))
 
     BC_aux_x = Fk[3, None, None, None, None, :, :, :, :, None] * C_aux_x[:, :, :, :, :, :, :, None, :]
-    Bx_term = jnp.tensordot(BC_aux_x, tripple_product, axes=([-2, -1], [0, 1]))
+    Bx_term = jnp.tensordot(BC_aux_x, triple_product, axes=([-2, -1], [0, 1]))
 
     ECy = Fk[1, None, None, None, None, :, :, :, :, None] * shift_multi(Ck, dn=0, dm=-1, dp=0)[:, :, :, :, :, :, :, None, :]
-    Ey_term = (sqrt_m_minus * jnp.sqrt(2) / a1) * jnp.tensordot(ECy, tripple_product, axes=([-2, -1], [0, 1]))
+    Ey_term = (sqrt_m_minus * jnp.sqrt(2) / a1) * jnp.tensordot(ECy, triple_product, axes=([-2, -1], [0, 1]))
 
     BC_aux_y = Fk[4, None, None, None, None, :, :, :, :, None] * C_aux_y[:, :, :, :, :, :, :, None, :]
-    By_term = jnp.tensordot(BC_aux_y, tripple_product, axes=([-2, -1], [0, 1]))
+    By_term = jnp.tensordot(BC_aux_y, triple_product, axes=([-2, -1], [0, 1]))
 
     ECz = Fk[2, None, None, None, None, :, :, :, :, None] * shift_multi(Ck, dn=0, dm=0, dp=-1)[:, :, :, :, :, :, :, None, :]
-    Ez_term = (sqrt_p_minus * jnp.sqrt(2) / a2) * jnp.tensordot(ECz, tripple_product, axes=([-2, -1], [0, 1]))
+    Ez_term = (sqrt_p_minus * jnp.sqrt(2) / a2) * jnp.tensordot(ECz, triple_product, axes=([-2, -1], [0, 1]))
 
     BC_aux_z = Fk[5, None, None, None, None, :, :, :, :, None] * C_aux_z[:, :, :, :, :, :, :, None, :]
-    Bz_term = jnp.tensordot(BC_aux_z, tripple_product, axes=([-2, -1], [0, 1]))
+    Bz_term = jnp.tensordot(BC_aux_z, triple_product, axes=([-2, -1], [0, 1]))
 
     dNL = -(q * Omega_ce / ms) * (Ex_term + Bx_term + Ey_term + By_term + Ez_term + Bz_term)
 
     ################## Inverse mass matrix and final expression #################
     
-    Col  = -nu * col[None, :, :, :, None, None, None, None] * Ck
+    def compute_collisions(Ck, nu):
+        p = jnp.arange(Np)[None, :, None, None, None, None, None, None]
+        m = jnp.arange(Nm)[None, None, :, None, None, None, None, None]
+        n = jnp.arange(Nn)[None, None, None, :, None, None, None, None]
+
+        C000 = Ck[:, 0, 0, 0, None, None, None, :, :, :, 0, None]
+        C100 = Ck[:, 1, 0, 0, None, None, None, :, :, :, 0, None]
+        C010 = Ck[:, 0, 1, 0, None, None, None, :, :, :, 0, None]
+        C001 = Ck[:, 0, 0, 1, None, None, None, :, :, :, 0, None]
+        C200 = Ck[:, 2, 0, 0, None, None, None, :, :, :, 0, None]
+        C020 = Ck[:, 0, 2, 0, None, None, None, :, :, :, 0, None]
+        C002 = Ck[:, 0, 0, 2, None, None, None, :, :, :, 0, None]
+        
+        Col000 = - (n + m + p)
+        Col100 = jnp.sqrt(p) * C100 / C000
+        Col010 = jnp.sqrt(m) * C010 / C000
+        Col001 = jnp.sqrt(n) * C001 / C000
+        Col200 = jnp.sqrt(p * (p - 1)) * (jnp.sqrt(2) * C200 / C000 - (C100 / C000)**2)
+        Col020 = jnp.sqrt(m * (m - 1)) * (jnp.sqrt(2) * C020 / C000 - (C010 / C000)**2)
+        Col002 = jnp.sqrt(n * (n - 1)) * (jnp.sqrt(2) * C002 / C000 - (C001 / C000)**2)
+        
+        terms0 = Col000 * Ck
+        terms1 = Col100 * shift_multi(Ck, dn=0, dm=0, dp=-1) + Col010 * shift_multi(Ck, dn=0, dm=-1, dp=0) + Col001 * shift_multi(Ck, dn=-1, dm=0, dp=0)
+        terms2 = (Col200 * shift_multi(shift_multi(Ck, dn=0, dm=0, dp=-1), dn=0, dm=0, dp=-1)
+                    + Col020 * shift_multi(shift_multi(Ck, dn=0, dm=-1, dp=0), dn=0, dm=-1, dp=0)
+                      + Col002 * shift_multi(shift_multi(Ck, dn=-1, dm=0, dp=0), dn=-1, dm=0, dp=0))
+
+        return nu * (terms0 + terms1 + terms2)
+
+    Col = -nu * col[None, :, :, :, None, None, None, None] * Ck
+    # Col = compute_collisions(Ck, nu) - 0 * col[None, :, :, :, None, None, None, None] * Ck
+
     Diff = -D * 0 * Ck # Diffusion disabled for now. Adding it is low priority.
 
     inv_m = (2 * basis_idx[:, 0] + 1) * (2 * basis_idx[:, 1] + 1) * (2 * basis_idx[:, 2] + 1) / (dx * dy * dz)

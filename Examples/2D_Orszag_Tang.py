@@ -1,22 +1,33 @@
+"""Example: 2D Orszag–Tang vortex.
+
+Loads the 2D Orszag–Tang setup from ``input_2D_orszag_tang.toml``, constructs
+initial distribution-function moments consistent with the prescribed fluid
+velocity and electromagnetic fields, runs the simulation, and generates plots
+via ``orszag_tang_data_analysis.py``.
+"""
+
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-number_of_processors_to_use = 1 # Parallelization, this should divide total resolution
-os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={number_of_processors_to_use}'
 from time import time
 from jax import block_until_ready, config
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.scipy.special import factorial
-from spectrax import simulation, load_parameters, construct_idx_array, legT
+from spectrax import simulation, load_parameters, DG_project
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
 
+from orszag_tang_data_analysis import (
+        plot_energy_timeseries, plot_relative_energy_error,
+        plot_Jz_slice, animate_Jz
+    )
+
+# Read from input.toml
 toml_file = os.path.join(os.path.dirname(__file__), 'input_2D_orszag_tang.toml')
 input_parameters, solver_parameters = load_parameters(toml_file)
 
 print('Setting up simulation parameters...')
-start_time = time()
 deltaB = 0.2 # In-plane magnetic field amplitude. 
 U0 = deltaB * input_parameters["Omega_ce"] / jnp.sqrt(input_parameters["ms"][1] / input_parameters["ms"][0])
 
@@ -41,7 +52,6 @@ alpha_x = alpha[:, 0, None, None, None, None, None, None, None, None, None]
 alpha_y = alpha[:, 1, None, None, None, None, None, None, None, None, None]
 alpha_z = alpha[:, 2, None, None, None, None, None, None, None, None, None]
 
-basis_idx = construct_idx_array(dims, N_DG)
 # Electron and ion fluid velocities.
 Ue = lambda x, y, z: jnp.array([-U0 * jnp.sin(ky * y), U0 * jnp.sin(kx * x), -deltaB * input_parameters["Omega_ce"] * (2 * kx * jnp.cos(2 * kx * x) + ky * jnp.cos(ky * y))])
 Ui = lambda x, y, z: jnp.array([-U0 * jnp.sin(ky * y), U0 * jnp.sin(kx * x), jnp.zeros_like(x)])
@@ -63,10 +73,10 @@ C0 = lambda x, y, z: (jnp.sqrt(2 ** (n + m + p) / (factorial(n) * factorial(m) *
      * (1 / (alpha_x ** (n + 1) * alpha_y ** (m + 1) * alpha_z ** (p + 1)))
      * U_x(x, y, z) ** n * U_y(x, y, z) ** m * U_z(x, y, z) ** p)
 
-input_parameters["Ck_0"] = legT(C0, basis_idx, N_DG, Lx, Nx, Ly, Ny) # shape (Ns, Np, Nm, Nn, Ny, Nx, Nz, N_DG)
+input_parameters["Ck_0"] = DG_project(C0, input_parameters, solver_parameters) # shape (Ns, Np, Nm, Nn, Ny, Nx, Nz, N_DG)
 
 F0 = lambda x, y, z: jnp.concatenate([E(x, y, z), B(x, y, z)])
-input_parameters["Fk_0"] = legT(F0, basis_idx, N_DG, Lx, Nx, Ly, Ny) # shape (6, Ny, Nx, Nz, N_DG)
+input_parameters["Fk_0"] = DG_project(F0, input_parameters, solver_parameters) # shape (6, Ny, Nx, Nz, N_DG)
 
 C = input_parameters["Ck_0"][:, :, :, :, :, :, 0, 0] # (Ns, Np, Nm, Nn, Ny, Nx)
 F = input_parameters["Fk_0"][:, :, :, 0, 0] # (6, Ny, Nx)
@@ -136,6 +146,7 @@ uz = output["u_s"][2]
 Ck = output["Ck"][:, :, :, :, 0, :] # (Nt, Ns*Np*Nm*Nn, Ny, Nx, Nl)
 C = output["Ck"][:, :, :, :, 0, 0] # (Nt, Ns*Np*Nm*Nn, Ny, Nx)
 F = output["Fk"][:, :, :, :, 0, :] # (Nt, 6, Ny, Nx, Nl)
+basis_idx = output["basis_idx"] # Legendre orders of each DG basis function, shape (Nl, 3)
 
 # Densities
 ne = alpha_s[0] * alpha_s[1] * alpha_s[2] * C[:, 0, :, :]
@@ -165,82 +176,90 @@ cross_helicity = jnp.sum(rho * VA_perp * U_perp, axis=(-3, -2, -1)) / (Nx * Ny)
 total_fluctuation_energy = jnp.sum(rho * (U_perp**2 + VA_perp**2), axis=(-3, -2, -1)) / (Nx * Ny)
 alignment_corr = cross_helicity / total_fluctuation_energy
 
-fig, ax = plt.subplots()
-ax.plot(t, alignment_corr)
-ax.set_xlabel(r'$\omega_p t$')
-ax.set_ylabel(r'$\kappa$')
-ax.set_title(r'$\kappa = \frac{\langle \rho u_{\perp} \cdot v_{A\perp}\rangle}{\langle \rho(u_{\perp}^2 + v_{A\perp}^2)\rangle}$')
-ax.title.set_fontsize(16)
-ax.grid()
-fig.savefig('OT_tests_alignment.png')
+# fig, ax = plt.subplots()
+# ax.plot(t, alignment_corr)
+# ax.set_xlabel(r'$\omega_p t$')
+# ax.set_ylabel(r'$\kappa$')
+# ax.set_title(r'$\kappa = \frac{\langle \rho u_{\perp} \cdot v_{A\perp}\rangle}{\langle \rho(u_{\perp}^2 + v_{A\perp}^2)\rangle}$')
+# ax.title.set_fontsize(16)
+# ax.grid()
+# fig.savefig('OT_tests_alignment.png')
 
-plt.show()
+# plt.show()
 
-# Plot densities
-plt.figure(figsize=(8, 6))
-plt.imshow(ne[-1], aspect='auto', cmap='plasma', 
-           interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
-plt.colorbar(label=r'$n_e$').ax.yaxis.label.set_size(16)
+# # Plot densities
+# plt.figure(figsize=(8, 6))
+# plt.imshow(ne[-1], aspect='auto', cmap='plasma', 
+#            interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
+# plt.colorbar(label=r'$n_e$').ax.yaxis.label.set_size(16)
 
-plt.figure(figsize=(8, 6))
-plt.imshow(ni[-1], aspect='auto', cmap='plasma', 
-           interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
-plt.colorbar(label=r'$n_i$').ax.yaxis.label.set_size(16)
+# plt.figure(figsize=(8, 6))
+# plt.imshow(ni[-1], aspect='auto', cmap='plasma', 
+#            interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))#, vmin=-10, vmax=10)
+# plt.colorbar(label=r'$n_i$').ax.yaxis.label.set_size(16)
 
-# Plot energies
-fig, ax = plt.subplots(figsize=(12, 8))
-ax.semilogy(t, U_EM[:, 0], label=r'$E_x$ Energy')
-ax.semilogy(t, U_EM[:, 1], label=r'$E_y$ Energy')
-ax.semilogy(t, U_EM[:, 2], label=r'$E_z$ Energy')
-ax.semilogy(t, U_EM[:, 3], label=r'$B_x$ Energy')
-ax.semilogy(t, U_EM[:, 4], label=r'$B_y$ Energy')
-ax.semilogy(t, U_EM[:, 5], label=r'$B_z$ Energy')
+# # Plot energies
+# fig, ax = plt.subplots(figsize=(12, 8))
+# ax.semilogy(t, U_EM[:, 0], label=r'$E_x$ Energy')
+# ax.semilogy(t, U_EM[:, 1], label=r'$E_y$ Energy')
+# ax.semilogy(t, U_EM[:, 2], label=r'$E_z$ Energy')
+# ax.semilogy(t, U_EM[:, 3], label=r'$B_x$ Energy')
+# ax.semilogy(t, U_EM[:, 4], label=r'$B_y$ Energy')
+# ax.semilogy(t, U_EM[:, 5], label=r'$B_z$ Energy')
 
-ax.semilogy(t, U_E, label=r'Total electric energy')
-ax.semilogy(t, U_B, label=r'Total magnetic energy')
-ax.semilogy(t, U_EM_tot, label=r'Total electromagnetic energy')
+# ax.semilogy(t, U_E, label=r'Total electric energy')
+# ax.semilogy(t, U_B, label=r'Total magnetic energy')
+# ax.semilogy(t, U_EM_tot, label=r'Total electromagnetic energy')
 
-ax.set_xlabel(r'$\omega_p t$')
-ax.set_ylabel(r'Energy')
-ax.grid()
-ax.legend()
-ax.set_title('Orszag-Tang vortex: electromagentic field energies')
-fig.tight_layout()
-fig.savefig('OT_tests_energies.png')
+# ax.set_xlabel(r'$\omega_p t$')
+# ax.set_ylabel(r'Energy')
+# ax.grid()
+# ax.legend()
+# ax.set_title('Orszag-Tang vortex: electromagentic field energies')
+# fig.tight_layout()
+# fig.savefig('OT_tests_energies.png')
 
-plt.show()
+# plt.show()
 
-def plot_field_evolution(field, interval=50, save_file='', save_fps=10):
-    fig, ax = plt.subplots()
-    im = ax.imshow(field[0], aspect='auto', cmap='plasma', interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))
-    cbar = plt.colorbar(im, ax=ax)
-    title = ax.set_title(r"$t = 0$")
-    ax.set_xlabel("x/d_e")  # Set x-axis label
-    ax.set_ylabel("y/d_e")  # Set y-axis label
+# def plot_field_evolution(field, interval=50, save_file='', save_fps=10):
+#     fig, ax = plt.subplots()
+#     im = ax.imshow(field[0], aspect='auto', cmap='plasma', interpolation='none', origin='lower', extent=(0, Lx, 0, Ly))
+#     cbar = plt.colorbar(im, ax=ax)
+#     title = ax.set_title(r"$t = 0$")
+#     ax.set_xlabel("x/d_e")  # Set x-axis label
+#     ax.set_ylabel("y/d_e")  # Set y-axis label
 
-    def update(frame):
-        im.set_array(field[frame])
-        im.set_clim(vmin=field[frame].min(), vmax=field[frame].max())
-        title.set_text(f"$t = {t[frame]}$")
-        cbar.update_normal(im)
-        return [im, cbar.ax, title]
+#     def update(frame):
+#         im.set_array(field[frame])
+#         im.set_clim(vmin=field[frame].min(), vmax=field[frame].max())
+#         title.set_text(f"$t = {t[frame]}$")
+#         cbar.update_normal(im)
+#         return [im, cbar.ax, title]
 
-    # Create the animation
-    anim = FuncAnimation(
-        fig, update, frames=field.shape[0], interval=interval, blit=False  # Adjust interval as needed
-    )
+#     # Create the animation
+#     anim = FuncAnimation(
+#         fig, update, frames=field.shape[0], interval=interval, blit=False  # Adjust interval as needed
+#     )
 
-    if save_file != '':
-        anim.save(save_file, writer=PillowWriter(fps=save_fps))
+#     if save_file != '':
+#         anim.save(save_file, writer=PillowWriter(fps=save_fps))
 
-    # plt.show()
+#     # plt.show()
 
-plot_field_evolution(Uex, 2000, 'OT_tests_Uex.gif')
+# plot_field_evolution(Uex, 2000, 'OT_tests_Uex.gif')
 
-plot_field_evolution(Uey, 2000, 'OT_tests_Uey.gif')
+# plot_field_evolution(Uey, 2000, 'OT_tests_Uey.gif')
 
-plot_field_evolution(ne, 2000, 'OT_tests_ne.gif')
+# plot_field_evolution(ne, 2000, 'OT_tests_ne.gif')
 
-plot_field_evolution(Jz, 2000, 'OT_tests_Jz.gif')
+# plot_field_evolution(Jz, 2000, 'OT_tests_Jz.gif')
 
-plt.show()
+# plt.show()
+
+# print('Saving results...')
+# jnp.savez('output_Orszag.npz', **output)
+
+plot_energy_timeseries(output, savepath="energy.png")
+plot_relative_energy_error(output, savepath="energy_error.png")
+plot_Jz_slice(output, input_parameters, solver_parameters, t_query=output["time"][-1], savepath="Jz_slice.png")
+animate_Jz(output, input_parameters, solver_parameters, tmax=None, out_gif="Jz.gif")

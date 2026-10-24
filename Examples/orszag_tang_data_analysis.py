@@ -200,19 +200,6 @@ def plot_relative_energy_error(
     return ax
 
 
-def _ifft_Ck_frame(Ck_frame: Array, Nx, Ny, Nz) -> Array:
-    """
-    Inverse FFT (k->x) for one time frame.
-
-    Matches the example:
-        C = ifftn(Ck, axes=(-1, -3, -2), norm="forward")
-    """
-    # Ensure complex dtype
-    Ck_frame = np.asarray(Ck_frame)
-    C_frame = np.fft.irfftn(Ck_frame, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
-    return C_frame
-
-
 def _compute_Jz_from_C_frame(
     C_frame: Array,
     input_parameters: Dict[str, Any],
@@ -277,10 +264,6 @@ def compute_Jz_slice(
     t = np.asarray(output["time"])
     Ck = np.asarray(output["Ck"])
 
-    Nx = int(solver_parameters["Nx"])
-    Ny = int(solver_parameters["Ny"])
-    Nz = int(solver_parameters["Nz"])
-
     if index is None and t_query is None:
         index = int(t.shape[0] - 1)
     elif index is None:
@@ -288,7 +271,7 @@ def compute_Jz_slice(
     else:
         index = int(index)
 
-    C_frame = _ifft_Ck_frame(Ck[index], Nx, Ny, Nz)
+    C_frame = np.asarray(Ck[index, :, :, :, :, 0])
     Jz = _compute_Jz_from_C_frame(C_frame, input_parameters, solver_parameters)
     return Jz, float(t[index]), index
 
@@ -383,10 +366,6 @@ def animate_Jz(
     stop = _frame_stop_index(t, tmax)
     nframes = stop
 
-    Nx = int(solver_parameters["Nx"])
-    Ny = int(solver_parameters["Ny"])
-    Nz = int(solver_parameters["Nz"])
-
     Lx = float(input_parameters["Lx"])
     Ly = float(input_parameters["Ly"])
 
@@ -400,7 +379,7 @@ def animate_Jz(
     if precompute:
         Jz_list = []
         for i in range(nframes):
-            C_frame = _ifft_Ck_frame(Ck[i], Nx, Ny, Nz)
+            C_frame = np.asarray(Ck[i, :, :, :, :, 0])
             Jz_i = _compute_Jz_from_C_frame(C_frame, input_parameters, solver_parameters)
             Jz_list.append(Jz_i)
         Jz_series = np.stack(Jz_list, axis=0)  # (t, Nx, Ny)
@@ -418,7 +397,7 @@ def animate_Jz(
     if precompute:
         J0 = Jz_series[0]
     else:
-        C0 = _ifft_Ck_frame(Ck[0], Nx, Ny, Nz)
+        C0 = np.asarray(Ck[0, :, :, :, :, 0])
         J0 = _compute_Jz_from_C_frame(C0, input_parameters, solver_parameters)
 
     im = ax.imshow(
@@ -440,7 +419,7 @@ def animate_Jz(
     def _get_frame(i: int) -> Array:
         if precompute:
             return Jz_series[i]
-        C_frame = _ifft_Ck_frame(Ck[i], Nx, Ny, Nz)
+        C_frame = np.asarray(Ck[i, :, :, :, :, 0])
         return _compute_Jz_from_C_frame(C_frame, input_parameters, solver_parameters)
 
     def update(i: int):
