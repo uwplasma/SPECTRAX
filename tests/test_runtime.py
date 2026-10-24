@@ -65,6 +65,8 @@ def test_no_parallel_section_is_single_auto_device(tmp_path):
     res = run(tmp_path, LOAD)
     assert res["cfg"] == ["auto", 1, 1, [1, 1, 1]] and res["shape"] == [1, 1, 1, 1] and res["ndev"] == 1
 
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="optimistix 0.0.11 (Python 3.10) creates a JAX array at import, "
+                    "so diffrax must be imported after load_parameters")
 def test_lazy_imports_do_not_initialize_backend(tmp_path):
     res = run(tmp_path, """
         import spectrax
