@@ -10,7 +10,8 @@ from dataclasses import asdict, dataclass
 from fractions import Fraction
 from functools import cache
 from itertools import product
-import tomllib
+try: import tomllib
+except ModuleNotFoundError: import tomli as tomllib
 
 __all__ = ["ParallelConfig", "parallel_config", "bootstrap", "select_devices", "make_mesh", "named_sharding", "read_input"]
 

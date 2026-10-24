@@ -246,3 +246,31 @@ def test_legacy_single_device_parity_with_base_commit(base_run):
         assert out[key].shape == old[key].shape
         assert_close(out[key], old[key], 1e-10)
     assert_close(out["total_energy"], old["E"], 1e-10)
+
+
+def field_energy(scale, layout):
+    """Final field energy of the adaptive OT run with the initial fields multiplied by ``scale``."""
+    cfg = config(layout)
+    ip = {**OT_INPUT, "t_max": 0.04, "ode_tolerance": 1e-8}
+    OT.initial_state(ip, dict(GRID, parallel=cfg))
+    ip["Fk_0"] = scale * ip["Fk_0"]
+    out = simulation(ip, **GRID, dt=1e-3, solver=Dopri8(), parallel=cfg, progress_meter=NoProgressMeter())
+    return out["EM_energy"][-1]
+
+
+OLD_JAX = tuple(map(int, jax.__version__.split(".")[:2])) < (0, 7)
+
+
+@pytest.mark.parametrize("layout", [REF, (1, 2, 2, 1), (2, 2, 1, 1)])
+def test_gradient_matches_central_difference(layout):
+    if OLD_JAX and layout != REF:
+        pytest.skip("JAX < 0.7 keeps the mesh in array types, which diffrax's custom JVPs reject")
+    scale, h = 1.0, 1e-4
+    grad = jax.grad(field_energy)(scale, layout)
+    fd = (field_energy(scale + h, layout) - field_energy(scale - h, layout)) / (2 * h)
+    assert grad != 0 and abs(grad - fd) <= 1e-5 * abs(fd)
+
+
+def test_simulation_runs_under_jit():
+    f = jax.jit(field_energy, static_argnums=1)
+    assert np.isclose(f(1.0, (2, 2, 1, 1)), field_energy(1.0, (2, 2, 1, 1)), rtol=1e-12)

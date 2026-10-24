@@ -7,6 +7,7 @@ from jax import jit, config
 config.update("jax_enable_x64", True)
 from functools import lru_cache, partial
 from jax.sharding import NamedSharding, PartitionSpec as P
+import equinox as eqx
 from diffrax import (diffeqsolve, Dopri8, ODETerm, is_okay,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
 from ._runtime import bootstrap, make_mesh, named_sharding
@@ -15,6 +16,13 @@ from ._model import Hermite_DG_system, Hermite_DG_rhs
 from ._diagnostics import diagnostics
 
 __all__ = ["ode_system", "simulation", "state_rms_norm"]
+
+def _place(tree, shardings, mesh):
+    """device_put concrete leaves on a multi-device mesh; traced leaves (under jax.grad or jit) are resharded by the
+    jitted solve. One device needs no placement, and committed arrays break custom JVPs on JAX < 0.7."""
+    if mesh.size == 1:
+        return tree
+    return jax.tree.map(lambda x, s: x if isinstance(x, jax.core.Tracer) else jax.device_put(x, s), tree, shardings)
 
 RHS_ARGS = list(inspect.signature(Hermite_DG_rhs).parameters)[2:-3] # Arrays passed to the RHS by name, between (Ck, Fk) and (Nn, Nm, Np).
 SPECIES_ARGS = {"Ax_p", "Ax_m", "Ay_p", "Ay_m", "Az_p", "Az_m", "alpha_s", "u_s", "ms", "qs"} # Species on the first axis.
@@ -108,7 +116,7 @@ def _compiled_solve(mesh, solver, adaptive_time_step, timesteps, progress_meter,
         Ck, Fk = sol.ys # Merge only the (sharded) species and (local) Hermite axes for the public history shape.
         return Ck.reshape(timesteps, -1, *Ck.shape[-4:]), Fk, time, sol.result, sol.stats["num_steps"]
 
-    return jit(solve, in_shardings=in_shardings, out_shardings=out_shardings), in_shardings
+    return jit(solve, **(dict(in_shardings=in_shardings, out_shardings=out_shardings) if mesh.size > 1 else {})), in_shardings
 
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, N_DG=2, dims=1, timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True,
                parallel=None, progress_meter=TqdmProgressMeter(), max_steps=1000000):
@@ -155,8 +163,9 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
 
     Notes
     -----
-    This is a host-side wrapper (setup, placement, status check), not meant to be called
-    inside `jax.jit`; it synchronizes once, on the scalar solver status. The state
+    This is a host-side wrapper (setup, placement, status check). Called eagerly it synchronizes
+    once, on the scalar solver status; under `jax.jit` or `jax.grad` a failed solve raises at run
+    time through `eqx.error_if` instead. The state
     Y = (Ck, Fk) is integrated by one global Diffrax solve with Ck of shape
     (Ns, Np*Nm*Nn, Ny, Nx, Nz, Nl) sharded over species and space, and Fk of shape
     (6, Ny, Nx, Nz, Nl) sharded over space and replicated across species groups.
@@ -165,7 +174,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
     mesh = make_mesh(parallel)
     # Supplied initial states keep their public shapes and go straight to their shards (species prefix, spatial suffix);
     # default ones are projected sharded.
-    input_parameters = {**input_parameters, **{k: jax.device_put(v, named_sharding(mesh, jnp.ndim(v), species=k == "Ck_0"))
+    input_parameters = {**input_parameters, **{k: _place(v, named_sharding(mesh, jnp.ndim(v), species=k == "Ck_0"), mesh)
                                                for k, v in input_parameters.items() if k in ("Ck_0", "Fk_0")}}
     with jax.default_device(mesh.devices.flat[0]): # Small setup tables live on the selected backend.
         parameters = initialize_simulation_parameters(input_parameters, Nx, Ny, Nz, Nn, Nm, Np, Ns, N_DG, dims, timesteps, dt, parallel=parallel)
@@ -175,12 +184,14 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
 
     # Solve the ODE system
     solve, in_shardings = _compiled_solve(mesh, solver, adaptive_time_step, timesteps, progress_meter, max_steps, Nn, Nm, Np)
-    Ck, Fk, time, result, num_steps = solve(*jax.device_put((y0, args, parameters["t_max"], dt, parameters["ode_tolerance"]), in_shardings))
-    if not is_okay(result): # One scalar synchronization; the solution itself is not transferred.
+    Ck, Fk, time, result, num_steps = solve(*_place((y0, args, parameters["t_max"], dt, parameters["ode_tolerance"]), in_shardings, mesh))
+    if isinstance(result._value, jax.core.Tracer): # Under a user jit: fail at run time instead of on the host.
+        Ck = eqx.error_if(Ck, ~is_okay(result), "Diffrax solve failed")
+    elif not is_okay(result): # One scalar synchronization; the solution itself is not transferred.
         raise RuntimeError(f"Diffrax solve failed after {int(num_steps)} steps: {result}")
 
     # Output results
-    output = {"Ck": Ck, "Fk": Fk, "time": time, "num_steps": num_steps, **parameters}
+    output = {"Ck": Ck, "Fk": Fk, "time": time, "num_steps": num_steps, **parameters, "Nn": Nn, "Nm": Nm, "Np": Np, "Ns": Ns}
     diagnostics(output)
 
     return output

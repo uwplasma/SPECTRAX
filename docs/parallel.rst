@@ -405,6 +405,10 @@ Limitations
 * The deprecated implicit midpoint solver is outside this work.
 * The generic ``plot`` function still expects an ``output['dCk']`` that the solver does not provide (pre-existing).
 * Speedups depend on problem size, hardware and layout; none are asserted without measurement.
+* ``jax.grad`` and ``jax.jit`` work through ``simulation`` on any layout with JAX >= 0.7. On Python 3.10 (JAX 0.6,
+  optimistix 0.0.11) gradients work on one device only, and ``load_parameters`` must run before ``simulation`` is
+  imported, because importing diffrax there starts the JAX backend.
+* GPU scaling has not been measured yet.
 
 Design and sources
 ------------------
