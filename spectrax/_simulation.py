@@ -28,6 +28,10 @@ def _twothirds_mask(Ny: int, Nx: int, Nz: int):
     kz = np.fft.fftfreq(Nz, d=1.0 / Nz).round().astype(int)[None, None, :]
     return (3 * np.abs(ky) < Ny) & (3 * kx < Nx) & (3 * np.abs(kz) < Nz)
 
+
+twothirds_mask = _twothirds_mask  # public name: the de-aliasing mask used by ode_system
+__all__ += ["twothirds_mask"]
+
 @jit
 def cross_product(k_vec, F_vec):
     """
