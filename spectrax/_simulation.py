@@ -15,7 +15,7 @@ from ._initialization import initialize_simulation_parameters
 from ._model import Hermite_DG_system, Hermite_DG_rhs
 from ._diagnostics import diagnostics
 
-__all__ = ["ode_system", "simulation", "state_rms_norm"]
+__all__ = ["ode_system", "simulation", "state_rms_norm", "sharded_rhs"]
 
 def _place(tree, shardings, mesh):
     """device_put concrete leaves on a multi-device mesh; traced leaves (under jax.grad or jit) are resharded by the
@@ -24,7 +24,7 @@ def _place(tree, shardings, mesh):
         return tree
     return jax.tree.map(lambda x, s: x if isinstance(x, jax.core.Tracer) else jax.device_put(x, s), tree, shardings)
 
-RHS_ARGS = list(inspect.signature(Hermite_DG_rhs).parameters)[2:-3] # Arrays passed to the RHS by name, between (Ck, Fk) and (Nn, Nm, Np).
+RHS_ARGS = list(inspect.signature(Hermite_DG_rhs).parameters)[2:-4] # Arrays passed to the RHS by name, between (Ck, Fk) and (Nn, Nm, Np, comm).
 SPECIES_ARGS = {"Ax_p", "Ax_m", "Ay_p", "Ay_m", "Az_p", "Az_m", "alpha_s", "u_s", "ms", "qs"} # Species on the first axis.
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'Nl'])
@@ -98,6 +98,46 @@ def _state_rms_norm_jvp(primals, tangents):
     count = max(sum(jnp.size(e) for e in jax.tree_util.tree_leaves(error)), 1)
     return out, jnp.where(pred, 0, _sum_dot(error, t_error) / (count * jnp.where(pred, 1, out)))
 
+def sharded_rhs(mesh, Nn, Nm, Np):
+    """`Hermite_DG_rhs` inside `shard_map`: one packed ppermute of the Ck and Fk boundary slabs per sharded axis and
+    direction builds the ghost cells, and the species current is a psum. Returns rhs(Ck, Fk, args)."""
+    size = dict(zip(mesh.axis_names, mesh.devices.shape))
+    spatial = {"y": -4, "x": -3, "z": -2} # Array axis of each spatial mesh axis in Ck and Fk.
+
+    def local(Ck, Fk, args):
+        def ghosts(name, ax):
+            """Ghost slabs (below, above) of Ck and Fk along `ax`: periodic locally, else from the neighbours."""
+            lo = [jax.lax.slice_in_dim(a, a.shape[ax] - 1, a.shape[ax], axis=ax) for a in (Ck, Fk)]
+            hi = [jax.lax.slice_in_dim(a, 0, 1, axis=ax) for a in (Ck, Fk)]
+            if size[name] == 1:
+                return lo, hi
+            n = size[name]
+            pack = lambda slabs: jnp.concatenate([a.ravel() for a in slabs])
+            unpack = lambda buf: [buf[:lo[0].size].reshape(lo[0].shape), buf[lo[0].size:].reshape(lo[1].shape)]
+            below = jax.lax.ppermute(pack(lo), name, [(i, (i + 1) % n) for i in range(n)]) # My last slab is my right neighbour's ghost below.
+            above = jax.lax.ppermute(pack(hi), name, [(i, (i - 1) % n) for i in range(n)])
+            return unpack(below), unpack(above)
+
+        padded = {}
+        for name, ax in spatial.items():
+            (lc, lf), (hc, hf) = ghosts(name, ax)
+            padded[ax] = (jnp.concatenate([lc, Ck, hc], axis=ax), jnp.concatenate([lf, Fk, hf], axis=ax))
+
+        def shift(C, dx, dy, dz):
+            """Periodic element shift (`out[i] = C[i + d]`) read from the ghost-padded copy of Ck or Fk."""
+            ax, d = next((a, d) for a, d in ((-3, dx), (-4, dy), (-2, dz)) if d)
+            Cp = padded[ax][0 if C.ndim == 8 else 1]
+            Cp = Cp.reshape(*C.shape[:-4], *Cp.shape[-4:]) # Ck is used with its Hermite axis split as (Np, Nm, Nn).
+            return jax.lax.slice_in_dim(Cp, 1 + d, 1 + d + C.shape[ax], axis=ax)
+
+        species_sum = lambda x: jax.lax.psum(jnp.sum(x, axis=0), "species") if size["species"] > 1 else jnp.sum(x, axis=0)
+        args = {**args, "Lx": args["Lx"] / size["x"], "Ly": args["Ly"] / size["y"], "Lz": args["Lz"] / size["z"]} # Local box: dx unchanged.
+        return Hermite_DG_rhs(Ck, Fk, **args, Nn=Nn, Nm=Nm, Np=Np, comm=(shift, species_sum))
+
+    ck, fk = P("species", None, "y", "x", "z", None), P(None, "y", "x", "z", None)
+    return lambda Ck, Fk, args: jax.shard_map(local, mesh=mesh, out_specs=(ck, fk), check_vma=False, # Fk ghosts ride in the Ck buffer, identical per species group.
+        in_specs=(ck, fk, {k: P("species") if k in SPECIES_ARGS else P() for k in args}))(Ck, Fk, args)
+
 @lru_cache(maxsize=None)
 def _compiled_solve(mesh, solver, adaptive_time_step, timesteps, progress_meter, max_steps, Nn, Nm, Np):
     """Jitted global solve of Y = (Ck, Fk) on `mesh`, cached on static settings so repeated runs reuse it."""
@@ -106,11 +146,13 @@ def _compiled_solve(mesh, solver, adaptive_time_step, timesteps, progress_meter,
                     {k: by_species if k in SPECIES_ARGS else replicated for k in RHS_ARGS}, replicated, replicated, replicated)
     out_shardings = (named_sharding(mesh, 6, species=True, lead=1), named_sharding(mesh, 6, lead=1), replicated, replicated, replicated)
 
+    rhs = sharded_rhs(mesh, Nn, Nm, Np) if mesh.size > 1 else lambda Ck, Fk, args: Hermite_DG_rhs(Ck, Fk, **args, Nn=Nn, Nm=Nm, Np=Np)
+
     def solve(y0, args, t_max, dt, tolerance):
         time = jnp.linspace(0, t_max, timesteps)
         stepsize_controller = PIDController(rtol=tolerance, atol=tolerance, norm=state_rms_norm) if adaptive_time_step else ConstantStepSize()
         sol = diffeqsolve(
-            ODETerm(lambda t, y, args: Hermite_DG_rhs(*y, **args, Nn=Nn, Nm=Nm, Np=Np)), solver=solver,
+            ODETerm(lambda t, y, args: rhs(*y, args)), solver=solver,
             stepsize_controller=stepsize_controller, t0=0, t1=t_max, dt0=dt, y0=y0, args=args,
             saveat=SaveAt(ts=time), max_steps=max_steps, progress_meter=progress_meter, throw=False)
         Ck, Fk = sol.ys # Merge only the (sharded) species and (local) Hermite axes for the public history shape.

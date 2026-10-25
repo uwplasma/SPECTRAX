@@ -25,7 +25,7 @@ from spectrax._runtime import named_sharding
 from spectrax._simulation import state_rms_norm
 
 BASE = "21f506812c9a561d61516adc1afc31a1be26374c"
-RHS_NAMES = list(inspect.signature(Hermite_DG_rhs).parameters)[2:-3]
+RHS_NAMES = list(inspect.signature(Hermite_DG_rhs).parameters)[2:-4]
 SPECIES_NAMES = ("Ax_p", "Ax_m", "Ay_p", "Ay_m", "Az_p", "Az_m", "alpha_s", "u_s", "ms", "qs")
 
 # Small grids: asymmetric 2D with N_DG>1, 1D, 3D, and four species.
