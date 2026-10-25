@@ -10,6 +10,7 @@ from functools import partial
 from diffrax import (diffeqsolve, Dopri8, ODETerm, SaveAt, PIDController, TqdmProgressMeter,
                      NoProgressMeter, ConstantStepSize, RecursiveCheckpointAdjoint, ClipStepSizeController)
 from ._lawson import LawsonSolver, simulation_rate
+from ._lawson_streaming import hermite_streaming_factor
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system, uniform_acceleration, dougherty_collisions
 from ._diagnostics import diagnostics
@@ -238,7 +239,10 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         hyper-diffusion ``D k^2`` damping is integrated exactly (rate frozen at the step start; see
         ``spectrax._lawson`` for order and limits). Fields and all non-diagonal terms stay explicit. Steps are
         clipped onto the save times (Lawson dense output is accurate only for ``rate * h`` of order one).
-        Helps when ``nu * h`` would otherwise limit the step; no effect on cost otherwise.
+        ``"streaming"``: integrate the free-streaming operator exactly per Fourier mode (Hermite tridiagonal
+        eigendecomposition, ``spectrax._lawson_streaming``), damping left explicit (putting the damping into the same
+        factor is available through ``hermite_streaming_factor(rate_fn=...)`` but measured harmful when ``h k a sqrt(2 Nn)``
+        and the rate are both large). Helps when ``nu * h`` would otherwise limit the step; no effect on cost otherwise.
 
     Returns
     -------
@@ -294,7 +298,12 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     if integrating_factor:
         # diagonal damping rate with the structure of the state: (Ck, Fk[, basis]); fields and basis are undamped
         rate = lambda t, y, a: tuple(simulation_rate(a, Ns, Nn, Nm, Np, Ny, Nx, Nz)) + (0.0,) * (len(y) - 2)
-        solver = LawsonSolver(solver, rate)
+        if integrating_factor == "streaming":
+            if frame is not None:
+                raise ValueError('integrating_factor="streaming" assumes the fixed Hermite basis; use frame=None')
+            solver = LawsonSolver(solver, factor_fn=hermite_streaming_factor("first"))
+        else:
+            solver = LawsonSolver(solver, rate)
         if adaptive_time_step:
             stepsize_controller = ClipStepSizeController(stepsize_controller, step_ts=time)
     sol = diffeqsolve(
