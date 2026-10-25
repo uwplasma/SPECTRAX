@@ -132,6 +132,8 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "dn1": 0.001,
         "dn2": 0.001,
         "ode_tolerance": 1e-12,
+        "ode_rtol": lambda p: p["ode_tolerance"],
+        "ode_atol": lambda p: p["ode_tolerance"],
         "vte": lambda p: p["alpha_s"][0] / jnp.sqrt(2),
         "vti": lambda p: p["vte"] * jnp.sqrt(1 / p["mi_me"]),
     }
