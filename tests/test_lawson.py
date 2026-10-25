@@ -109,19 +109,18 @@ def test_simulation_stiff_hypercollision_matches_plain_with_fewer_steps():
 
 
 def test_simulation_rate_layout_matches_state():
-    """The rate is flat like the [Ck, Fk] state, equals nu*col + D*k2 on Ck and exactly zero on the six field rows."""
+    """The rate is a (Ck, Fk) pytree like the state, equals nu*col + D*k2 on Ck and exactly zero on the field."""
     from spectrax import simulation_rate
     from spectrax._initialization import initialize_simulation_parameters
     Nx, Ny, Nz, Nn, Nm, Np, Ns = 9, 1, 1, 6, 1, 1, 2
     p = initialize_simulation_parameters({"nu": 5.0, "D": 0.3}, Nx, Ny, Nz, Nn, Nm, Np, Ns, 3, 0.01)
     args = (0,) * 8 + (p["nu"], p["D"]) + (0,) * 9 + (p["k2_grid"], 0, p["collision_matrix"])
-    r = np.asarray(simulation_rate(args, Ns, Nn, Nm, Np, Ny, Nx, Nz))
-    nck = Ns * Nn * Nm * Np * (Nx // 2 + 1) * Ny * Nz
-    assert r.shape == (nck + 6 * (Nx // 2 + 1) * Ny * Nz,)
-    assert np.all(r[nck:] == 0.0) and np.all(r[:nck] >= 0.0)
+    rC, rF = simulation_rate(args, Ns, Nn, Nm, Np, Ny, Nx, Nz)
+    r7 = np.asarray(rC)
+    assert r7.shape == (Ns, Np, Nm, Nn, Ny, Nx // 2 + 1, Nz) and np.all(r7 >= 0.0)
+    assert float(rF) == 0.0  # the six field rows are never damped
     col = np.asarray(p["collision_matrix"])
     k2 = np.asarray(p["k2_grid"])[0, :, 0]
-    r7 = r[:nck].reshape(Ns, Np, Nm, Nn, Ny, Nx // 2 + 1, Nz)
     np.testing.assert_allclose(r7[0, 0, 0, :, 0, :, 0], 5.0 * col[0, 0, :, None] + 0.3 * k2[None, :])
 
 

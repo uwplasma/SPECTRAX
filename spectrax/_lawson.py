@@ -166,9 +166,8 @@ def hypercollision_rate(nu, col, D=0.0, k2_grid=None):
 
 
 def simulation_rate(args, Ns, Nn, Nm, Np, Ny, Nx, Nz):
-    """Rate for the flat ``[Ck, Fk]`` state of :func:`spectrax.simulation`: hypercollision plus hyper-diffusion
+    """Rate for the ``(Ck, Fk)`` pytree state of :func:`spectrax.simulation`: hypercollision plus hyper-diffusion
     on every Hermite coefficient, zero on the six field components (they are never damped)."""
     nkx = Nx // 2 + 1
     r = hypercollision_rate(args[8], args[21], args[9], args[19])
-    r = jnp.broadcast_to(r, (Ns, Np, Nm, Nn, Ny, nkx, Nz)).reshape(-1)
-    return jnp.concatenate([r, jnp.zeros(6 * Ny * nkx * Nz, dtype=r.dtype)])
+    return jnp.broadcast_to(r, (Ns, Np, Nm, Nn, Ny, nkx, Nz)), 0.0
