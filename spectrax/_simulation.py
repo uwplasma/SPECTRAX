@@ -55,8 +55,8 @@ def cross_product(k_vec, F_vec):
     Fx, Fy, Fz = F_vec
     return jnp.array([ky * Fz - kz * Fy, kz * Fx - kx * Fz, kx * Fy - ky * Fx])
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'frame', 'collision_model'])
-def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collision_model=None):
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'frame', 'collision_model', 'inv_c2'])
+def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collision_model=None, inv_c2=0.0):
     """
     Right-hand side for the coupled Vlasov-Maxwell system expressed in spectral form.
 
@@ -86,6 +86,9 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collis
         Physical collision operator added to the kinetic right-hand side (see
         :func:`spectrax._model.dougherty_collisions`); independent of the numerical
         hypercollision ``nu``. None: no term, bitwise the previous right-hand side.
+    inv_c2 : float, optional
+        ``1 / c^2`` in the code units; ``0`` (default) is the nonrelativistic model, ``> 0`` the relativistic
+        momentum-space model (:mod:`spectrax._relativistic`).
 
     Returns
     -------
@@ -113,7 +116,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collis
     u_dot, F0 = uniform_acceleration(F, u_s, qs, Omega_cs, Ns) if pump else (None, None)
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
-                                      Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23=mask23, F0=F0)
+                                      Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23=mask23, F0=F0, inv_c2=inv_c2)
     if collision_model in ("dougherty", "dougherty_g"):
         dCk_s_dt = dCk_s_dt + dougherty_collisions(C.reshape(Ns, Np, Nm, Nn, *C.shape[-3:]), args[28], alpha_s, u_s,
                                                    Omega_cs, Nn, Nm, Np, Ns, mask23,
@@ -123,7 +126,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collis
 
     dBk_dt = -1j * cross_product(nabla, Fk[:3])
     
-    current = plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns)
+    current = plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns, inv_c2=inv_c2)
     dEk_dt = 1j * cross_product(nabla, Fk[3:]) - current / Omega_cs[0]
 
     dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
@@ -166,11 +169,11 @@ class FlooredPIDController(PIDController):
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step',
                                 'dtmin', 'max_steps', 'throw', 'adjoint', 'progress_meter', 'frame',
-                                'collision_model', 'integrating_factor'])
+                                'collision_model', 'integrating_factor', 'inv_c2'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
                timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True, dtmin=None, max_steps=1000000,
                throw=True, adjoint=RecursiveCheckpointAdjoint(), progress_meter=TqdmProgressMeter(), frame=None,
-               collision_model=None, integrating_factor=False):
+               collision_model=None, integrating_factor=False, inv_c2=0.0):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -201,6 +204,10 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     max_steps : int, optional
         Step budget; exhausting it stops the solve (`RESULTS.max_steps_reached`), reported
         separately from a step below `dtmin` (`RESULTS.dt_min_reached`).
+    inv_c2 : float, optional
+        ``1 / c^2`` in the code units (velocities in units of ``c``: ``1.0`` is physical). Default ``0.0``: the
+        nonrelativistic model, bitwise the previous behaviour. ``> 0`` selects the relativistic momentum-space
+        Hermite model (:mod:`spectrax._relativistic`); not yet supported with the pump frame or collisions.
     throw : bool, optional
         Raise on integration failure; with False the failure is reported in `solver_result`,
         and only the first `num_valid_times` saved times (`valid_times`) hold a solution.
@@ -294,7 +301,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
 
     # Solve the ODE system
     ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns, frame=frame or "fixed",
-                                 collision_model=collision_model)
+                                 collision_model=collision_model, inv_c2=inv_c2)
     if integrating_factor:
         # diagonal damping rate with the structure of the state: (Ck, Fk[, basis]); fields and basis are undamped
         rate = lambda t, y, a: tuple(simulation_rate(a, Ns, Nn, Nm, Np, Ny, Nx, Nz)) + (0.0,) * (len(y) - 2)

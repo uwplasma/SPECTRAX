@@ -12,6 +12,7 @@ from ._initialize_maxwellian import *
 from ._inverse_transform import *
 from ._model import *
 from ._plot import *
+from ._relativistic import *
 from ._simulation import *
 from ._remap import *
 from ._lawson import *

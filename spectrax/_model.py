@@ -10,13 +10,15 @@ import jax.numpy as jnp
 from jax import jit
 from functools import partial
 
+from ._relativistic import speed_apply
+
 __all__ = ['plasma_current', 'Hermite_Fourier_system', 'basis_rate_terms', 'uniform_acceleration',
            'field_scaled_closure_rate', 'dougherty_moments', 'dougherty_rate_real',
            'dougherty_cross_moments', 'dougherty_collisions']
 
 
-@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
-def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
+@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns', 'inv_c2'])
+def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns, inv_c2=0.0):
     """
     Compute the spectral Ampère-Maxwell current from Hermite-Fourier coefficients.
 
@@ -34,6 +36,10 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
         Number of Hermite modes in x, y, and z respectively.
     Ns : int
         Number of species.
+    inv_c2 : float, optional
+        ``1 / c^2`` in the code units (velocities in units of ``c`` make ``inv_c2 = 1`` physical). ``0`` (default) is
+        the nonrelativistic current; ``> 0`` uses ``v = u / sqrt(1 + inv_c2 |u|^2)`` in the Hermite basis
+        (see :mod:`spectrax._relativistic`).
 
     Returns
     -------
@@ -42,6 +48,12 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     """
     # Reshape Ck into structured Hermite-Fourier coefficients: (Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz)
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-3:])
+
+    if inv_c2 != 0.0:
+        a = alpha_s.reshape(Ns, 3)
+        pre = (qs * a[:, 0] * a[:, 1] * a[:, 2])[:, None, None, None]
+        return jnp.stack([jnp.sum(pre * speed_apply(Ck, i, alpha_s, u_s, inv_c2, Nn, Nm, Np, Ns)[:, 0, 0, 0], axis=0)
+                          for i in range(3)], axis=0)
     
     # Reshape alpha and velocity
     alpha = alpha_s.reshape(Ns, 3)
@@ -99,10 +111,10 @@ def shift_multi(Ck, dn=0, dm=0, dp=0):
     p0 = 1 + dp
     return P[:, p0:p0+Np, m0:m0+Nm, n0:n0+Nn, :, :, :]
 
-@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
+@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns', 'inv_c2'])
 def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                            sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
-                           Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23, F0=None):
+                           Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23, F0=None, inv_c2=0.0):
     """
     Evaluate the right-hand side of the coupled Hermite-Fourier moment equations.
 
@@ -147,6 +159,11 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         :func:`uniform_acceleration`). The force then uses ``E - E0`` and ``u x (B - B0)``;
         the uniform acceleration ``(q/m)(E0 + u x B0)`` is the basis-centre rate instead.
         Default None: the full force (bitwise the previous behaviour).
+    inv_c2 : float, optional
+        ``1 / c^2`` in the code units. ``0`` (default) is the nonrelativistic ladder, bitwise the previous behaviour.
+        ``> 0`` is the relativistic model in the momentum variable ``u``: streaming ``v(u) d_x f`` and the
+        magnetic force ``(v x B) . grad_u f`` use the Gauss-Hermite nodal matrices of ``v = u / gamma``; the electric
+        force term is unchanged. See :mod:`spectrax._relativistic`. Transverse axes with a single Hermite mode are cold.
 
     Returns
     -------
@@ -169,6 +186,20 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
     u2 = u[:, 2][:, None, None, None, None, None, None]
     q = qs[:, None, None, None, None, None, None]
     Omega_c = Omega_cs[:, None, None, None, None, None, None]
+
+    if inv_c2 != 0.0:
+        Nz_, Ny_, Nx_ = C.shape[-1], C.shape[-3], C.shape[-2]
+        Vc = [speed_apply(Ck, i, alpha_s, u_s, inv_c2, Nn, Nm, Np, Ns) for i in range(3)]
+        Vx = [jnp.fft.irfftn(v * mask23, s=(Nz_, Ny_, Nx_), axes=(-1, -3, -2), norm="forward") for v in Vc]
+        X = [F[0] * C + F[5] * Vx[1] - F[4] * Vx[2],
+             F[1] * C + F[3] * Vx[2] - F[5] * Vx[0],
+             F[2] * C + F[4] * Vx[0] - F[3] * Vx[1]]
+        force = ((sqrt_n_minus * jnp.sqrt(2) / a0) * shift_multi(X[0], dn=-1, dm=0, dp=0) +
+                 (sqrt_m_minus * jnp.sqrt(2) / a1) * shift_multi(X[1], dn=0, dm=-1, dp=0) +
+                 (sqrt_p_minus * jnp.sqrt(2) / a2) * shift_multi(X[2], dn=0, dm=0, dp=-1))
+        stream = -1j * (kx_grid / Lx * Vc[0] + ky_grid / Ly * Vc[1] + kz_grid / Lz * Vc[2])
+        return (stream + q * Omega_c * jnp.fft.rfftn(force, axes=(-1, -3, -2), norm="forward") * mask23
+                - nu * col[None, :, :, :, None, None, None] * Ck - D * k2_grid * Ck)
 
     
     
