@@ -14,3 +14,4 @@ from ._model import *
 from ._plot import *
 from ._simulation import *
 from ._remap import *
+from ._lawson import *

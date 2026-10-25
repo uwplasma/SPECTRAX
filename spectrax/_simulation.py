@@ -8,7 +8,8 @@ from jax import jit, config
 config.update("jax_enable_x64", True)
 from functools import partial
 from diffrax import (diffeqsolve, Dopri8, ODETerm, SaveAt, PIDController, TqdmProgressMeter,
-                     NoProgressMeter, ConstantStepSize, RecursiveCheckpointAdjoint)
+                     NoProgressMeter, ConstantStepSize, RecursiveCheckpointAdjoint, ClipStepSizeController)
+from ._lawson import LawsonSolver, simulation_rate
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system, uniform_acceleration, dougherty_collisions
 from ._diagnostics import diagnostics
@@ -164,11 +165,11 @@ class FlooredPIDController(PIDController):
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step',
                                 'dtmin', 'max_steps', 'throw', 'adjoint', 'progress_meter', 'frame',
-                                'collision_model'])
+                                'collision_model', 'integrating_factor'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
                timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True, dtmin=None, max_steps=1000000,
                throw=True, adjoint=RecursiveCheckpointAdjoint(), progress_meter=TqdmProgressMeter(), frame=None,
-               collision_model=None):
+               collision_model=None, integrating_factor=False):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -231,6 +232,13 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         LBO-G cross-species moments of Francisquez et al. (JPP 88, 905880303) and ``input_parameters["beta_dougherty"]``
         (default 0, which matches both Coulomb relaxation rates for ``nu_sr = alpha_E (m_s+m_r)/(m_s n_s)``); TOML:
         ``cross_species = "francisquez_g"``, ``beta = 0.0``.
+    integrating_factor : bool, optional
+        False (default): the solver is used as given, bitwise unchanged. True: wrap ``solver`` (an explicit
+        Runge-Kutta solver) in :class:`spectrax.LawsonSolver` so the diagonal hypercollision ``nu * col`` and
+        hyper-diffusion ``D k^2`` damping is integrated exactly (rate frozen at the step start; see
+        ``spectrax._lawson`` for order and limits). Fields and all non-diagonal terms stay explicit. Steps are
+        clipped onto the save times (Lawson dense output is accurate only for ``rate * h`` of order one).
+        Helps when ``nu * h`` would otherwise limit the step; no effect on cost otherwise.
 
     Returns
     -------
@@ -283,6 +291,12 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     # Solve the ODE system
     ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns, frame=frame or "fixed",
                                  collision_model=collision_model)
+    if integrating_factor:
+        # diagonal damping rate with the structure of the state: (Ck, Fk[, basis]); fields and basis are undamped
+        rate = lambda t, y, a: tuple(simulation_rate(a, Ns, Nn, Nm, Np, Ny, Nx, Nz)) + (0.0,) * (len(y) - 2)
+        solver = LawsonSolver(solver, rate)
+        if adaptive_time_step:
+            stepsize_controller = ClipStepSizeController(stepsize_controller, step_ts=time)
     sol = diffeqsolve(
         ODETerm(ode_system_partial), solver=solver,
         stepsize_controller=stepsize_controller,
