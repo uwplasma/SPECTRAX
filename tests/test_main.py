@@ -37,3 +37,15 @@ def test_main_runs_a_2d_toml_without_an_initial_state(tmp_path, mock_plot):
 
 if __name__ == '__main__':
     unittest.main()
+
+def test_cli_runs_a_species_toml_and_saves_the_diagnostic_figure(tmp_path):
+    """``spectrax input.toml --no-show`` runs any number of species and writes input.png with every panel."""
+    import matplotlib
+    matplotlib.use("Agg")
+    toml = tmp_path / "input.toml"
+    toml.write_text("[input_parameters]\nLx = 10.0\nLy = 10.0\nt_max = 0.5\n[solver_parameters]\nNx = 6\nNy = 5\nNn = 3\nNm = 2\ntimesteps = 4\n"
+                    "[species.electrons]\ncharge = -1\nvth = 0.2\nperturbation_amplitude = 0.05\nperturbation_axis = 'y'\n"
+                    "[species.ions]\ncharge = 1\nmass = 25\nvth = 0.04\n[species.beam]\ncharge = 1\nmass = 25\nvth = 0.04\ndrift = 0.1\n")
+    output = main([str(toml), "--no-show"])
+    assert (tmp_path / "input.png").stat().st_size > 0
+    assert output["Ck"].shape[1] == 3 * 3 * 2 and "electric_energy" in output
