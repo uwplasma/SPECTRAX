@@ -199,6 +199,9 @@ Nx = 33               # Fourier modes in x, y, z: Nx, Ny, Nz (default 1 for y an
 Nn = 50               # Hermite modes in vx, vy, vz: Nn, Nm, Np
 timesteps = 501       # saved times
 solver = "Dopri8"     # any Diffrax solver, or ImplicitMidpoint
+dtmin = 1e-6          # optional: smallest adaptive step; below it the solve stops with an error (no floor by default)
+max_steps = 1000000   # optional: step budget; exhausting it is reported as max_steps_reached
+throw = true          # optional: false returns and reports a failed solve in output["solver_result"]; only the first output["num_valid_times"] saves hold a solution
 
 [species.electrons]   # one table per species; the first one must have unit mass
 charge = -1           # in units of e
