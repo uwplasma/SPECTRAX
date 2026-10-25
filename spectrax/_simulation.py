@@ -196,8 +196,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     if integrating_factor:
         rate = lambda t, y, a: simulation_rate(a, Ns, Nn, Nm, Np, Ny, Nx, Nz)
         if integrating_factor == "streaming":
-            shape = (Ns, Np, Nm, Nn, Ny, Nx // 2 + 1, Nz)
-            solver = LawsonSolver(solver, factor_fn=hermite_streaming_factor("flat", shape))
+            solver = LawsonSolver(solver, factor_fn=hermite_streaming_factor("first"))
         else:
             solver = LawsonSolver(solver, rate)
         if adaptive_time_step:
