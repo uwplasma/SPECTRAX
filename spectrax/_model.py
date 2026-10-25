@@ -55,10 +55,10 @@ def cross_product(k_vec, F_vec):
     Fx, Fy, Fz = F_vec
     return jnp.array([ky * Fz - kz * Fy, kz * Fx - kx * Fz, kx * Fy - ky * Fx])
 
-@partial(jit, static_argnames=['Nn', 'Nm', 'Np'])
+@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'comm'])
 def Hermite_DG_rhs(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, basis_idx, 
                         inner_mm, inner_pm, inner_mp, inner_pp, di_inner_product, triple_product, Ax_p, Ax_m, Ay_p, Ay_m, Az_p, Az_m, R_p, R_m,
-                           Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np):
+                           Lx, Ly, Lz, nu, D, alpha_s, u_s, ms, qs, Omega_ce, Nn, Nm, Np, comm=None):
     """
     Evaluate the right-hand side of the coupled Hermite-DG moment equations.
 
@@ -105,6 +105,9 @@ def Hermite_DG_rhs(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_m
         Electron cyclotron frequency.
     Nn, Nm, Np : int
         Number of Hermite modes along each velocity-space axis.
+    comm : tuple, optional
+        `(shift, species_sum)` replacing the periodic element shift and the sum over species,
+        e.g. halo-exchange versions inside `shard_map`. Default: the single-device operations.
 
     Returns
     -------
@@ -112,6 +115,7 @@ def Hermite_DG_rhs(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_m
         Time derivatives `(dCk/dt, dFk/dt)` with the shapes of `Ck` and `Fk`.
     """
 
+    shift, species_sum = comm or (shift_element, lambda x: jnp.sum(x, axis=0))
     Ns = Ck.shape[0]
     Ck_shape = Ck.shape
     Ck = Ck.reshape(Ns, Np, Nm, Nn, *Ck.shape[-4:])
@@ -150,17 +154,17 @@ def Hermite_DG_rhs(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_m
 
     # Ax_p/m should have shape (Ns, 1, 1, Nn, Nn 1, 1, 1, 1, 1) then multiplied by Ck[:, :, :, None, :, :, :, :, None, :] then sum over axis 4
     bdy_xp = jnp.sum(Ax_p * Ck[:, :, :, None, :, :, :, :, None, :] * inner_mm[0] 
-                        + Ax_m * shift_element(Ck, dx=+1, dy=0, dz=0)[:, :, :, None, :, :, :, :, None, :] * inner_pm[0], axis=(4, -1))
+                        + Ax_m * shift(Ck, dx=+1, dy=0, dz=0)[:, :, :, None, :, :, :, :, None, :] * inner_pm[0], axis=(4, -1))
     bdy_xm = jnp.sum(Ax_m * Ck[:, :, :, None, :, :, :, :, None, :] * inner_pp[0] 
-                        + Ax_p * shift_element(Ck, dx=-1, dy=0, dz=0)[:, :, :, None, :, :, :, :, None, :] * inner_mp[0], axis=(4, -1))
+                        + Ax_p * shift(Ck, dx=-1, dy=0, dz=0)[:, :, :, None, :, :, :, :, None, :] * inner_mp[0], axis=(4, -1))
     bdy_yp = jnp.sum(Ay_p * Ck[:, :, None, :, :, :, :, :, None, :] * inner_mm[1]
-                        + Ay_m * shift_element(Ck, dx=0, dy=+1, dz=0)[:, :, None, :, :, :, :, :, None, :] * inner_pm[1], axis=(3, -1))
+                        + Ay_m * shift(Ck, dx=0, dy=+1, dz=0)[:, :, None, :, :, :, :, :, None, :] * inner_pm[1], axis=(3, -1))
     bdy_ym = jnp.sum(Ay_m * Ck[:, :, None, :, :, :, :, :, None, :] * inner_pp[1] 
-                        + Ay_p * shift_element(Ck, dx=0, dy=-1, dz=0)[:, :, None, :, :, :, :, :, None, :] * inner_mp[1], axis=(3, -1))
+                        + Ay_p * shift(Ck, dx=0, dy=-1, dz=0)[:, :, None, :, :, :, :, :, None, :] * inner_mp[1], axis=(3, -1))
     bdy_zp = jnp.sum(Az_p * Ck[:, None, :, :, :, :, :, :, None, :] * inner_mm[2] 
-                        + Az_m * shift_element(Ck, dx=0, dy=0, dz=+1)[:, None, :, :, :, :, :, :, None, :] * inner_pm[2], axis=(2, -1))
+                        + Az_m * shift(Ck, dx=0, dy=0, dz=+1)[:, None, :, :, :, :, :, :, None, :] * inner_pm[2], axis=(2, -1))
     bdy_zm = jnp.sum(Az_m * Ck[:, None, :, :, :, :, :, :, None, :] * inner_pp[2] 
-                        + Az_p * shift_element(Ck, dx=0, dy=0, dz=-1)[:, None, :, :, :, :, :, :, None, :] * inner_mp[2], axis=(2, -1))
+                        + Az_p * shift(Ck, dx=0, dy=0, dz=-1)[:, None, :, :, :, :, :, :, None, :] * inner_mp[2], axis=(2, -1))
 
     bdy = bdy_xp - bdy_xm + bdy_yp - bdy_ym + bdy_zp - bdy_zm
 
@@ -253,7 +257,7 @@ def Hermite_DG_rhs(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_m
     Cp1 = Ck[:, 1, 0, 0] if Np > 1 else zero
     al, ud = alpha[:, :, None, None, None, None], u[:, :, None, None, None, None]
     J_species = (q * a0 * a1 * a2)[:, 0, 0, 0, None] * (C0[:, None] * ud + al * jnp.stack((Cn1, Cm1, Cp1), axis=1) / jnp.sqrt(2))
-    J = jnp.sum(J_species, axis=0)
+    J = species_sum(J_species)
     source = -(1 / Omega_ce) * jnp.concatenate((J, jnp.zeros_like(J)))
 
     ex = jnp.array([1, 0, 0])
@@ -271,17 +275,17 @@ def Hermite_DG_rhs(Ck, Fk, col, sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_m
     ####################### Boundary ########################
     
     dF_bdy_xp = jnp.sum(R_p[0] * Fk[None, :, :, :, :, None, :] * inner_mm[0] 
-                        + R_m[0] * shift_element(Fk, dx=+1, dy=0, dz=0)[None, :, :, :, :, None, :] * inner_pm[0], axis=(1, -1))
+                        + R_m[0] * shift(Fk, dx=+1, dy=0, dz=0)[None, :, :, :, :, None, :] * inner_pm[0], axis=(1, -1))
     dF_bdy_xm = jnp.sum(R_m[0] * Fk[None, :, :, :, :, None, :] * inner_pp[0] 
-                        + R_p[0] * shift_element(Fk, dx=-1, dy=0, dz=0)[None, :, :, :, :, None, :] * inner_mp[0], axis=(1, -1))
+                        + R_p[0] * shift(Fk, dx=-1, dy=0, dz=0)[None, :, :, :, :, None, :] * inner_mp[0], axis=(1, -1))
     dF_bdy_yp = jnp.sum(R_p[1] * Fk[None, :, :, :, :, None, :] * inner_mm[1] 
-                        + R_m[1] * shift_element(Fk, dx=0, dy=+1, dz=0)[None, :, :, :, :, None, :] * inner_pm[1], axis=(1, -1))
+                        + R_m[1] * shift(Fk, dx=0, dy=+1, dz=0)[None, :, :, :, :, None, :] * inner_pm[1], axis=(1, -1))
     dF_bdy_ym = jnp.sum(R_m[1] * Fk[None, :, :, :, :, None, :] * inner_pp[1] 
-                        + R_p[1] * shift_element(Fk, dx=0, dy=-1, dz=0)[None, :, :, :, :, None, :] * inner_mp[1], axis=(1, -1))
+                        + R_p[1] * shift(Fk, dx=0, dy=-1, dz=0)[None, :, :, :, :, None, :] * inner_mp[1], axis=(1, -1))
     dF_bdy_zp = jnp.sum(R_p[2] * Fk[None, :, :, :, :, None, :] * inner_mm[2] 
-                        + R_m[2] * shift_element(Fk, dx=0, dy=0, dz=+1)[None, :, :, :, :, None, :] * inner_pm[2], axis=(1, -1))
+                        + R_m[2] * shift(Fk, dx=0, dy=0, dz=+1)[None, :, :, :, :, None, :] * inner_pm[2], axis=(1, -1))
     dF_bdy_zm = jnp.sum(R_m[2] * Fk[None, :, :, :, :, None, :] * inner_pp[2] 
-                        + R_p[2] * shift_element(Fk, dx=0, dy=0, dz=-1)[None, :, :, :, :, None, :] * inner_mp[2], axis=(1, -1))
+                        + R_p[2] * shift(Fk, dx=0, dy=0, dz=-1)[None, :, :, :, :, None, :] * inner_mp[2], axis=(1, -1))
     
     dF_bdy = dF_bdy_xp + dF_bdy_yp + dF_bdy_zp - (dF_bdy_xm + dF_bdy_ym + dF_bdy_zm)
 

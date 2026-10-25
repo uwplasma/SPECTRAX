@@ -7,9 +7,6 @@ config.update("jax_enable_x64", True)
 from jax.lax import with_sharding_constraint
 from jax.sharding import NamedSharding, PartitionSpec as P
 from functools import partial
-import diffrax
-import inspect
-from .midpoint_solver import ImplicitMidpoint
 from ._runtime import read_input, bootstrap, make_mesh, named_sharding
 from math import comb
 from jax.scipy.special import factorial
@@ -331,18 +328,21 @@ def DG_project(f, input_parameters, solver_parameters, species=False):
         leg_vals3d = jnp.transpose(leg_vals3d, (1, 2, 3, 0))
         w_array = w_quad[:, None, None] * w_quad[None, :, None] * w_quad[None, None, :]
 
+        constrain = with_sharding_constraint if mesh.size > 1 else (lambda x, sharding: x) # One device: no sharding in the types (JAX < 0.7).
+
         def project(x_elements, y_elements, z_elements):
             X = x_elements[None, :, None, None, None, None] + quad_points[None, None, None, None, :, None] * dx / 2
             Y = y_elements[:, None, None, None, None, None] + quad_points[None, None, None, :, None, None] * dy / 2
             Z = z_elements[None, None, :, None, None, None] + quad_points[None, None, None, None, None, :] * dz / 2
-            X, Y, Z = (with_sharding_constraint(c, named_sharding(mesh, 6, tail=3)) for c in jnp.broadcast_arrays(X, Y, Z))
+            X, Y, Z = (constrain(c, named_sharding(mesh, 6, tail=3)) for c in jnp.broadcast_arrays(X, Y, Z))
             values = f(X, Y, Z)
-            values = with_sharding_constraint(values, named_sharding(mesh, values.ndim, species, tail=3))
+            values = constrain(values, named_sharding(mesh, values.ndim, species, tail=3))
             # Contract f over the three quadrature axes against the weighted basis, without materializing the full (..., Nq, Nq, Nq, Nl) product
             Uk_0 = (basis_idx[:, 0] + 0.5) * (basis_idx[:, 1] + 0.5) * (basis_idx[:, 2] + 0.5) * jnp.einsum('...abc,abcl->...l', values, leg_vals3d * w_array[:, :, :, None])
-            return with_sharding_constraint(Uk_0, named_sharding(mesh, Uk_0.ndim, species))
+            return constrain(Uk_0, named_sharding(mesh, Uk_0.ndim, species))
 
-        return jit(project, in_shardings=tuple(NamedSharding(mesh, P(axis)) for axis in "xyz"))(x_elements, y_elements, z_elements)
+        shardings = dict(in_shardings=tuple(NamedSharding(mesh, P(axis)) for axis in "xyz")) if mesh.size > 1 else {}
+        return jit(project, **shardings)(x_elements, y_elements, z_elements)
 
 def load_parameters(input_file):
     """
@@ -366,6 +366,8 @@ def load_parameters(input_file):
     fresh process before any JAX computation.
     """
     input_parameters, solver_parameters = read_input(input_file)
+    import diffrax, inspect # After read_input bootstraps the devices: older optimistix runs JAX at import.
+    from .midpoint_solver import ImplicitMidpoint
 
     # Whether to use adaptive time-stepping or constant dt.
     # Default is True.

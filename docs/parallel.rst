@@ -231,6 +231,46 @@ initial projection.
      - 1.67
      - 0.42
 
+**Strong scaling on cores.** One process shares a single XLA CPU thread pool across all logical devices, and one device
+already uses several threads, so ``D`` devices alone do not measure scaling with core count. Setting ``NPROC=D`` caps the
+pool at ``D`` threads, which gives a 1-core baseline and ``D`` devices on ``D`` cores:
+
+.. code-block:: console
+
+    $ for d in 1 2 4 8; do NPROC=$d python Examples/benchmark_OT_parallel.py --n 128 --hermite 3 --t-max 2.0 --layouts ...; done
+
+On an Apple M4 (4 performance + 6 efficiency cores; each point the faster of two runs, background load below 5),
+Hermite ``3^3``, 2 species, adaptive Dopri8 (8 steps):
+
+.. list-table::
+   :header-rows: 1
+
+   * - grid
+     - 1 core
+     - 2 cores
+     - 4 cores
+     - 8 cores
+   * - ``64^2``
+     - 0.90 s
+     - 0.48 s (1.9x)
+     - 0.37 s (2.4x)
+     - 0.29 s (3.1x)
+   * - ``128^2``
+     - 4.19 s
+     - 2.10 s (2.0x)
+     - 1.63 s (2.6x)
+     - 1.35 s (3.1x)
+   * - ``192^2``
+     - 9.29 s
+     - 5.06 s (1.8x)
+     - 3.68 s (2.5x)
+     - 3.83 s (2.4x)
+
+.. image:: strong_scaling_cpu.png
+
+Scaling is close to ideal on 2 cores. Past 4 devices, subdomains run on efficiency cores and every step waits for the
+slowest one; at ``192^2`` memory bandwidth (about 72 GB/s on this laptop, reached by 4 cores) also caps it.
+
 Per device and RHS evaluation, the ``Ck`` face traffic is 32,000 values for ``(1,2,2,1)`` (x and y faces, both
 directions) and 16,000 for ``(2,2,1,1)`` (x faces only), and the hybrid layout adds one 6,144-value current all-reduce. At
 ``D = 4`` both layouts hold 2.0 MB of ``Ck`` state per device. The hybrid layout holds twice the field (98 kB instead of
@@ -294,18 +334,16 @@ shard. A single species' Hermite and DG axes are always local.
 Communication pattern
 ---------------------
 
-*Spatial faces.* All spatial coupling (Vlasov and Maxwell fluxes) is through +/-1 element faces, implemented as global
-``jnp.roll`` shifts. On current JAX these lower to boundary-sized ``collective-permute`` operations between spatial
-neighbours with the same species coordinate; periodicity spans device seams and the domain edge. There is no species halo
-exchange and no periodic species neighbour. Hermite shifts, DG contractions, the collision term and the mass inversion are
-local.
+*Spatial faces.* All spatial coupling (Vlasov and Maxwell fluxes) is through +/-1 element faces. On more than one device
+the RHS runs inside ``shard_map`` (``spectrax._simulation.sharded_rhs``): for each split spatial axis, the Ck and Fk
+boundary slabs are packed into one buffer and sent with one ``ppermute`` per direction, giving one-cell ghost layers on
+each side. Unsplit axes wrap locally. The element shifts then read from the ghost-padded copies, and the RHS sees the local
+box ``(Lx/px, Ly/py, Lz/pz)`` so the element size is unchanged. There is no species halo exchange. Hermite shifts, DG
+contractions, the collision term and the mass inversion are local.
 
-*Species current.* Only the Maxwell current couples species. Stacking the per-species currents before one sum,
-``J_species`` of shape ``(Ns,3,Ny,Nx,Nz,Nl)`` and ``J = jnp.sum(J_species, axis=0)``, lets the compiler reduce across **only
-the species mesh axis at fixed spatial coordinates**, aiming at one stacked three-component all-reduce per RHS evaluation
-when ``ps > 1``. The payload is three current coefficients per local cell and DG mode (a spatial-tile-sized moment payload),
-never the distribution. With ``ps = 1`` the sum is local and no species collective exists. The number of collectives is
-whatever the compiler emits; this is a design aim checked on compiled executables, not a guarantee.
+*Species current.* Only the Maxwell current couples species. The per-species currents are summed locally and then with one
+``psum`` over the species mesh axis, at fixed spatial coordinates, when ``ps > 1``. The payload is three current
+coefficients per local cell and DG mode, never the distribution. With ``ps = 1`` there is no species collective.
 
 *Controller.* One global Diffrax solve integrates ``(Ck, Fk)``. The PID controller uses a shape-preserving global tree RMS
 norm (``spectrax.state_rms_norm``): sums over each leaf's global shape and the **global** element counts, so only scalar
@@ -357,12 +395,11 @@ Nn=3, Nm=2, Np=1, N_DG=2, dims=2 (Nl=3), Nx=32, Ny=16, Nz=1.
      - RHS collectives (payload elements)
      - Meaning
    * - ``(1,2,2,1)``
-     - 2 x Ck y-face (576), 2 x Ck x-face (288), 2 x Fk y-face (288), 2 x Fk x-face (144) ``collective-permute``;
-       no all-reduce
+     - 4 packed Ck+Fk face ``collective-permute`` (2 per split axis); no all-reduce
      - one-cell faces in both directions; species sum local
    * - ``(2,2,1,1)``
-     - 2 x Ck x-face (288), 2 x Fk x-face (288) permutes between devices with the same species coordinate;
-       1 x ``all-reduce`` ``(3,16,16,1,3)`` (2304)
+     - 2 packed Ck+Fk x-face permutes between devices with the same species coordinate;
+       1 x ``all-reduce`` of the stacked current
      - faces + stacked current reduced over the species axis only, at fixed ``(x,y,z)``
    * - ``(2,1,1,1)``
      - 1 x ``all-reduce`` ``(3,16,32,1,3)``
@@ -405,6 +442,10 @@ Limitations
 * The deprecated implicit midpoint solver is outside this work.
 * The generic ``plot`` function still expects an ``output['dCk']`` that the solver does not provide (pre-existing).
 * Speedups depend on problem size, hardware and layout; none are asserted without measurement.
+* ``jax.grad`` and ``jax.jit`` work through ``simulation`` on any layout with JAX >= 0.7. On Python 3.10 (JAX 0.6,
+  optimistix 0.0.11) gradients work on one device only, and ``load_parameters`` must run before ``simulation`` is
+  imported, because importing diffrax there starts the JAX backend.
+* GPU scaling has not been measured yet.
 
 Design and sources
 ------------------

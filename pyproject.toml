@@ -29,9 +29,9 @@ keywords = ["Plasma",
      "Simulation",
      "JAX"]
  
-dependencies = ["jax>=0.10", "jaxlib>=0.10", "diffrax>=0.7", "orthax", "matplotlib", "tqdm"]
+dependencies = ["jax>=0.6", "jaxlib>=0.6", "diffrax>=0.7", "orthax", "matplotlib", "tqdm", "tomli; python_version < '3.11'"]
  
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 
 [project.urls]
 Homepage = "https://github.com/uwplasma/SPECTRAX"
