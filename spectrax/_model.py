@@ -11,7 +11,8 @@ from jax import jit
 from functools import partial
 
 __all__ = ['plasma_current', 'Hermite_Fourier_system', 'basis_rate_terms', 'uniform_acceleration',
-           'field_scaled_closure_rate']
+           'field_scaled_closure_rate', 'dougherty_moments', 'dougherty_rate_real',
+           'dougherty_cross_moments', 'dougherty_collisions']
 
 
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
@@ -332,3 +333,128 @@ def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c):
     per_axis = jnp.where(active, jnp.sqrt(2 * N)[None, :] * dE[None, :] / a, 0.0)
     rate = c * jnp.abs(qs * Omega_cs) * jnp.max(per_axis, axis=1)
     return rate.reshape(Ns, 1, 1, 1, 1, 1, 1)
+
+
+def _dougherty_axes(Nn, Nm, Np):
+    """Velocity axes that carry the Dougherty operator: ``(i, storage axis, N_i)`` with ``N_i >= 3``.
+
+    An axis with ``N_i <= 2`` cannot hold the second moment; on it the projected operator vanishes
+    identically (rows 0 and 1 are zero), so it is skipped and not counted in the velocity dimension.
+    """
+    return tuple((i, ax, N) for i, (ax, N) in enumerate(((3, Nn), (2, Nm), (1, Np))) if N >= 3)
+
+
+def dougherty_moments(C, alpha_s, u_s, Nn, Nm, Np, Ns):
+    """
+    Spatially local density, mean velocity and temperature of each species from its Hermite coefficients.
+
+    With ``f = sum_n C_n psi_n(xi)``, ``xi = (v - u)/a`` per axis, only ``n <= 2`` per axis enter:
+
+        n_s   = a_x a_y a_z C_0,
+        U_i   = u_i + a_i C_{e_i} / (sqrt(2) C_0),
+        P_ii / (m n) = a_i^2 [1/2 + C_{2 e_i} / (sqrt(2) C_0) - (C_{e_i} / (sqrt(2) C_0))^2],
+        theta = (1/d) sum_i P_ii / (m n)   over the d axes with N_i >= 3 (Gkeyll's v_t^2 = tr P / (d m n)).
+
+    Parameters
+    ----------
+    C : jnp.ndarray, shape (Ns, Np, Nm, Nn, Ny, Nx, Nz)
+        Real-space coefficients.
+
+    Returns
+    -------
+    dens : (Ns, Ny, Nx, Nz); U : (Ns, 3, Ny, Nx, Nz) (``U_i = u_i`` on axes without the operator);
+    theta : (Ns, Ny, Nx, Nz).
+    """
+    axes = _dougherty_axes(Nn, Nm, Np)
+    if not axes:
+        raise ValueError("the Dougherty operator needs at least one velocity axis with N >= 3 Hermite modes")
+    a, u = alpha_s.reshape(Ns, 3), u_s.reshape(Ns, 3)
+    sp = (slice(None),) + (None,) * (C.ndim - 4)
+    C0 = C[:, 0, 0, 0]
+    dens = jnp.prod(a, axis=1)[sp] * C0
+    U, theta = [u[:, i][sp] * jnp.ones_like(C0) for i in range(3)], 0.0
+    for i, ax, _ in axes:
+        idx1, idx2 = [0, 0, 0, 0], [0, 0, 0, 0]
+        idx1[ax], idx2[ax] = 1, 2
+        d = C[(slice(None), *idx1[1:])] / (jnp.sqrt(2.0) * C0)
+        U[i] = U[i] + a[:, i][sp] * d
+        theta = theta + a[:, i][sp] ** 2 * (0.5 + C[(slice(None), *idx2[1:])] / (jnp.sqrt(2.0) * C0) - d ** 2)
+    return dens, jnp.stack(U, axis=1), theta / len(axes)
+
+
+def dougherty_rate_real(C, U, theta, nu, alpha_s, u_s, Nn, Nm, Np, Ns):
+    """
+    Exact Hermite projection of ``nu d_v . [(v - U) f + theta d_v f]`` in real space, any basis ``(u_s, a_s)``.
+
+    With ``delta_i = (U_i - u_i)/a_i`` and ``tau_i = theta / a_i^2`` the operator in ``xi`` is
+    ``nu sum_i d_xi_i [(xi_i - delta_i) f + tau_i d_xi_i f]``. Using ``d psi_n = -sqrt(2(n+1)) psi_{n+1}``
+    and ``xi psi_n = sqrt((n+1)/2) psi_{n+1} + sqrt(n/2) psi_{n-1}``, the stencils compose to
+
+        (C f)_n = nu sum_i [ -n_i C_n + sqrt(2 n_i) delta_i C_{n - e_i} + (2 tau_i - 1) sqrt(n_i (n_i - 1)) C_{n - 2 e_i} ].
+
+    Every source has index ``<= n``: the projection onto the retained modes is exact (no truncation of an
+    intermediate). Rows 0, 1 vanish and the sum of the row-2 energy terms vanishes by the definition of
+    ``U`` and ``theta`` (:func:`dougherty_moments`); any Maxwellian with matching ``U, theta`` is in the
+    kernel, truncated or not. ``U``, ``theta`` and ``nu`` may vary in space (shapes as returned by
+    :func:`dougherty_moments`; ``nu`` broadcastable to ``(Ns, Ny, Nx, Nz)``).
+    """
+    a, u = alpha_s.reshape(Ns, 3), u_s.reshape(Ns, 3)
+    sp = (slice(None),) + (None,) * (C.ndim - 4)
+    out = jnp.zeros_like(C)
+    for i, ax, N in _dougherty_axes(Nn, Nm, Np):
+        shape = [1] * C.ndim
+        shape[ax] = N
+        n = jnp.arange(N, dtype=float).reshape(shape)
+        delta = ((U[:, i] - u[:, i][sp]) / a[:, i][sp])[:, None, None, None]
+        tau = (theta / a[:, i][sp] ** 2)[:, None, None, None]
+        out = out - n * C + jnp.sqrt(2 * n) * delta * _lower(C, ax, 1) \
+                  + (2 * tau - 1) * jnp.sqrt(n * (n - 1)) * _lower(C, ax, 2)
+    return jnp.asarray(nu)[:, None, None, None] * out if jnp.ndim(nu) else nu * out
+
+
+def dougherty_cross_moments(dens, U, theta, ms, s, r, active):
+    """
+    Pair moments ``(u_sr, theta_sr, theta_rs)`` that make ``C_sr + C_rs`` conserve momentum and energy.
+
+    With ``m_s n_s nu_sr = m_r n_r nu_rs`` and a common ``u_sr = u_rs = (U_s + U_r)/2`` the friction is
+    antisymmetric, ``R_sr = -R_rs``. A common temperature ``T_sr = T_rs``,
+
+        T_sr = (m_r T_s + m_s T_r)/(m_s + m_r) + m_s m_r |U_s - U_r|^2 / (2 d (m_s + m_r)),
+
+    makes the exchanges cancel, ``Q_sr + Q_rs = 0`` (``T = m theta``; ``d`` and the drift difference run over
+    the ``active`` velocity axes, those with ``N_i >= 3``, the only ones on which the operator acts).
+    This is Greene's form with ``beta = 0``.
+    """
+    usr = 0.5 * (U[s] + U[r])
+    d = len(active)
+    du2 = sum((U[s, i] - U[r, i]) ** 2 for i in active)
+    T = ms[s] * ms[r] * (theta[s] + theta[r]) / (ms[s] + ms[r]) \
+        + ms[s] * ms[r] * du2 / (2 * d * (ms[s] + ms[r]))
+    return usr, T / ms[s], T / ms[r]
+
+
+def dougherty_collisions(C, nu_matrix, alpha_s, u_s, Omega_cs, Nn, Nm, Np, Ns, mask23):
+    """
+    Spectral Dougherty collision rate ``dCk/dt`` of all species (self and pair collisions), de-aliased.
+
+    ``nu_matrix`` (Ns, Ns): ``nu_ss`` on the diagonal; for ``s < r`` the entry ``[s, r]`` is ``nu_sr`` and
+    ``nu_rs = nu_sr m_s n_s / (m_r n_r)`` is set pointwise (momentum conservation), the lower triangle is
+    ignored. Masses are ``m_s = 1 / Omega_cs`` (SPECTRAX units). Moments and products are formed in real
+    space from the masked state and the result is transformed and masked with the same strict 2/3 mask.
+    """
+    dens, U, theta = dougherty_moments(C, alpha_s, u_s, Nn, Nm, Np, Ns)
+    nu_matrix = jnp.asarray(nu_matrix, dtype=float)
+    nu_self = jnp.diagonal(nu_matrix)[:, None, None, None]
+    rate = dougherty_rate_real(C, U, theta, nu_self, alpha_s, u_s, Nn, Nm, Np, Ns)
+    ms = 1.0 / Omega_cs
+    active = tuple(i for i, _, _ in _dougherty_axes(Nn, Nm, Np))
+    for s in range(Ns):
+        for r in range(s + 1, Ns):
+            usr, th_sr, th_rs = dougherty_cross_moments(dens, U, theta, ms, s, r, active)
+            nu_sr = nu_matrix[s, r]
+            nu_rs = nu_sr * ms[s] * dens[s] / (ms[r] * dens[r])
+            for a_, b_, th, nu in ((s, r, th_sr, nu_sr), (r, s, th_rs, nu_rs)):
+                one = dougherty_rate_real(C[a_:a_ + 1], usr[None], th[None], jnp.broadcast_to(nu, th.shape)[None],
+                                          alpha_s.reshape(Ns, 3)[a_], u_s.reshape(Ns, 3)[a_], Nn, Nm, Np, 1)
+                rate = rate.at[a_].add(one[0])
+    return jnp.fft.rfftn(rate, axes=(-1, -3, -2), norm="forward") * mask23
