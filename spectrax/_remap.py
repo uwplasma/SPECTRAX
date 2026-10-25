@@ -22,7 +22,7 @@ import numpy as np
 from jax import jit
 
 __all__ = ["remap_matrix", "remap", "moment_target", "cap_target", "remap_event", "low_moments",
-           "tail_fraction"]
+           "tail_fraction", "remap_trigger"]
 
 _AXES = ((3, "n"), (2, "m"), (1, "p"))  # storage axis of the x, y, z Hermite index in (Ns, Np, Nm, Nn, ...)
 
@@ -170,3 +170,36 @@ def remap_event(Ck, basis, new_basis, Nn, Nm, Np, Ns, t=None, max_shift=1.0, max
               "tail_after": np.asarray(tail_fraction(Ck_new, Nn, Nm, Np, Ns)).tolist(),
               "moment_defect": float(jnp.max(jnp.abs(m1 - m0)) / jnp.max(jnp.abs(m0)))}
     return Ck_new, record
+
+
+def remap_trigger(Ck, basis, Nn, Nm, Np, Ns, shift_on=0.3, width_on=0.05, tail_on=None, last_tail=None,
+                  width_ratio=np.sqrt(2), max_shift=1.0, max_narrow=1.1, min_width=1.1):
+    """Decide a remap from measured moments, with hysteresis. Call between steps with concrete arrays.
+
+    Per species, the capped moment target (:func:`moment_target`, :func:`cap_target`) is compared
+    with the current basis: it fires when ``max_i |U_i - u_i| / a_i > shift_on``, when
+    ``max_i |a'_i/a_i - 1| > width_on``, or (if ``tail_on`` is set) when the tail fraction exceeds
+    ``tail_on`` and has at least doubled since ``last_tail`` (the value at the previous event).
+    A remap resets the moment measures to round-off, so the next event needs the same growth
+    again: thresholds act with hysteresis and an unchanged state cannot fire twice. A tail event
+    with a negligible move (below a tenth of both thresholds) is suppressed.
+
+    Returns ``(fire, new_basis, info)``: ``fire`` is a Python bool, ``new_basis`` equals ``basis``
+    for species that do not fire, ``info`` holds the per-species measures.
+    """
+    target, sigma = moment_target(Ck, basis, Nn, Nm, Np, Ns, width_ratio)
+    capped = np.asarray(cap_target(basis, target, sigma, max_shift, max_narrow, min_width))
+    b = np.real(np.asarray(basis))
+    a = b[1].reshape(Ns, 3)
+    shift = np.max(np.abs(np.asarray(target[0]) - b[0]).reshape(Ns, 3) / a, axis=1)
+    width = np.max(np.abs(capped[1].reshape(Ns, 3) / a - 1), axis=1)
+    tail = np.asarray(tail_fraction(Ck, Nn, Nm, Np, Ns))
+    fire = (shift > shift_on) | (width > width_on)
+    if tail_on is not None:
+        ref = np.zeros(Ns) if last_tail is None else np.asarray(last_tail)
+        moves = (shift > shift_on / 10) | (width > width_on / 10)
+        fire |= (tail > tail_on) & (tail > 2 * ref) & moves
+    species = np.repeat(fire, 3)
+    new = np.where(species[None, :], capped, b)
+    return bool(fire.any()), new, {"shift": shift.tolist(), "width": width.tolist(), "tail": tail.tolist(),
+                                   "fire": fire.tolist()}
