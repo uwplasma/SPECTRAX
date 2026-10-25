@@ -68,17 +68,16 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
         Number of species.
     t : float
         Integration time (unused but required by Diffrax interface).
-    Ck_Fk : jnp.ndarray
-        Flattened state vector containing concatenated Hermite coefficients followed
-        by electromagnetic field coefficients.
+    Ck_Fk : tuple[jnp.ndarray, jnp.ndarray]
+        Hermite and electromagnetic field coefficients.
     args : tuple
         Cached parameter tuple produced in `simulation` providing physical constants,
         grids, and helper arrays.
 
     Returns
     -------
-    jnp.ndarray
-        Flattened derivative vector matching the shape of `Ck_Fk`.
+    tuple[jnp.ndarray, jnp.ndarray]
+        Derivatives matching the Hermite and field coefficient arrays.
     """
 
     (qs, nu, D, Omega_cs, alpha_s, u_s,
@@ -86,9 +85,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
      sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus
     ) = args[7:]
 
-    total_Ck_size = Nn * Nm * Np * Ns * (Nx//2+1) * Ny * Nz
-    Ck = Ck_Fk[:total_Ck_size].reshape(Nn * Nm * Np * Ns, Ny, Nx//2+1, Nz)
-    Fk = Ck_Fk[total_Ck_size:].reshape(6, Ny, Nx//2+1, Nz)
+    Ck, Fk = Ck_Fk
 
 
     # Build the 2/3 mask once per call (JIT will constant-fold it since Nx/Ny/Nz are static)
@@ -107,13 +104,19 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     dEk_dt = 1j * cross_product(nabla, Fk[3:]) - current / Omega_cs[0]
 
     dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
-    dy_dt  = jnp.concatenate([dCk_s_dt.reshape(-1), dFk_dt.reshape(-1)])
+    return dCk_s_dt, dFk_dt
 
-    return dy_dt
+def _stepsize_controller(adaptive_time_step, tolerance, dtmin=None):
+    """PID control at `tolerance` with an optional step floor `dtmin` (None: no floor), or constant steps."""
+    if not adaptive_time_step:
+        return ConstantStepSize()
+    return PIDController(rtol=tolerance, atol=tolerance, dtmin=dtmin, force_dtmin=False)
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step'])
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step',
+                                'dtmin', 'max_steps', 'throw'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
-               timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True):
+               timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True, dtmin=None, max_steps=1000000,
+               throw=True):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -134,6 +137,19 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         Initial integration step size.
     solver : diffrax.AbstractSolver, optional
         Diffrax solver instance controlling the time integration.
+    dtmin : float, optional
+        Smallest adaptive step. If the step would fall below it the solve stops with an
+        error, instead of crawling towards `max_steps`. A collapsing step usually signals an
+        under-resolved run (filamentation reaching the Hermite cutoff, or a species whose
+        Hermite width is narrower than it becomes). Default `None`:
+        no floor. A short physical transient may need steps far below `t_max / max_steps` and
+        still finish within the budget, so no floor is inferred from them.
+    max_steps : int, optional
+        Step budget; exhausting it stops the solve (`RESULTS.max_steps_reached`), reported
+        separately from a step below `dtmin` (`RESULTS.dt_min_reached`).
+    throw : bool, optional
+        Raise on integration failure; with False the failure is reported in `solver_result`,
+        and only the first `num_valid_times` saved times (`valid_times`) hold a solution.
 
     Returns
     -------
@@ -145,8 +161,11 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     # **Initialize simulation parameters**
     parameters = initialize_simulation_parameters(input_parameters, Nx, Ny, Nz, Nn, Nm, Np, Ns, timesteps, dt)
 
-    # Combine initial conditions.
-    initial_conditions = jnp.concatenate([parameters["Ck_0"].flatten(), parameters["Fk_0"].flatten()])
+    # Preserve the species and Hermite axes for the integrator.
+    initial_conditions = (
+        parameters["Ck_0"].reshape(Ns, Np, Nm, Nn, Ny, Nx//2+1, Nz),
+        parameters["Fk_0"].reshape(6, Ny, Nx//2+1, Nz),
+    )
 
     # Define the time array for data output.
     time = jnp.linspace(0, parameters["t_max"], timesteps)
@@ -162,14 +181,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
             parameters["sqrt_p_plus"], parameters["sqrt_p_minus"])
     
 
-    controllers = {
-    True: PIDController(
-        rtol=parameters["ode_tolerance"],
-        atol=parameters["ode_tolerance"],
-    ),
-    False: ConstantStepSize(),
-    }
-    stepsize_controller = controllers[adaptive_time_step]
+    stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_tolerance"], dtmin)
 
     # Solve the ODE system
     ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns)
@@ -178,18 +190,21 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         stepsize_controller=stepsize_controller,
         t0=0, t1=parameters["t_max"], dt0=dt,
         y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
-        max_steps=1000000, progress_meter=TqdmProgressMeter())
+        max_steps=max_steps, progress_meter=TqdmProgressMeter(), throw=throw)
         
     # Reshape the solution to extract Ck and Fk
-    Ck = sol.ys[:,:(-6 * (Nx//2+1) * Ny * Nz)].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz)
-    Fk = sol.ys[:,(-6 * (Nx//2+1) * Ny * Nz):].reshape(len(sol.ts), 6, Ny, Nx//2+1, Nz)
+    Ck = sol.ys[0].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz)
+    Fk = sol.ys[1]
     
     # Set n = 0, k = 0 mode to zero to get array with time evolution of perturbation.
-    dCk = Ck.at[:, 0, 0, 0, 0].set(0)
-    dCk = dCk.at[:, Nn * Nm * Np, 0, 0, 0].set(0)
+    dCk = Ck.at[:, jnp.arange(Ns) * Nn * Nm * Np, 0, 0, 0].set(0)
     
     # Output results
-    temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk, "solver_stats": sol.stats}
+    # Diffrax fills saves after a failed solve with inf; flag them so they are never read as data.
+    valid_times = jnp.isfinite(sol.ts)
+    temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk, "solver_stats": sol.stats,
+                        "solver_result": sol.result, "valid_times": valid_times,
+                        "num_valid_times": jnp.sum(valid_times)}
     output = {**temporary_output, **parameters, "Nx": Nx}  # static grid length for the rFFT weights
     diagnostics(output)
     return output
