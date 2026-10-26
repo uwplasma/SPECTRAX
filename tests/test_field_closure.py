@@ -49,3 +49,26 @@ def test_jit_and_per_species_nu_in_rhs_keeps_low_moments():
     f = jax.jit(field_scaled_closure_rate, static_argnames=("Nn", "Nm", "Np", "Ns"))
     r = f(_fields(), jnp.full(6, 0.05), jnp.array([-1.0, 1.0]), jnp.array([1.0, 0.1]), Nn=64, Nm=1, Np=1, Ns=2, c=1.0)
     assert np.all(np.isfinite(np.asarray(r)))
+
+
+def test_magnetic_option_analytic_and_default_unchanged():
+    """magnetic=True adds sum_j V_j |B_l - <B_l>| per axis; magnetic=False ignores B entirely."""
+    Nx = 16
+    x = np.arange(Nx) * 2 * np.pi / Nx
+    F = np.zeros((6, 1, Nx, 1))
+    F[0, 0, :, 0] = 2e-3 * np.cos(x)
+    F[5, 0, :, 0] = 0.4 + 1e-3 * np.cos(x)  # B_z: uniform part excluded
+    F = jnp.asarray(F)
+    a = jnp.array([0.1, 0.3, 0.1])
+    u = jnp.array([0.0, 0.2, 0.0])
+    qs, om = jnp.array([-1.0]), jnp.array([1.0])
+    Nn, Nm, Np = 32, 16, 1
+    r0 = float(field_scaled_closure_rate(F, a, qs, om, Nn, Nm, Np, 1, 1.0).ravel()[0])
+    np.testing.assert_allclose(r0, np.sqrt(64) * 2e-3 / 0.1, rtol=1e-14)
+    r1 = float(field_scaled_closure_rate(F, a, qs, om, Nn, Nm, Np, 1, 1.0, u_s=u, magnetic=True).ravel()[0])
+    V = np.abs(np.asarray(u)) + np.asarray(a) * np.sqrt(2 * np.array([Nn, Nm, Np]))
+    sx = 2e-3 + V[1] * 1e-3  # (v x B)_x = v_y B_z
+    sy = V[0] * 1e-3  # (v x B)_y = -v_x B_z
+    expect = max(np.sqrt(2 * Nn) * sx / 0.1, np.sqrt(2 * Nm) * sy / 0.3)
+    np.testing.assert_allclose(r1, expect, rtol=1e-12)
+    assert float(field_scaled_closure_rate(F, a, qs, om, Nn, Nm, Np, 1, 0.0, u_s=u, magnetic=True).ravel()[0]) == 0.0
