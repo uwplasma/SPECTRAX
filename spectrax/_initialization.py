@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax import jit
 from functools import partial
 try: import tomllib
-except ModuleNotFoundError: import pip._vendor.tomli as tomllib
+except ModuleNotFoundError: import tomli as tomllib
 import diffrax
 import inspect
 from .midpoint_solver import ImplicitMidpoint
