@@ -166,6 +166,12 @@ python example_script.py
 The `simulation` function returns a dictionary containing the evolved Hermite coefficients `Ck`, electromagnetic coefficients `Fk`, time array, the input parameters and diagnostic quantities.
 
 
+### Gradient-based optimization
+`simulation` is differentiable with `jax.grad`. `Examples/2D_Orszag_Tang_optimization.py` changes 32 Fourier amplitudes of the Orszag–Tang flow and magnetic field at fixed initial energy, to maximize the energy moved from the fields to the plasma by t = 100. Each reverse-mode gradient costs about five forward solves for any number of controls, so it is 11x cheaper than central differences here. It agrees with them to 2e-7. L-BFGS raises the converted fraction from 0.9% to 15.7% in 39 gradients.
+
+<img src="docs/OT_optimization.png" width="100%">
+
+
 ###  Testing
 Run the test suite using the following command:
 ```sh
