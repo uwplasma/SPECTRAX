@@ -62,12 +62,18 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
                 diffrax.RESULTS.promote(optx.RESULTS.nonlinear_divergence),
             ),
         )
-        # As Diffrax's own implicit solvers do: an infinite error estimate makes an adaptive
-        # controller reject the failed step and retry with a smaller one; with constant steps
-        # the failure result ends the solve.
-        y_error = jax.tree.map(
-            lambda a, b: jnp.where(status == _CONVERGED, a - b, jnp.inf), y1, y1_init
-        )
+        # Local error: the midpoint step minus the explicit second-order (Heun) step built on the
+        # Euler predictor, y0 + dt/2 (f(t0, y0) + f(t1, y0 + dt f0)). Both are second order, so the
+        # difference is O(dt^3), the size the controller expects from an order-2 method, and it does
+        # not vanish for linear right-hand sides (as the trapezoidal difference would). It is filtered
+        # by (I - dt/2 J)^-1, the Newton Jacobian of the step (Shampine), so stiff damped modes do not
+        # force explicit-sized steps. A failed nonlinear solve gives an infinite estimate, so an
+        # adaptive controller rejects the step and retries smaller; constant steps end the solve.
+        f_pred = terms.vf(t1, y1_init, args)
+        raw = jax.tree.map(lambda a, b, fa, fb: a - b - 0.5 * δt * (fa + fb), y1, y0, f0, f_pred)
+        _, jacobian = jax.linearize(F_fn, y1)
+        filtered, _ = gmres(jacobian, raw, tol=1e-3, maxiter=20)
+        y_error = jax.tree.map(lambda e: jnp.where(status == _CONVERGED, e, jnp.inf), filtered)
         dense_info = dict(y0=y0, y1=y1)
         return y1, y_error, dense_info, None, result
 

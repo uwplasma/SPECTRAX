@@ -260,7 +260,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk, "solver_stats": sol.stats,
                         "initial_projection_residual": initial_projection_residual,
                         "solver_result": sol.result, "valid_times": valid_times,
-                        "num_valid_times": jnp.sum(valid_times)}
+                        "num_valid_times": jnp.sum(valid_times),
+                        "initial_projection_residual": initial_projection_residual}
     if frame is not None:
         temporary_output.update(basis_u=jnp.real(sol.ys[2][:, 0]), basis_alpha=jnp.real(sol.ys[2][:, 1]))
     output = {**temporary_output, **parameters, "Nx": Nx}  # static grid length for the rFFT weights
