@@ -166,6 +166,42 @@ python example_script.py
 The `simulation` function returns a dictionary containing the evolved Hermite coefficients `Ck`, electromagnetic coefficients `Fk`, time array, the input parameters and diagnostic quantities.
 
 
+### Exponential (Lawson) integration of the diagonal damping
+
+The hypercollision `nu * col` and hyper-diffusion `D k^2` terms are diagonal in the Hermite-Fourier state. When
+`nu * dt` is large they, not accuracy, limit the explicit step. `simulation(..., integrating_factor=True)` wraps the
+solver in `spectrax.LawsonSolver`, which integrates `-r y` exactly (`f = -r y + N`, rate frozen at the step start; the order of the
+wrapped Runge-Kutta method is retained for h -> 0 at fixed rate (Lawson 1967), with no stiff-order claim when r h >> 1 since the
+stiff order of Lawson methods drops, to 1 for Lawson-Runge (Hochbruck and Ostermann 2010, Acta Numerica 19, Thm 2.17, Ex. 2.32,
+Table 2.2); empirical support is measured agreement with plain Dopri8 records (5e-10 in H05 c=64); error estimate and dense output mapped back; steps are clipped onto the save times):
+
+```python
+from spectrax import simulation, LawsonSolver
+out = simulation(Nx=33, Nn=64, input_parameters={"nu": 4000.0, "t_max": 2.0}, integrating_factor=True)
+# any diagonal stiff rate (e.g. a field-scaled closure damping) with your own right-hand side:
+# solver = LawsonSolver(diffrax.Dopri8(), lambda t, y, args: rate)   # rate: pytree like y, >= 0
+```
+
+Helps: runs whose step is limited by a stiff diagonal rate (large `nu`, large `D k^2`, or a field-scaled closure
+rate that grows with the field). Does not help: runs where the step is accuracy-limited (default `nu`), where it costs
+about one extra right-hand-side evaluation per step; it does not remove a truncation or Hermite-closure *instability*
+(the exponential is exact, so it neither adds nor removes damping). Default (`False`) is bitwise unchanged.
+
+#### Exact Hermite free streaming
+
+`simulation(..., integrating_factor="streaming")` also integrates the free-streaming operator exactly. For every Fourier
+mode and species it is `-i k (a T + u)` along each Hermite axis with `T` the symmetric tridiagonal Hermite recurrence matrix,
+so one real `eigh` (Gauss-Hermite nodal transform, shared by all `k`, species, widths and drifts) gives the exact flow for any
+step size (two `Nn x Nn` products per Hermite axis per Runge-Kutta stage; about 3.5 times the cost per step of the plain
+solver at `Nn = 128`, `Nx = 64`). The hypercollision damping can be put inside the same factor (Strang
+product, see `spectrax/_lawson_streaming.py`) at the lower level only.
+
+Helps: smooth runs whose explicit step is limited by streaming stability, `h k a sqrt(2 Nn) < ~3.7`, i.e. large `Nn` and `Nx`
+at loose tolerance (default two-stream, `Nx = 64, Nn = 128`, tolerance 1e-8: 497 -> 28 steps, 1.86 s -> 0.36 s; tolerance 1e-12:
+507 -> 75 steps, 1.9 s -> 0.96 s). Does not help: when the step is accuracy-limited, or limited by a stiff closure (use
+`integrating_factor=True`, or both through `hermite_streaming_factor(rate_fn=...)`, which is harmful when `h k a sqrt(2 Nn)` and
+the rate are both large because the Strang leftover is `O((h|G|)^2 |r|)`).
+
 ###  Testing
 Run the test suite using the following command:
 ```sh
