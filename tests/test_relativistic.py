@@ -179,3 +179,25 @@ def test_simulation_relativistic_runs_and_conserves_charge():
     d = np.max(np.abs(np.asarray(out["Ck"]) - np.asarray(nonrel["Ck"])))
     assert 0 < d < 1e-2  # weakly relativistic here
     assert np.allclose(np.asarray(out["Ck"])[:, 0, 0, 0, 0], np.asarray(Ck_0)[0, 0, 0, 0])
+
+
+def test_pump_frame_f0_removes_uniform_electric_field():
+    """With F0 the relativistic force uses E - E0: a uniform field equal to F0 gives the same RHS as no field."""
+    Nn, Nm, Np, Nx = 8, 1, 1, 8
+    sy = _system(Nn, Nm, Np, Nx)
+    Ck, F = _random_state(Nn, Nm, Np, Nx, seed=5)
+    alpha, u = jnp.array([0.2, 1.0, 1.0]), jnp.array([0.05, 0.0, 0.0])
+    F = F.copy()
+    F[:3, :, 1:] = 0.0
+    F[3:] = 0.0
+    F0 = jnp.array([0.7, -0.2, 0.0, 0, 0, 0])
+    kw = dict(inv_c2=1.0)
+    nofield = _rhs(sy, Ck, np.where(np.arange(F.shape[2])[None, None, :, None] == 0, 0.0, F), alpha, u, [-1.0], Nn, Nm, Np, **kw)
+    Fu = F.copy()
+    Fu[0, :, 0] = F[0, :, 0] + 0.7
+    Fu[1, :, 0] = F[1, :, 0] - 0.2
+    with_f0 = _rhs(sy, Ck, Fu, alpha, u, [-1.0], Nn, Nm, Np, F0=F0, **kw)
+    ref = _rhs(sy, Ck, F, alpha, u, [-1.0], Nn, Nm, Np, **kw)
+    assert np.allclose(np.asarray(with_f0), np.asarray(ref), atol=1e-12)
+    assert not np.allclose(np.asarray(_rhs(sy, Ck, Fu, alpha, u, [-1.0], Nn, Nm, Np, **kw)), np.asarray(ref), atol=1e-6)
+    assert nofield is not None
