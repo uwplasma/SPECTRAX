@@ -164,6 +164,8 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         ``> 0`` is the relativistic model in the momentum variable ``u``: streaming ``v(u) d_x f`` and the
         magnetic force ``(v x B) . grad_u f`` use the Gauss-Hermite nodal matrices of ``v = u / gamma``; the electric
         force term is unchanged. See :mod:`spectrax._relativistic`. Transverse axes with a single Hermite mode are cold.
+        With ``F0`` the relativistic path removes the uniform electric field only (electric pump frame; ``F0[3:]`` must be 0).
+        Collisions are not relativistic: ``nu``/``D`` act as before and the Dougherty operator is not applied here.
 
     Returns
     -------
@@ -191,9 +193,13 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         Nz_, Ny_, Nx_ = C.shape[-1], C.shape[-3], C.shape[-2]
         Vc = [speed_apply(Ck, i, alpha_s, u_s, inv_c2, Nn, Nm, Np, Ns) for i in range(3)]
         Vx = [jnp.fft.irfftn(v * mask23, s=(Nz_, Ny_, Nx_), axes=(-1, -3, -2), norm="forward") for v in Vc]
-        X = [F[0] * C + F[5] * Vx[1] - F[4] * Vx[2],
-             F[1] * C + F[3] * Vx[2] - F[5] * Vx[0],
-             F[2] * C + F[4] * Vx[0] - F[3] * Vx[1]]
+        # Pump frame (F0 given): the uniform electric field is carried by the moving basis centre (a pure translation
+        # in u, exact also relativistically), so the force uses E - E0. A uniform B0 is not a translation of the
+        # relativistic v(u) x B0 force: the pump frame is electric-only here (F0[3:] must vanish) and B is kept whole.
+        E = F[:3] if F0 is None else F[:3] - F0[:3, None, None, None, None, None, None, None]
+        X = [E[0] * C + F[5] * Vx[1] - F[4] * Vx[2],
+             E[1] * C + F[3] * Vx[2] - F[5] * Vx[0],
+             E[2] * C + F[4] * Vx[0] - F[3] * Vx[1]]
         force = ((sqrt_n_minus * jnp.sqrt(2) / a0) * shift_multi(X[0], dn=-1, dm=0, dp=0) +
                  (sqrt_m_minus * jnp.sqrt(2) / a1) * shift_multi(X[1], dn=0, dm=-1, dp=0) +
                  (sqrt_p_minus * jnp.sqrt(2) / a2) * shift_multi(X[2], dn=0, dm=0, dp=-1))
