@@ -98,7 +98,7 @@ def diagnostics(output: dict) -> None:
     - ``k_norm``: normalized perturbation wavenumber (legacy convention)
     - ``kinetic_energy_species``: array of shape ``(Nt, Ns)``
     - ``kinetic_energy``: array of shape ``(Nt,)``
-    - ``EM_energy``: array of shape ``(Nt,)``
+    - ``EM_energy``, ``electric_energy``, ``magnetic_energy``: arrays of shape ``(Nt,)``
     - ``total_energy``: array of shape ``(Nt,)``
     - ``kinetic_energy_species{j}`` for ``j=1..Ns`` (back-compat convenience keys)
 
@@ -202,7 +202,9 @@ def diagnostics(output: dict) -> None:
     rfft_weights = rfft_weights.at[0].set(1.0)
     rfft_weights = rfft_weights.at[-1].set(1.0)
     weight_grid = rfft_weights.reshape(1, 1, -1, 1)
-    EM_energy = 0.5 * jnp.sum((jnp.abs(Fk) ** 2) * weight_grid, axis=(-4, -3, -2, -1)) * Omega_cs[0] ** 2
+    field_energy = lambda F: 0.5 * jnp.sum((jnp.abs(F) ** 2) * weight_grid, axis=(-4, -3, -2, -1)) * Omega_cs[0] ** 2
+    electric_energy, magnetic_energy = field_energy(Fk[..., :3, :, :, :]), field_energy(Fk[..., 3:, :, :, :])
+    EM_energy = electric_energy + magnetic_energy
 
     total_energy = kinetic_energy + EM_energy
 
@@ -213,6 +215,8 @@ def diagnostics(output: dict) -> None:
         "kinetic_energy_species": kinetic_energy_species,
         "kinetic_energy": kinetic_energy,
         "EM_energy": EM_energy,
+        "electric_energy": electric_energy,
+        "magnetic_energy": magnetic_energy,
         "total_energy": total_energy,
     })
 
