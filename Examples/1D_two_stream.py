@@ -1,59 +1,11 @@
-"""Example: 1D two-stream instability.
+"""Two-stream instability of counter-streaming electron beams. The whole case is in input_1D_two_stream.toml; this is the same as running
 
-Loads parameters from ``input_1D_two_stream.toml``, builds the standard two-stream
-initial conditions in Fourier/Hermite space, runs the solver, and plots results.
+    spectrax input_1D_two_stream.toml
 """
+from pathlib import Path
+from spectrax import load_parameters, plot, simulation
 
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from time import time
-import jax
-import jax.numpy as jnp
-from jax import block_until_ready, config
-config.update("jax_enable_x64", True)
-from spectrax import simulation, load_parameters, plot
-
-# Read from input.toml
-toml_file = os.path.join(os.path.dirname(__file__), 'input_1D_two_stream.toml')
-input_parameters, solver_parameters = load_parameters(toml_file)
-
-alpha_s = input_parameters["alpha_s"]
-nx = input_parameters["nx"]
-Lx = input_parameters["Lx"]
-Omega_cs = input_parameters["Omega_cs"]
-dn1 = input_parameters["dn1"]
-dn2 = input_parameters["dn2"]
-Nx = solver_parameters["Nx"]
-Nn = solver_parameters["Nn"]
-
-# Initialize distribution function as a two-stream instability
-values  = (dn1 + dn2) * Lx / (4 * jnp.pi * nx * Omega_cs[0])
-Fk_0    = jnp.zeros((6, 1, Nx//2+1, 1), dtype=jnp.complex128).at[0, 0, nx, 0].set(values)
-input_parameters["Fk_0"] = Fk_0
-
-C10     = jnp.array([1 / (alpha_s[0] ** 3) + 0 * 1j,
-        0 - 1j * (1 / (2 * alpha_s[0] ** 3)) * dn1
-])
-C20     = jnp.array([1 / (alpha_s[3] ** 3) + 0 * 1j,
-        0 - 1j * (1 / (2 * alpha_s[3] ** 3)) * dn2
-])
-indices = jnp.array([0, nx])
-Ck_0    = jnp.zeros((2 * Nn, 1, Nx//2+1, 1), dtype=jnp.complex128)
-Ck_0    = Ck_0.at[0,  0, indices, 0].set(C10)
-Ck_0    = Ck_0.at[Nn, 0, indices, 0].set(C20)
-input_parameters["Ck_0"] = Ck_0
-
-# Simulate
-start_time = time()
-output = block_until_ready(simulation(input_parameters, **solver_parameters))
-print(f"Runtime: {time() - start_time} seconds")
-
-# Plot results
-plot(output)
-
-# print('Saving results...')
-# jnp.savez('output_two-stream.npz', **output)
-
-# print("Loading results...")
-# output = jnp.load('output_orszag.npz')
+here = Path(__file__).parent
+input_parameters, solver_parameters = load_parameters(here / "input_1D_two_stream.toml")
+output = simulation(input_parameters, **solver_parameters)
+plot(output, save=here / "1D_two_stream.png")
