@@ -463,7 +463,7 @@ def dougherty_collisions(C, nu_matrix, alpha_s, u_s, Omega_cs, Nn, Nm, Np, Ns, m
     nu_matrix = jnp.asarray(nu_matrix, dtype=float)
     nu_self = jnp.diagonal(nu_matrix)[:, None, None, None]
     rate = dougherty_rate_real(C, U, theta, nu_self, alpha_s, u_s, Nn, Nm, Np, Ns)
-    ms = 1.0 / Omega_cs
+    ms = 1.0 / jnp.abs(Omega_cs)
     active = tuple(i for i, _, _ in _dougherty_axes(Nn, Nm, Np))
     for s in range(Ns):
         for r in range(s + 1, Ns):

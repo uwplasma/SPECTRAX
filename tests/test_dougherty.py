@@ -357,3 +357,12 @@ def test_toml_francisquez_cross_species(tmp_path):
                  '[collisions]\nmodel = "dougherty"\ncross_species = "francisquez_g"\nbeta = 0.2\nnu = 0.5\n')
     inp, sol = load_parameters(f)
     assert sol["collision_model"] == "dougherty_g" and inp["beta_dougherty"] == 0.2
+
+
+def test_lbo_g_rejects_beta_at_or_below_minus_one(tmp_path):
+    from spectrax import load_parameters
+    toml = tmp_path / "in.toml"
+    toml.write_text('[input_parameters]\n[solver_parameters]\n[collisions]\nmodel = "dougherty"\n'
+                    'cross_species = "francisquez_g"\nbeta = -1.0\n')
+    with pytest.raises(ValueError, match="beta > -1"):
+        load_parameters(toml)
