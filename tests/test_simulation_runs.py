@@ -4,6 +4,10 @@ import jax.numpy as jnp
 import optimistix as optx
 from spectrax import simulation
 from spectrax.midpoint_solver import ImplicitMidpoint
+import diffrax
+
+# diffrax < 0.7.1 (the newest on Python 3.10) reports a dtmin stop as max_steps_reached.
+DIFFRAX_DTMIN = tuple(map(int, diffrax.__version__.split('.')[:3])) >= (0, 7, 1)
 
 @pytest.mark.parametrize("Ns", [1, 2, 3, 4])
 def test_perturbation_removes_every_background_density_and_keeps_mean_current(Ns):
@@ -76,8 +80,10 @@ def test_throw_false_reports_the_failure_instead_of_raising():
     ok = simulation(throw=False)
     assert ok["solver_result"] == RESULTS.successful
     assert int(ok["num_valid_times"]) == ok["time"].size and bool(jnp.all(ok["valid_times"]))
-    for limits, result, n_min in [({"max_steps": 20}, RESULTS.max_steps_reached, 1),
-                                  ({"dtmin": 10.0}, RESULTS.dt_min_reached, 0)]:
+    cases = [({"max_steps": 20}, RESULTS.max_steps_reached, 1)]
+    if DIFFRAX_DTMIN:
+        cases.append(({"dtmin": 10.0}, RESULTS.dt_min_reached, 0))
+    for limits, result, n_min in cases:
         failed = simulation(throw=False, **limits)
         assert failed["solver_result"] == result
         n = int(failed["num_valid_times"])
@@ -101,7 +107,8 @@ def test_short_transient_finishes_within_the_step_budget_without_a_default_floor
     sol = solve(_stepsize_controller(True, 1e-10))
     assert sol.result == RESULTS.successful and int(sol.stats["num_steps"]) < max_steps
     assert abs(float(sol.ys[-1]) - (jnp.exp(-t_max / tau) + jnp.sin(t_max))) < 1e-8
-    assert solve(_stepsize_controller(True, 1e-10, dtmin=t_max / max_steps)).result == RESULTS.dt_min_reached
+    if DIFFRAX_DTMIN:
+        assert solve(_stepsize_controller(True, 1e-10, dtmin=t_max / max_steps)).result == RESULTS.dt_min_reached
 
 def test_implicit_midpoint_step_structured_state():
     term = diffrax.ODETerm(lambda t, y, args: (-y[0], 2 * y[1]))
