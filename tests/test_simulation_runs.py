@@ -8,6 +8,11 @@ from spectrax.midpoint_solver import (
     collision_diffusion_x_streaming_preconditioner,
 )
 
+import diffrax
+
+# diffrax < 0.7.1 (the newest on Python 3.10) reports a dtmin stop as max_steps_reached.
+DIFFRAX_DTMIN = tuple(map(int, diffrax.__version__.split('.')[:3])) >= (0, 7, 1)
+
 def test_multispecies_background_removed_from_perturbation():
     """Remove every species' homogeneous density from dCk."""
     Ns = 3
@@ -103,6 +108,29 @@ def test_electric_field_update():
     result = simulation()
     assert not jnp.all(result["Fk"] == 0), "Electric field did not update."
 
+def test_implicit_midpoint_step_structured_state():
+    term = diffrax.ODETerm(lambda t, y, args: (-y[0], 2 * y[1]))
+    y1, _, _, _, result = ImplicitMidpoint().step(
+        term, 0.0, 0.1, (jnp.ones(2), jnp.ones((2, 2))), None, None, False
+    )
+    assert result == diffrax.RESULTS.successful
+    assert jnp.allclose(y1[0], 0.95 / 1.05, rtol=1e-5)
+    assert jnp.allclose(y1[1], 1.1 / 0.9, rtol=1e-5)
+
+def test_implicit_midpoint_reports_newton_exhaustion():
+    term = diffrax.ODETerm(lambda t, y, args: y + 1)
+    result = ImplicitMidpoint(max_iters=0).step(
+        term, 0.0, 0.1, jnp.array(0.0), None, None, False
+    )[-1]
+    assert result == diffrax.RESULTS.promote(optx.RESULTS.nonlinear_max_steps_reached)
+
+def test_implicit_midpoint_evaluates_rhs_at_midpoint_time():
+    term = diffrax.ODETerm(lambda t, y, args: t)
+    y1 = ImplicitMidpoint(max_iters=2).step(
+        term, 0.0, 0.2, jnp.array(0.0), None, None, False
+    )[0]
+    assert jnp.allclose(y1, 0.02, rtol=0, atol=1e-12)
+
 @pytest.mark.parametrize("limits", [{"dtmin": 10.0}, {"max_steps": 2}])
 def test_step_limits_stop_the_solve_with_an_error(limits):
     """A step below dtmin (here: any step) or too many steps stops the solve instead of crawling on."""
@@ -181,8 +209,10 @@ def test_collision_diffusion_x_streaming_line():
     ok = simulation(throw=False)
     assert ok["solver_result"] == RESULTS.successful
     assert int(ok["num_valid_times"]) == ok["time"].size and bool(jnp.all(ok["valid_times"]))
-    for limits, result, n_min in [({"max_steps": 20}, RESULTS.max_steps_reached, 1),
-                                  ({"dtmin": 10.0}, RESULTS.dt_min_reached, 0)]:
+    cases = [({"max_steps": 20}, RESULTS.max_steps_reached, 1)]
+    if DIFFRAX_DTMIN:
+        cases.append(({"dtmin": 10.0}, RESULTS.dt_min_reached, 0))
+    for limits, result, n_min in cases:
         failed = simulation(throw=False, **limits)
         assert failed["solver_result"] == result
         n = int(failed["num_valid_times"])
@@ -206,7 +236,8 @@ def test_short_transient_finishes_within_the_step_budget_without_a_default_floor
     sol = solve(_stepsize_controller(True, 1e-10))
     assert sol.result == RESULTS.successful and int(sol.stats["num_steps"]) < max_steps
     assert abs(float(sol.ys[-1]) - (jnp.exp(-t_max / tau) + jnp.sin(t_max))) < 1e-8
-    assert solve(_stepsize_controller(True, 1e-10, dtmin=t_max / max_steps)).result == RESULTS.dt_min_reached
+    if DIFFRAX_DTMIN:
+        assert solve(_stepsize_controller(True, 1e-10, dtmin=t_max / max_steps)).result == RESULTS.dt_min_reached
 
 if __name__ == "__main__":
     pytest.main()

@@ -7,6 +7,7 @@ import diffrax
 import jax
 import jax.numpy as jnp
 import optimistix as optx
+from jax.scipy.sparse.linalg import gmres
 from solvax import newton_krylov
 
 
@@ -123,13 +124,29 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
             linear_max_restarts=self.linear_max_restarts,
         )
         y1 = solution.x
+        finite = jnp.all(jnp.array([jnp.all(jnp.isfinite(x)) for x in jax.tree.leaves(y1)]))
 
-        y_error = jax.tree.map(lambda a, b: a - b, y1, y1_init)
+        # Local error: the midpoint step minus the explicit second-order (Heun) step built on the
+        # Euler predictor, y0 + dt/2 (f(t0, y0) + f(t1, y0 + dt f0)). Both are second order, so the
+        # difference is O(dt^3), the size the controller expects from an order-2 method, and it does
+        # not vanish for linear right-hand sides. It is filtered by (I - dt/2 J)^-1, the Newton
+        # Jacobian of the step (Shampine), with the same preconditioner, so stiff damped modes do not
+        # force explicit-sized steps. A failed solve gives an infinite estimate, so an adaptive
+        # controller rejects the step and retries smaller; constant steps end the solve.
+        f_pred = terms.vf(t1, y1_init, args)
+        raw = jax.tree.map(lambda a, b, fa, fb: a - b - 0.5 * δt * (fa + fb), y1, y0, f0, f_pred)
+        _, jacobian = jax.linearize(F_fn, y1)
+        filtered, _ = gmres(jacobian, raw, tol=1e-3, maxiter=20, M=precond)
+        y_error = jax.tree.map(lambda e: jnp.where(solution.converged & finite, e, jnp.inf), filtered)
         dense_info = dict(y0=y0, y1=y1)
         result = diffrax.RESULTS.where(
-            solution.converged,
+            solution.converged & finite,
             diffrax.RESULTS.successful,
-            diffrax.RESULTS.promote(optx.RESULTS.nonlinear_max_steps_reached),
+            diffrax.RESULTS.where(
+                finite,
+                diffrax.RESULTS.promote(optx.RESULTS.nonlinear_max_steps_reached),
+                diffrax.RESULTS.promote(optx.RESULTS.nonlinear_divergence),
+            ),
         )
         next_solver_state = MidpointSolverState(
             solver_state.newton_iterations + solution.newton_iterations,
