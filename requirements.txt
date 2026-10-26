@@ -5,3 +5,4 @@ diffrax
 orthax
 matplotlib
 pandas
+tomli; python_version < '3.11'
