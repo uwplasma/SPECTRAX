@@ -108,3 +108,14 @@ def test_oscillator_energy_to_solve_tolerance_and_midpoint_phase():
     assert abs(lag - float((w - w_mid) * t[-1])) < 1e-9
     # Leading-order estimate; its relative correction is 3 (w dt)^2 / 20 = 0.024 here.
     assert abs(lag / (w ** 3 * dt ** 2 * t[-1] / 12) - 1) < 0.03
+
+
+def test_error_estimate_is_third_order_and_nonzero_for_linear_problems():
+    """The local error estimate of an order-2 step must scale as dt^3, also for linear right-hand sides."""
+    lam = jnp.array([-0.3 + 2.0j])
+    term = diffrax.ODETerm(lambda t, y, args: lam * y)
+    def estimate(dt):
+        _, y_error, _, _, _ = ImplicitMidpoint(rtol=1e-13, atol=1e-13).step(term, 0.0, dt, jnp.ones(1, complex), None, None, False)
+        return float(jnp.abs(y_error[0]))
+    e1, e2 = estimate(0.1), estimate(0.05)
+    assert e1 > 0 and 7.0 < e1 / e2 < 9.0
