@@ -262,3 +262,107 @@ def test_toml_collisions_table(tmp_path):
     f.write_text('[input_parameters]\nnu = 1.0\n[solver_parameters]\nNx = 3\n')
     inp, sol = load_parameters(f)
     assert "collision_model" not in sol and "nu_dougherty" not in inp
+
+
+# ---- Francisquez et al. (JPP 88, 905880303, 2022) LBO-G cross-species moments ----
+
+def _pair(beta, drift=True):
+    dens = jnp.array([1.0, 0.7]); U = jnp.array([[0.3, -0.1, 0.2], [-0.5, 0.4, 0.0]]) * (1.0 if drift else 0.0)
+    theta = jnp.array([0.5, 0.02]); ms = jnp.array([1.0, 25.0])
+    return dens, U, theta, ms, dougherty_cross_moments(dens, U, theta, ms, 0, 1, (0, 1, 2), beta)
+
+
+@pytest.mark.parametrize("beta", [-0.5, 0.0, 0.7])
+def test_lbo_g_exchange_conserves_momentum_and_energy(beta):
+    dens, U, theta, ms, (usr, th_sr, th_rs, urs) = _pair(beta)
+    nu_sr = 0.8; nu_rs = nu_sr * ms[0] * dens[0] / (ms[1] * dens[1])
+    R = [ms[0] * dens[0] * nu_sr * (usr - U[0]), ms[1] * dens[1] * nu_rs * (urs - U[1])]
+    np.testing.assert_allclose(R[0] + R[1], 0, atol=1e-15)
+    Q = [-ms[k] * dens[k] * nu * (3 * theta[k] + U[k] @ U[k] - u @ U[k] - 3 * th)
+         for k, nu, th, u in ((0, nu_sr, th_sr, usr), (1, nu_rs, th_rs, urs))]
+    np.testing.assert_allclose(Q[0] + Q[1], 0, atol=1e-14)
+
+
+def test_lbo_g_matches_paper_formulas_eq_2_8_2_9():
+    dens, U, theta, ms, (usr, th_sr, th_rs, urs) = _pair(0.3)
+    d = 3; ms_, mr_ = 1.0, 25.0; delta = 1.0; beta = 0.3
+    du2 = float(jnp.sum((U[0] - U[1]) ** 2))
+    np.testing.assert_allclose(usr, U[0] + delta * (1 + beta) / 2 * (U[1] - U[0]), rtol=1e-14)
+    vts2, vtr2 = float(theta[0]), float(theta[1])
+    ref = vts2 + delta * (1 + beta) / 2 / (1 + ms_ / mr_) * (vtr2 - ms_ / mr_ * vts2 + du2 / d)
+    np.testing.assert_allclose(th_sr, ref, rtol=1e-14)
+
+
+def test_lbo_g_beta0_matches_morse_rates_and_em_doubles_the_temperature_rate():
+    # Morse (1963) / Francisquez eq. 2.4 with alpha_E = 1, no drift: dT_s/dt = (T_r - T_s)/n_s;
+    # LBO rate dT_s/dt = 2 nu_sr (T_sr - T_s), nu_sr = (m_s + m_r)/(m_s n_s)
+    dens, U, theta, ms, g = _pair(0.0, drift=False)
+    ns = float(dens[0]); mr = float(ms[1]); m_s = float(ms[0])
+    nu_sr = (m_s + mr) / (m_s * ns)
+    Ts, Tr = m_s * float(theta[0]), mr * float(theta[1])
+    morse = (Tr - Ts) / ns
+    np.testing.assert_allclose(2 * nu_sr * (m_s * g[1] - Ts), morse, rtol=1e-13)
+    em = dougherty_cross_moments(dens, U, theta, ms, 0, 1, (0, 1, 2))
+    np.testing.assert_allclose(2 * nu_sr * (m_s * em[1] - Ts), 2 * morse, rtol=1e-13)
+    # momentum rate (no thermal part): nu_sr (u_sr - U_s) = (m_s + m_r)(U_r - U_s)/(2 m_s n_s) for both
+    dens, U, theta, ms, g = _pair(0.0)
+    np.testing.assert_allclose(ms[0] * dens[0] * nu_sr * (g[0] - U[0]), (ms[0] + ms[1]) * (U[1] - U[0]) / 2, rtol=1e-13)
+    np.testing.assert_allclose(g[0], 0.5 * (U[0] + U[1]), rtol=1e-14)
+
+
+def test_default_cross_moments_are_unchanged_by_the_beta_option():
+    dens, U, theta, ms, _ = _pair(0.0)
+    a = dougherty_cross_moments(dens, U, theta, ms, 0, 1, (0, 1, 2))
+    b = dougherty_cross_moments(dens, U, theta, ms, 0, 1, (0, 1, 2), None)
+    assert all(jnp.array_equal(x, y) for x, y in zip(a, b)) and len(a) == 3
+
+
+@pytest.mark.parametrize("beta", [0.0, 0.6])
+def test_lbo_g_spectral_conservation_to_round_off(beta):
+    N, grid, Ns = (5, 4, 3), (6, 4, 3), 3
+    Ck, C, mask = random_masked_state(Ns, N, grid)
+    rng = np.random.default_rng(2)
+    alpha = jnp.asarray(rng.uniform(0.6, 1.4, 3 * Ns)); u = jnp.asarray(rng.normal(size=3 * Ns) * 0.3)
+    Omega = jnp.array([1.0, 0.25, 0.04]); nu = jnp.asarray(rng.uniform(0.2, 1.0, (Ns, Ns)))
+    dCk = dougherty_collisions(C, nu, alpha, u, Omega, *N, Ns, mask, beta=beta)
+    dC = np.asarray(jnp.fft.irfftn(dCk, s=(grid[2], grid[1], grid[0]), axes=(-1, -3, -2), norm="forward"))
+    rates = physical_rates(dC, np.asarray(alpha), np.asarray(u), Ns, 1 / np.asarray(Omega))
+    scale = np.abs(dC).max()
+    np.testing.assert_allclose(rates[:, 0], 0, atol=1e-13 * scale)
+    np.testing.assert_allclose(rates[:, 1:].sum(axis=0), 0, atol=1e-12 * scale * Ns)
+
+
+def test_lbo_g_run_relaxes_temperature_at_the_morse_rate():
+    # two Maxwellians, no drift, mass ratio 4: d(T_s - T_r)/dt = -alpha_E (1/n_s + 1/n_r)(T_s - T_r), alpha_E = n_s m_s nu_sr/(m_s+m_r)
+    N = (8, 1, 1)
+    a = jnp.array([0.6, 1, 1, 0.3, 1, 1]); u = jnp.zeros(6)
+    p = homogeneous_params(2, N, [[0, 0, 0], [0, 0, 0]], [jnp.full(3, 0.6), jnp.full(3, 0.3)], a, u, mi=4.0)
+    nu_sr = 0.5
+    p.update(t_max=0.4, nu_dougherty=jnp.array([[0.0, nu_sr], [0.0, 0.0]]), beta_dougherty=0.0)
+    out = run(p, Nn=8, Nm=1, Np=1, Ns=2, collision_model="dougherty_g", timesteps=40)
+    C = jnp.fft.irfftn(out["Ck"].reshape(-1, 2, 1, 1, 8, 1, 2, 1), s=(1, 1, 3), axes=(-1, -3, -2), norm="forward")
+    C = np.asarray(C[:, :, 0, 0, :, 0, 0, 0]); aa = np.array([0.6, 0.3]); ms = np.array([1.0, 4.0])
+    T = ms * aa ** 2 * (C[..., 0] / 2 + C[..., 2] / r2) / C[..., 0]  # T = m alpha^2 (1/2 + C2/(sqrt2 C0))
+    n = aa * C[:, :, 0]
+    alphaE = n[0, 0] * ms[0] * nu_sr / (ms[0] + ms[1])
+    rate = alphaE * (1 / n[0, 0] + 1 / n[0, 1])
+    t = np.asarray(out["time"])
+    np.testing.assert_allclose(T[:, 0] - T[:, 1], (T[0, 0] - T[0, 1]) * np.exp(-rate * t), rtol=2e-3)
+
+
+def test_toml_francisquez_cross_species(tmp_path):
+    from spectrax import load_parameters
+    f = tmp_path / "in.toml"
+    f.write_text('[input_parameters]\nnu = 1.0\n[solver_parameters]\nNx = 3\n'
+                 '[collisions]\nmodel = "dougherty"\ncross_species = "francisquez_g"\nbeta = 0.2\nnu = 0.5\n')
+    inp, sol = load_parameters(f)
+    assert sol["collision_model"] == "dougherty_g" and inp["beta_dougherty"] == 0.2
+
+
+def test_lbo_g_rejects_beta_at_or_below_minus_one(tmp_path):
+    from spectrax import load_parameters
+    toml = tmp_path / "in.toml"
+    toml.write_text('[input_parameters]\n[solver_parameters]\n[collisions]\nmodel = "dougherty"\n'
+                    'cross_species = "francisquez_g"\nbeta = -1.0\n')
+    with pytest.raises(ValueError, match="beta > -1"):
+        load_parameters(toml)
