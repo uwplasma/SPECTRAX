@@ -81,7 +81,7 @@ def test_failed_step_ends_a_constant_step_solve_and_is_rejected_by_an_adaptive_o
     # Stiff-ish y' = -y^3 from y=4: large first steps fail Newton and are rejected, not returned as data.
     sol = diffrax.diffeqsolve(diffrax.ODETerm(lambda t, y, args: -(y ** 3)),
                               ImplicitMidpoint(max_iters=3), 0.0, 1.0, 1.0, jnp.array([4.0]),
-                              stepsize_controller=diffrax.PIDController(rtol=1e-3, atol=1e-3),
+                              stepsize_controller=diffrax.PIDController(rtol=1e-4, atol=1e-4),
                               throw=False)
     assert sol.result == SUCCESS and int(sol.stats["num_rejected_steps"]) > 0
     assert abs(float(sol.ys[-1, 0]) - 4.0 / (1 + 2 * 16.0) ** 0.5) < 1e-3
