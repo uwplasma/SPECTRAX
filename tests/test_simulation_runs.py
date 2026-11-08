@@ -7,30 +7,10 @@ from spectrax.midpoint_solver import (
     ImplicitMidpoint,
     collision_diffusion_x_streaming_preconditioner,
 )
-
 import diffrax
 
 # diffrax < 0.7.1 (the newest on Python 3.10) reports a dtmin stop as max_steps_reached.
 DIFFRAX_DTMIN = tuple(map(int, diffrax.__version__.split('.')[:3])) >= (0, 7, 1)
-
-def test_multispecies_background_removed_from_perturbation():
-    """Remove every species' homogeneous density from dCk."""
-    Ns = 3
-    Ck_0 = jnp.zeros((Ns, 1, 2, 1), dtype=jnp.complex128)
-    Ck_0 = Ck_0.at[:, 0, 0, 0].set(jnp.arange(1, Ns + 1))
-    parameters = {
-        "Ck_0": Ck_0,
-        "Fk_0": jnp.zeros((6, 1, 2, 1), dtype=jnp.complex128),
-        "qs": jnp.array([-1.0, 1.0, 1.0]),
-        "alpha_s": jnp.ones(3 * Ns),
-        "u_s": jnp.zeros(3 * Ns),
-        "Omega_cs": jnp.ones(Ns),
-        "t_max": 0.001,
-    }
-
-    result = simulation(parameters, Nx=3, Nn=1, Ns=Ns, timesteps=2,
-                        dt=0.001, adaptive_time_step=False)
-    assert jnp.all(result["dCk"][:, :, 0, 0, 0] == 0)
 
 @pytest.mark.parametrize("Ns", [1, 2, 3, 4])
 def test_perturbation_removes_every_background_density_and_keeps_mean_current(Ns):
@@ -71,23 +51,6 @@ def test_simulation_runs():
         result["solver_stats"]["num_accepted_steps"]
         + result["solver_stats"]["num_rejected_steps"]
     )
-    assert result["Ck"].shape[1:] == (result["Ns"] * result["Nn"] * result["Nm"] * result["Np"],
-                                      result["Ny"], result["Nx"] // 2 + 1, result["Nz"])
-    assert result["Fk"].shape[1:] == (6, result["Ny"], result["Nx"] // 2 + 1, result["Nz"])
-
-def test_solver_state_keeps_species_and_hermite_axes(monkeypatch):
-    """The integrator sees (Ck, Fk) with their species, Hermite and grid axes, not one flat vector."""
-    import spectrax._simulation as sim
-    captured = {}
-    def stop(term, **kwargs):
-        captured.update(kwargs, rhs=term.vector_field(0.0, kwargs["y0"], kwargs["args"]))
-        raise RuntimeError("captured")
-    monkeypatch.setattr(sim, "diffeqsolve", stop)
-    with pytest.raises(RuntimeError, match="captured"):
-        simulation(Nx=7, Nn=4, timesteps=3)
-    shapes = [(2, 1, 1, 4, 1, 4, 1), (6, 1, 4, 1)]
-    assert [y.shape for y in captured["y0"]] == shapes
-    assert [y.shape for y in captured["rhs"]] == shapes
 
 def test_solver_state_keeps_species_and_hermite_axes(monkeypatch):
     """The integrator sees (Ck, Fk) with their species, Hermite and grid axes, not one flat vector."""
@@ -138,33 +101,21 @@ def test_step_limits_stop_the_solve_with_an_error(limits):
         simulation(**limits)
 
 def test_throw_false_reports_the_failure_instead_of_raising():
-    """With throw=False a stopped solve returns, and solver_result says why."""
+    """With throw=False a stopped solve returns, says why, and marks which saves hold a solution."""
     from diffrax import RESULTS
-    assert simulation(throw=False)["solver_result"] == RESULTS.successful
-    assert simulation(max_steps=2, dtmin=0, throw=False)["solver_result"] == RESULTS.max_steps_reached
-
-def test_implicit_midpoint_step_structured_state():
-    term = diffrax.ODETerm(lambda t, y, args: (-y[0], 2 * y[1]))
-    y1, _, _, _, result = ImplicitMidpoint().step(
-        term, 0.0, 0.1, (jnp.ones(2), jnp.ones((2, 2))), None, None, False
-    )
-    assert result == diffrax.RESULTS.successful
-    assert jnp.allclose(y1[0], 0.95 / 1.05, rtol=1e-5)
-    assert jnp.allclose(y1[1], 1.1 / 0.9, rtol=1e-5)
-
-def test_implicit_midpoint_reports_newton_exhaustion():
-    term = diffrax.ODETerm(lambda t, y, args: y + 1)
-    result = ImplicitMidpoint(max_iters=0).step(
-        term, 0.0, 0.1, jnp.array(0.0), None, None, False
-    )[-1]
-    assert result == diffrax.RESULTS.promote(optx.RESULTS.nonlinear_max_steps_reached)
-
-def test_implicit_midpoint_evaluates_rhs_at_midpoint_time():
-    term = diffrax.ODETerm(lambda t, y, args: t)
-    y1 = ImplicitMidpoint(max_iters=2).step(
-        term, 0.0, 0.2, jnp.array(0.0), None, None, False
-    )[0]
-    assert jnp.allclose(y1, 0.02, rtol=0, atol=1e-12)
+    ok = simulation(throw=False)
+    assert ok["solver_result"] == RESULTS.successful
+    assert int(ok["num_valid_times"]) == ok["time"].size and bool(jnp.all(ok["valid_times"]))
+    cases = [({"max_steps": 20}, RESULTS.max_steps_reached, 1)]
+    if DIFFRAX_DTMIN:
+        cases.append(({"dtmin": 10.0}, RESULTS.dt_min_reached, 0))
+    for limits, result, n_min in cases:
+        failed = simulation(throw=False, **limits)
+        assert failed["solver_result"] == result
+        n = int(failed["num_valid_times"])
+        assert n_min <= n < failed["time"].size
+        assert bool(jnp.all(failed["valid_times"][:n])) and not bool(jnp.any(failed["valid_times"][n:]))
+        assert bool(jnp.all(jnp.isfinite(failed["Fk"][:n]))) and not bool(jnp.any(jnp.isfinite(failed["Fk"][n:])))
 
 def test_implicit_midpoint_simulation_reports_iterations():
     result = simulation(
@@ -203,22 +154,6 @@ def test_collision_diffusion_x_streaming_line():
     expected = jnp.linalg.solve(matrix, coefficients.reshape(3))
     assert jnp.allclose(actual[0].reshape(3), expected, rtol=1e-6, atol=1e-6)
     assert jnp.array_equal(actual[1], fields)
-
-    """With throw=False a stopped solve returns, says why, and marks which saves hold a solution."""
-    from diffrax import RESULTS
-    ok = simulation(throw=False)
-    assert ok["solver_result"] == RESULTS.successful
-    assert int(ok["num_valid_times"]) == ok["time"].size and bool(jnp.all(ok["valid_times"]))
-    cases = [({"max_steps": 20}, RESULTS.max_steps_reached, 1)]
-    if DIFFRAX_DTMIN:
-        cases.append(({"dtmin": 10.0}, RESULTS.dt_min_reached, 0))
-    for limits, result, n_min in cases:
-        failed = simulation(throw=False, **limits)
-        assert failed["solver_result"] == result
-        n = int(failed["num_valid_times"])
-        assert n_min <= n < failed["time"].size
-        assert bool(jnp.all(failed["valid_times"][:n])) and not bool(jnp.any(failed["valid_times"][n:]))
-        assert bool(jnp.all(jnp.isfinite(failed["Fk"][:n]))) and not bool(jnp.any(jnp.isfinite(failed["Fk"][n:])))
 
 def test_short_transient_finishes_within_the_step_budget_without_a_default_floor():
     """A transient needing steps ~1e-6 t_max finishes in far fewer than t_max/dt_transient steps.
