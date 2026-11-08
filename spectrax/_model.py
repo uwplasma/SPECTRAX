@@ -297,20 +297,25 @@ def uniform_acceleration(F, u_s, qs, Omega_cs, Ns):
     return accel.reshape(3 * Ns), F0
 
 
-def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c):
+def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c, u_s=None):
     """
-    Per-species closure rate ``nu_s = c |q_s/m_s| max_i sqrt(2 N_i) max_x |E_i - <E_i>| / a_{s,i}``, shaped
+    Per-species closure rate ``nu_s = c |q_s/m_s| max_i sqrt(2 N_i) S_i / a_{s,i}``, shaped
     ``(Ns, 1, 1, 1, 1, 1, 1)``, over the velocity axes with ``N_i > 3``.
 
-    The truncated asymmetrically weighted Hermite operator is not anti-self-adjoint: in a non-uniform field
-    its top Hermite modes at the largest retained ``|k|`` grow at a rate of order ``0.3 sqrt(2N) |q/m| |E| / a``.
-    Passed as ``nu`` together with ``hypercollision_spectrum(order=2)`` (which leaves density, momentum and
-    energy untouched), this damps them in proportion. The uniform part ``<E>`` only shifts ``f`` and is
-    excluded; ``c = 0`` gives exactly zero. ``F`` is the real-space field ``(6, Ny, Nx, Nz)``; ``|q/m|_s =
-    |qs * Omega_cs|``. ``simulation(..., closure_c=c)`` applies it every right-hand-side evaluation.
+    The truncated asymmetrically weighted Hermite operator is not anti-self-adjoint: in a non-uniform force
+    its top Hermite modes at the largest retained ``|k|`` grow at a rate of order ``0.3 sqrt(2N) |q/m| S / a``.
+    The force scale on axis ``i`` is ``S_i = max_x |E_i - <E_i>| + sum_{j != i} V_j max_x |B_l - <B_l>|``
+    (``i, j, l`` a permutation), with ``V_j = |u_j| + a_j sqrt(2 N_j)`` the largest velocity the kept ladder
+    on axis ``j`` represents; the ``v x B`` term matters once ``B`` is non-uniform (Weibel), and for uniform
+    ``B`` this is the electric-only rate. Uniform parts only shift ``f`` and are excluded; ``c = 0`` gives
+    exactly zero. Passed as ``nu`` with ``hypercollision_spectrum(order=2)`` (density, momentum and energy
+    untouched) it damps those modes. ``F`` is the real-space field ``(6, Ny, Nx, Nz)``, ``|q/m|_s =
+    |qs * Omega_cs|``, ``u_s`` the basis centres (default 0). ``simulation(..., closure_c=c)`` applies it.
     """
-    E = F[:3]
-    dE = jnp.max(jnp.abs(E - jnp.mean(E, axis=(-3, -2, -1), keepdims=True)), axis=(-3, -2, -1))  # (3,)
+    dev = jnp.max(jnp.abs(F - jnp.mean(F, axis=(-3, -2, -1), keepdims=True)), axis=(-3, -2, -1))  # (6,)
     N = jnp.array([Nn, Nm, Np], dtype=float)
-    per_axis = jnp.where(N > 3, jnp.sqrt(2 * N) * dE, 0.0) / alpha_s.reshape(Ns, 3)
+    a = alpha_s.reshape(Ns, 3)
+    V = a * jnp.sqrt(2 * N) + (0.0 if u_s is None else jnp.abs(u_s.reshape(Ns, 3)))
+    S = dev[:3] + V[:, jnp.array([1, 2, 0])] * dev[jnp.array([5, 3, 4])] + V[:, jnp.array([2, 0, 1])] * dev[jnp.array([4, 5, 3])]
+    per_axis = jnp.where(N > 3, jnp.sqrt(2 * N) * S, 0.0) / a
     return (c * jnp.abs(qs * Omega_cs) * jnp.max(per_axis, axis=1)).reshape(Ns, 1, 1, 1, 1, 1, 1)

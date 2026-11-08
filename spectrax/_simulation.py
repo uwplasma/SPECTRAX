@@ -97,7 +97,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", closur
     C = jnp.fft.irfftn(Ck * mask23, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
 
     if closure_c:  # field-scaled top-mode damping on top of the configured nu
-        nu = nu + field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, closure_c)
+        nu = nu + field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, closure_c, u_s)
     pump = moving and frame == "pump"
     u_dot, F0 = uniform_acceleration(F, u_s, qs, Omega_cs, Ns) if pump else (None, None)
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
