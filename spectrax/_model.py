@@ -10,7 +10,8 @@ import jax.numpy as jnp
 from jax import jit
 from functools import partial
 
-__all__ = ['plasma_current', 'Hermite_Fourier_system', 'basis_rate_terms', 'uniform_acceleration']
+__all__ = ['plasma_current', 'Hermite_Fourier_system', 'basis_rate_terms', 'uniform_acceleration',
+           'field_scaled_closure_rate']
 
 
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
@@ -125,8 +126,9 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         Square-root ladder coefficients for the Hermite recurrences along each axis.
     Lx, Ly, Lz : float
         Domain lengths in each spatial direction.
-    nu : float
-        Collision frequency.
+    nu : float or jnp.ndarray
+        Collision frequency: a scalar, or one rate per species with shape ``(Ns, 1, 1, 1, 1, 1, 1)``
+        (see :func:`field_scaled_closure_rate`).
     D : float
         Hyper-diffusion coefficient.
     alpha_s, u_s : jnp.ndarray
@@ -293,3 +295,22 @@ def uniform_acceleration(F, u_s, qs, Omega_cs, Ns):
     u = u_s.reshape(Ns, 3)
     accel = (qs * Omega_cs)[:, None] * (F0[None, :3] + jnp.cross(u, F0[None, 3:]))
     return accel.reshape(3 * Ns), F0
+
+
+def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c):
+    """
+    Per-species closure rate ``nu_s = c |q_s/m_s| max_i sqrt(2 N_i) max_x |E_i - <E_i>| / a_{s,i}``, shaped
+    ``(Ns, 1, 1, 1, 1, 1, 1)``, over the velocity axes with ``N_i > 3``.
+
+    The truncated asymmetrically weighted Hermite operator is not anti-self-adjoint: in a non-uniform field
+    its top Hermite modes at the largest retained ``|k|`` grow at a rate of order ``0.3 sqrt(2N) |q/m| |E| / a``.
+    Passed as ``nu`` together with ``hypercollision_spectrum(order=2)`` (which leaves density, momentum and
+    energy untouched), this damps them in proportion. The uniform part ``<E>`` only shifts ``f`` and is
+    excluded; ``c = 0`` gives exactly zero. ``F`` is the real-space field ``(6, Ny, Nx, Nz)``; ``|q/m|_s =
+    |qs * Omega_cs|``. ``simulation(..., closure_c=c)`` applies it every right-hand-side evaluation.
+    """
+    E = F[:3]
+    dE = jnp.max(jnp.abs(E - jnp.mean(E, axis=(-3, -2, -1), keepdims=True)), axis=(-3, -2, -1))  # (3,)
+    N = jnp.array([Nn, Nm, Np], dtype=float)
+    per_axis = jnp.where(N > 3, jnp.sqrt(2 * N) * dE, 0.0) / alpha_s.reshape(Ns, 3)
+    return (c * jnp.abs(qs * Omega_cs) * jnp.max(per_axis, axis=1)).reshape(Ns, 1, 1, 1, 1, 1, 1)
