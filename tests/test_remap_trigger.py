@@ -6,24 +6,19 @@ import jax.numpy as jnp
 from diffrax import NoProgressMeter
 from spectrax import simulation
 from spectrax._remap import remap, remap_event, remap_trigger
-from tests.test_remap import _maxwellian
+from tests.conftest import B0, maxwellian_state
 
 jax.config.update("jax_enable_x64", True)
 N = 16
-B0 = jnp.array([[0.0, 0, 0], [1.0, 1, 1]])
-
-
-def _state(d, r):
-    return jnp.zeros((1, 1, 1, N, 1, 1, 1)).at[0, 0, 0, :, 0, 0, 0].set(_maxwellian(N, d, r))
 
 
 @pytest.mark.parametrize("d,r,fires", [(0.05, 1.0, False), (0.15, 1.0, True), (-0.15, 1.0, True),
                                         (0.0, 1.03, False), (0.0, 1.15, True), (0.0, 1.3, True)])
 def test_manufactured_shifted_and_heated_maxwellians(d, r, fires):
-    fire, new, info = remap_trigger(_state(d, r), B0, N, 1, 1, 1)
+    fire, new, info = remap_trigger(maxwellian_state(N, d, r), B0, N, 1, 1, 1)
     assert fire is fires
     if fires:  # after the remap the same state does not fire again
-        C2 = remap(_state(d, r), B0, jnp.asarray(new), N, 1, 1, 1)
+        C2 = remap(maxwellian_state(N, d, r), B0, jnp.asarray(new), N, 1, 1, 1)
         assert remap_trigger(C2, jnp.asarray(new), N, 1, 1, 1)[0] is False
 
 
@@ -31,7 +26,7 @@ def test_slow_drift_does_not_chatter():
     """A Maxwellian drifting by 0.04 a per check fires every ~3 checks, never on consecutive checks."""
     basis, events = B0, []
     for j in range(1, 60):
-        C = remap(_state(0.04 * j, 1.0), B0, basis, N, 1, 1, 1)  # same f, current basis
+        C = remap(maxwellian_state(N, 0.04 * j, 1.0), B0, basis, N, 1, 1, 1)  # same f, current basis
         fire, new, _ = remap_trigger(C, basis, N, 1, 1, 1)
         if fire:
             events.append(j)
