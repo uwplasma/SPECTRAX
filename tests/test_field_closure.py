@@ -2,9 +2,10 @@
 import numpy as np
 import jax
 import jax.numpy as jnp
-from spectrax import field_scaled_closure_rate, hypercollision_spectrum
+from diffrax import NoProgressMeter
+from spectrax import field_scaled_closure_rate, hypercollision_spectrum, simulation
 from spectrax._remap import low_moments
-from tests.test_moving_basis import ORDERS, random_state, ode_args, rhs
+from tests.conftest import ORDERS, random_state, ode_args, rhs
 
 jax.config.update("jax_enable_x64", True)
 
@@ -49,3 +50,13 @@ def test_jit_and_per_species_nu_in_rhs_keeps_low_moments():
     f = jax.jit(field_scaled_closure_rate, static_argnames=("Nn", "Nm", "Np", "Ns"))
     r = f(_fields(), jnp.full(6, 0.05), jnp.array([-1.0, 1.0]), jnp.array([1.0, 0.1]), Nn=64, Nm=1, Np=1, Ns=2, c=1.0)
     assert np.all(np.isfinite(np.asarray(r)))
+
+
+def test_simulation_closure_c_is_off_by_default_and_damps_when_on():
+    """closure_c=0 is bitwise the plain run; closure_c>0 changes a run with a non-uniform field and stays finite."""
+    kw = dict(Nx=7, Nn=6, Nm=1, Np=1, Ns=2, timesteps=3, progress_meter=NoProgressMeter(), adaptive_time_step=False, dt=0.01)
+    params = {"t_max": 0.3, "nu": 0.1}
+    ref = simulation(params, **kw)
+    assert jnp.array_equal(simulation(params, closure_c=0.0, **kw)["Ck"], ref["Ck"])
+    on = simulation(params, closure_c=2.0, **kw)["Ck"]
+    assert bool(jnp.all(jnp.isfinite(on))) and float(jnp.abs(on - ref["Ck"]).max()) > 0

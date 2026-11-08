@@ -25,12 +25,8 @@ def hypercollision_spectrum(Nn, Nm, Np, order=2):
     if int(order) != order or order < 2:
         raise ValueError(f"hypercollision order must be an integer >= 2, got {order}")
     r = 2 * order - 1  # number of factors
-
-    def axis(N, i):
-        term, denom = i, N - 1
-        for j in range(1, r):
-            term, denom = term * (i - j), denom * (N - 1 - j)
-        return term / denom if N > r else jnp.zeros(i.shape, float)
+    j = jnp.arange(r, dtype=float)
+    axis = lambda N, i: jnp.prod(i[..., None] - j, -1) / jnp.prod(N - 1 - j) if N > r else jnp.zeros(i.shape)
 
     p = jnp.arange(Np)[:, None, None]
     m = jnp.arange(Nm)[None, :, None]
@@ -194,11 +190,11 @@ def load_parameters(input_file):
     collisions = parameters.get("collisions")
     if collisions and collisions.get("model", "none") != "none":
         solver_parameters["collision_model"] = collisions["model"]
-        if collisions.get("cross_species") == "francisquez_g":  # LBO-G cross-species moments, free parameter beta
-            solver_parameters["collision_model"] = "dougherty_g"
-            input_parameters["beta_dougherty"] = collisions.get("beta", 0.0)
-            if not input_parameters["beta_dougherty"] > -1:
-                raise ValueError("LBO-G requires beta > -1 (H-theorem); got %r" % input_parameters["beta_dougherty"])
+        if collisions.get("cross_species") == "em":  # LBO-EM cross-species moments instead of LBO-G
+            solver_parameters["collision_model"] = "dougherty_em"
+        input_parameters["beta_dougherty"] = collisions.get("beta", 0.0)
+        if not input_parameters["beta_dougherty"] > -1:
+            raise ValueError("LBO-G requires beta > -1 (H-theorem); got %r" % input_parameters["beta_dougherty"])
         input_parameters["nu_dougherty"] = collisions.get("nu", 0.0)
 
     # Whether to use adaptive time-stepping or constant dt.
