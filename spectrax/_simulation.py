@@ -8,7 +8,7 @@ from functools import partial
 from diffrax import (diffeqsolve, Dopri8, ODETerm, SaveAt, PIDController, TqdmProgressMeter,
                      NoProgressMeter, ConstantStepSize, RecursiveCheckpointAdjoint)
 from ._initialization import initialize_simulation_parameters
-from ._model import plasma_current, Hermite_Fourier_system, uniform_acceleration, field_scaled_closure_rate
+from ._model import plasma_current, Hermite_Fourier_system, uniform_acceleration, dougherty_collisions, field_scaled_closure_rate
 from ._diagnostics import diagnostics
 
 __all__ = ["cross_product", "ode_system", "simulation"]
@@ -47,8 +47,8 @@ def cross_product(k_vec, F_vec):
     Fx, Fy, Fz = F_vec
     return jnp.array([ky * Fz - kz * Fy, kz * Fx - kx * Fz, kx * Fy - ky * Fx])
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'frame', 'closure_c'])
-def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", closure_c=0.0):
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'frame', 'collision_model', 'closure_c'])
+def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collision_model=None, closure_c=0.0):
     """
     Right-hand side for the coupled Vlasov-Maxwell system expressed in spectral form.
 
@@ -72,7 +72,12 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", closur
         operator (exact change of variables, see :func:`spectrax._model.uniform_acceleration`).
     args : tuple
         Cached parameter tuple produced in `simulation` providing physical constants,
-        grids, and helper arrays.
+        grids, and helper arrays. With ``collision_model="dougherty"`` its last entry is the
+        ``(Ns, Ns)`` Dougherty collision-frequency matrix.
+    collision_model : {None, "dougherty"}
+        Physical collision operator added to the kinetic right-hand side (see
+        :func:`spectrax._model.dougherty_collisions`); independent of the numerical
+        hypercollision ``nu``. None: no term, bitwise the previous right-hand side.
 
     Returns
     -------
@@ -83,7 +88,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", closur
     (qs, nu, D, Omega_cs, alpha_s, u_s,
      Lx, Ly, Lz, kx_grid, ky_grid, kz_grid, k2_grid, nabla, col,
      sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus
-    ) = args[7:]
+    ) = args[7:28]
 
     Ck, Fk = Ck_Fk[:2]
     moving = len(Ck_Fk) == 3
@@ -103,6 +108,11 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", closur
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
                                       Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23=mask23, F0=F0)
+    if collision_model == "dougherty":
+        dCk_s_dt = dCk_s_dt + dougherty_collisions(C.reshape(Ns, Np, Nm, Nn, *C.shape[-3:]), args[28], alpha_s, u_s,
+                                                   Omega_cs, Nn, Nm, Np, Ns, mask23)
+    elif collision_model is not None:
+        raise ValueError(f"collision_model must be None or 'dougherty', got {collision_model!r}")
 
     dBk_dt = -1j * cross_product(nabla, Fk[:3])
     
@@ -123,10 +133,12 @@ def _stepsize_controller(adaptive_time_step, tolerance, dtmin=None):
     return PIDController(rtol=tolerance, atol=tolerance, dtmin=dtmin, force_dtmin=False)
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step',
-                                'dtmin', 'max_steps', 'throw', 'adjoint', 'progress_meter', 'frame', 'closure_c'])
+                                'dtmin', 'max_steps', 'throw', 'adjoint', 'progress_meter', 'frame',
+                                'collision_model', 'closure_c'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
                timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True, dtmin=None, max_steps=1000000,
-               throw=True, adjoint=RecursiveCheckpointAdjoint(), progress_meter=TqdmProgressMeter(), frame=None, closure_c=0.0):
+               throw=True, adjoint=RecursiveCheckpointAdjoint(), progress_meter=TqdmProgressMeter(), frame=None,
+               collision_model=None, closure_c=0.0):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -173,6 +185,13 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         with zero rates the kinetic right-hand side is bitwise that of ``frame=None``.
         ``"pump"``: each centre follows the uniform acceleration ``(q/m)(E0 + u x B0)`` (oscillating-
         centre frame), and that uniform force is removed from the kinetic operator.
+    collision_model : {None, "dougherty"}, optional
+        None (default): collisionless apart from the numerical hypercollision ``nu``; bitwise
+        unchanged. ``"dougherty"``: add the conservative Dougherty (Lenard-Bernstein with
+        self-consistent moments) operator with frequencies ``input_parameters["nu_dougherty"]``,
+        a scalar (self collisions of every species) or an ``(Ns, Ns)`` matrix (diagonal: self;
+        upper triangle ``[s, r]``: pair frequency ``nu_sr``, ``nu_rs`` from momentum conservation).
+        From a TOML file: ``[collisions] model = "dougherty", nu = ...``.
     closure_c : float, optional
         Strength of :func:`field_scaled_closure_rate`, added to ``nu`` (use with the default order-2
         hypercollision spectrum). Default 0 (off).
@@ -216,12 +235,16 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
             parameters["sqrt_n_plus"], parameters["sqrt_n_minus"],
             parameters["sqrt_m_plus"], parameters["sqrt_m_minus"],
             parameters["sqrt_p_plus"], parameters["sqrt_p_minus"])
+    if collision_model is not None:
+        nu_D = jnp.asarray(parameters.get("nu_dougherty", 0.0), dtype=float)
+        args = args + (jnp.eye(Ns) * nu_D if nu_D.ndim == 0 else nu_D.reshape(Ns, Ns),)
     
 
     stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_tolerance"], dtmin)
 
     # Solve the ODE system
-    ode_system_partial = lambda t, y, a: ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, y, a, frame=frame or "fixed", closure_c=closure_c)
+    ode_system_partial = lambda t, y, a: ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, y, a, frame=frame or "fixed",
+                                                    collision_model=collision_model, closure_c=closure_c)
     sol = diffeqsolve(
         ODETerm(ode_system_partial), solver=solver,
         stepsize_controller=stepsize_controller,
