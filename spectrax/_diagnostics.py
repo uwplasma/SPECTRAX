@@ -243,22 +243,22 @@ def diagnostics(output: dict) -> None:
     C020 = _take_mode(0, 2, 0)
     C002 = _take_mode(0, 0, 2)
 
-    # Species parameters
-    alpha = alpha_s.reshape(Ns, 3)
-    u = u_s.reshape(Ns, 3)
+    # Species parameters; a moving basis supplies them per saved time, shape (Nt, 3*Ns).
+    alpha = jnp.asarray(output.get("basis_alpha", alpha_s)).reshape(-1, Ns, 3)
+    u = jnp.asarray(output.get("basis_u", u_s)).reshape(-1, Ns, 3)
     masses = _infer_masses(output, Ns)
 
-    a0, a1, a2 = alpha[:, 0], alpha[:, 1], alpha[:, 2]
-    u0, u1, u2 = u[:, 0], u[:, 1], u[:, 2]
+    a0, a1, a2 = alpha[..., 0], alpha[..., 1], alpha[..., 2]
+    u0, u1, u2 = u[..., 0], u[..., 1], u[..., 2]
 
-    pref = 0.5 * masses * a0 * a1 * a2  # (Ns,)
+    pref = 0.5 * masses * a0 * a1 * a2  # (1 or Nt, Ns)
 
-    term0 = (0.5 * (a0**2 + a1**2 + a2**2) + (u0**2 + u1**2 + u2**2))  # (Ns,)
+    term0 = (0.5 * (a0**2 + a1**2 + a2**2) + (u0**2 + u1**2 + u2**2))  # (1 or Nt, Ns)
     term1 = jnp.sqrt(2.0) * (a0 * u0 * C100 + a1 * u1 * C010 + a2 * u2 * C001)  # (Nt, Ns)
     term2 = (1.0 / jnp.sqrt(2.0)) * (a0**2 * C200 + a1**2 * C020 + a2**2 * C002)  # (Nt, Ns)
 
     # The k=0 Hermite moments are real up to round-off; keep the energies real so they compose with optimisers.
-    kinetic_energy_species = jnp.real(pref[None, :] * (term0[None, :] * C000 + term1 + term2))  # (Nt, Ns)
+    kinetic_energy_species = jnp.real(pref * (term0 * C000 + term1 + term2))  # (Nt, Ns)
     kinetic_energy = jnp.sum(kinetic_energy_species, axis=1)  # (Nt,)
     # Field energy
     rfft_weights = _rfft_weights(output["Nx"], Nx_kept)
