@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 from spectrax import hypercollision_spectrum
 from spectrax._remap import low_moments
-from tests.test_moving_basis import ORDERS, random_state, ode_args, rhs
+from tests.conftest import ORDERS, random_state, ode_args, rhs
 
 jax.config.update("jax_enable_x64", True)
 
