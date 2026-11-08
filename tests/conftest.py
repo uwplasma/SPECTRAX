@@ -35,10 +35,10 @@ def random_state(Ns, seed=0):
     Nn, Nm, Np = ORDERS
     Nx, Ny, Nz = GRID
     rng = np.random.default_rng(seed)
-    shape = (Ns, Np, Nm, Nn, Ny, Nx // 2 + 1, Nz)
-    Ck = jnp.asarray(rng.normal(size=shape) + 1j * rng.normal(size=shape)) * 0.1
+    rfft = lambda x: jnp.fft.rfftn(jnp.asarray(x), axes=(-1, -3, -2), norm="forward")  # real fields
+    Ck = rfft(0.1 * rng.normal(size=(Ns, Np, Nm, Nn, Ny, Nx, Nz)))
     Ck = Ck.at[:, 0, 0, 0, 0, 0, 0].set(1.0)
-    Fk = jnp.asarray(rng.normal(size=(6, Ny, Nx // 2 + 1, Nz)) + 1j * rng.normal(size=(6, Ny, Nx // 2 + 1, Nz))) * 0.1
+    Fk = rfft(0.1 * rng.normal(size=(6, Ny, Nx, Nz)))
     u = jnp.asarray(rng.normal(size=3 * Ns)) * 0.3
     a = jnp.asarray(rng.uniform(0.5, 1.5, size=3 * Ns))
     return Ck, Fk, u, a

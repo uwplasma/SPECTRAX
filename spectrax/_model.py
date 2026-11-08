@@ -5,11 +5,12 @@ This module contains the spectral Ampère–Maxwell current operator
 equations (:func:`Hermite_Fourier_system`).
 """
 
+import jax
 import jax.numpy as jnp
 from jax import jit
 from functools import partial
 
-__all__ = ['plasma_current', 'Hermite_Fourier_system']
+__all__ = ['plasma_current', 'Hermite_Fourier_system', 'basis_rate_terms', 'uniform_acceleration']
 
 
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
@@ -99,7 +100,7 @@ def shift_multi(Ck, dn=0, dm=0, dp=0):
 @partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
 def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                            sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
-                           Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23):
+                           Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23, F0=None):
     """
     Evaluate the right-hand side of the coupled Hermite-Fourier moment equations.
 
@@ -138,6 +139,11 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         Number of Hermite modes and species.
     mask23 : jnp.ndarray
         Boolean mask implementing the 2/3 de-aliasing rule in Fourier space.
+    F0 : jnp.ndarray, shape (6,), optional
+        Uniform field already carried by a moving basis (pump frame, see
+        :func:`uniform_acceleration`). The force then uses ``E - E0`` and ``u x (B - B0)``;
+        the uniform acceleration ``(q/m)(E0 + u x B0)`` is the basis-centre rate instead.
+        Default None: the full force (bitwise the previous behaviour).
 
     Returns
     -------
@@ -183,6 +189,21 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         jnp.sqrt(2) * sqrt_m_minus * (u0 / a1) * shift_multi(C, dn=0, dm=-1, dp=0))
 
 
+    E = F[:3] if F0 is None else F[:3] - F0[:3, None, None, None, None, None, None, None]
+    force = ((sqrt_n_minus * jnp.sqrt(2) / a0) * E[0] * shift_multi(C, dn=-1, dm=0, dp=0) +
+             (sqrt_m_minus * jnp.sqrt(2) / a1) * E[1] * shift_multi(C, dn=0, dm=-1, dp=0) +
+             (sqrt_p_minus * jnp.sqrt(2) / a2) * E[2] * shift_multi(C, dn=0, dm=0, dp=-1) +
+             F[3] * C_aux_x + F[4] * C_aux_y + F[5] * C_aux_z)
+    if F0 is not None:  # remove (q/m) u x B0: the u-terms of C_aux_{x,y,z}
+        r2 = jnp.sqrt(2)
+        force = force - (
+            F0[3] * r2 * (sqrt_m_minus * (u2 / a1) * shift_multi(C, dn=0, dm=-1, dp=0)
+                          - sqrt_p_minus * (u1 / a2) * shift_multi(C, dn=0, dm=0, dp=-1))
+            + F0[4] * r2 * (sqrt_p_minus * (u0 / a2) * shift_multi(C, dn=0, dm=0, dp=-1)
+                            - sqrt_n_minus * (u2 / a0) * shift_multi(C, dn=-1, dm=0, dp=0))
+            + F0[5] * r2 * (sqrt_n_minus * (u1 / a0) * shift_multi(C, dn=-1, dm=0, dp=0)
+                            - sqrt_m_minus * (u0 / a1) * shift_multi(C, dn=0, dm=-1, dp=0)))
+
     Col  = -nu * col[None, :, :, :, None, None, None] * Ck
     
     Diff = -D * k2_grid * Ck
@@ -202,10 +223,73 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         sqrt_p_minus / jnp.sqrt(2) * shift_multi(Ck, dn=0, dm=0, dp=-1) +
         (u2 / a2) * Ck
     ) + q * Omega_c * (
-        jnp.fft.rfftn((sqrt_n_minus * jnp.sqrt(2) / a0) * F[0] * shift_multi(C, dn=-1, dm=0, dp=0) +
-                      (sqrt_m_minus * jnp.sqrt(2) / a1) * F[1] * shift_multi(C, dn=0, dm=-1, dp=0) + 
-                      (sqrt_p_minus * jnp.sqrt(2) / a2) * F[2] * shift_multi(C, dn=0, dm=0, dp=-1) +
-                      F[3] * C_aux_x + F[4] * C_aux_y + F[5] * C_aux_z, axes=(-1, -3, -2), norm="forward") * mask23
+        jnp.fft.rfftn(force, axes=(-1, -3, -2), norm="forward") * mask23
     ) + Col + Diff)
     
     return dCk_s_dt
+
+
+def _lower(C, axis, k):
+    """C shifted up the Hermite index along `axis` by k: result[n] = C[n - k], zero for n < k."""
+    pad = [(0, 0)] * C.ndim
+    pad[axis] = (k, 0)
+    return jax.lax.slice_in_dim(jnp.pad(C, pad), 0, C.shape[axis], axis=axis)
+
+
+@partial(jit, static_argnames=['Nn', 'Nm', 'Np', 'Ns'])
+def basis_rate_terms(Ck, u_dot, a_dot, alpha_s, Nn, Nm, Np, Ns):
+    """
+    Rate of change of the coefficients caused by moving the basis, at fixed distribution.
+
+    With ``xi = (v - u(t)) / a(t)`` per species and velocity axis, and SPECTRAX coefficients
+    ``C = n* g / (a_x a_y a_z)``, the exact (closure-free) extra terms are, per axis ``i``,
+
+        dC_n/dt += -(u_dot_i / a_i) sqrt(2 n_i) C_{n - e_i}
+                   -(a_dot_i / a_i) [(n_i + 1) C_n + sqrt(n_i (n_i - 1)) C_{n - 2 e_i}].
+
+    In ``g`` the width term reads ``-(a_dot/a)[n g_n + sqrt(n(n-1)) g_{n-2}]``; the extra ``C_n``
+    comes from the ``1/a`` normalization. Both terms only lower the index, so no closure is needed;
+    density is unchanged and the momentum and energy rows keep the physical moments invariant.
+
+    Parameters
+    ----------
+    Ck : jnp.ndarray, shape (Ns * Np * Nm * Nn, ...) or (Ns, Np, Nm, Nn, ...)
+    u_dot, a_dot, alpha_s : jnp.ndarray, shape (3 * Ns,)
+
+    Returns
+    -------
+    jnp.ndarray with the shape of ``Ck``.
+    """
+    shape = Ck.shape
+    C = Ck.reshape(Ns, Np, Nm, Nn, -1)
+    ud, ad, a = (x.reshape(Ns, 3) for x in (u_dot, a_dot, alpha_s))
+    out = jnp.zeros_like(C)
+    for i, (axis, N) in enumerate(((3, Nn), (2, Nm), (1, Np))):  # storage axes of n_x, n_y, n_z
+        idx = [1] * 5
+        idx[axis] = N
+        n = jnp.arange(N, dtype=float).reshape(idx)
+        r_u = (ud[:, i] / a[:, i])[:, None, None, None, None]
+        r_a = (ad[:, i] / a[:, i])[:, None, None, None, None]
+        out = out - r_u * jnp.sqrt(2 * n) * _lower(C, axis, 1) \
+                  - r_a * ((n + 1) * C + jnp.sqrt(n * (n - 1)) * _lower(C, axis, 2))
+    return out.reshape(shape)
+
+
+def uniform_acceleration(F, u_s, qs, Omega_cs, Ns):
+    """
+    Pump-frame basis-centre rate ``u_dot_s = (q/m)_s (E0 + u_s x B0)`` from the uniform fields.
+
+    ``F`` holds the real-space fields ``(6, Ny, Nx, Nz)``; ``F0`` is their box average. Pass the
+    returned ``F0`` to :func:`Hermite_Fourier_system` so the same uniform force is removed from
+    the kinetic operator: the two terms then cancel identically instead of in floating point.
+    ``(q/m)_s`` is ``qs * Omega_cs`` in SPECTRAX units.
+
+    Returns
+    -------
+    u_dot : jnp.ndarray, shape (3 * Ns,)
+    F0 : jnp.ndarray, shape (6,)
+    """
+    F0 = jnp.mean(F, axis=(-3, -2, -1))
+    u = u_s.reshape(Ns, 3)
+    accel = (qs * Omega_cs)[:, None] * (F0[None, :3] + jnp.cross(u, F0[None, 3:]))
+    return accel.reshape(3 * Ns), F0
