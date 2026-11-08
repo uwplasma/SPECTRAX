@@ -4,7 +4,7 @@ The ``[output]`` table of the input file sets what happens to the result (all ke
 
     [output]
     figure = "case.png"   # diagnostic figure; default input.png next to the file; false for none
-    show = true           # open the figure window
+    show = false          # true opens a window; the figure is always saved
     save = "case.npz"     # write the numeric results (all of them, or only those in ``keep``)
     keep = ["time", "electric_energy"]
     summary = true        # print the one-screen summary
@@ -26,7 +26,7 @@ __all__ = ["run", "Result"]
 class Result(dict):
     """Simulation output (a dictionary of arrays) with ``plot``, ``save`` and ``summary`` methods."""
 
-    def plot(self, save=None, show=True):
+    def plot(self, save=None, show=False):
         return plot(self, save=save, show=show)
 
     def save(self, path, keep=None):
@@ -56,7 +56,7 @@ def run(input_file, **overrides):
     """
     path = Path(input_file)
     with open(path, "rb") as f:
-        out = {"figure": path.with_suffix(".png"), "show": True, "summary": True, **tomllib.load(f).get("output", {})}
+        out = {"figure": path.with_suffix(".png"), "show": False, "summary": True, **tomllib.load(f).get("output", {})}
     out.update({key: overrides.pop(key) for key in tuple(out) + ("keep",) if key in overrides})
     input_parameters, solver_parameters = load_parameters(path, **overrides)
     result = Result(simulation(input_parameters, **solver_parameters))

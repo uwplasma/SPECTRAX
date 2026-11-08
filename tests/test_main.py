@@ -19,14 +19,14 @@ def test_main_runs_a_2d_toml_without_an_initial_state(tmp_path):
 
 
 def test_cli_runs_a_species_toml_and_saves_the_diagnostic_figure(tmp_path):
-    """``spectrax input.toml --no-show`` runs any number of species and writes input.png with every panel."""
+    """``spectrax input.toml`` runs any number of species and writes input.png with every panel."""
     import matplotlib
     matplotlib.use("Agg")
     toml = tmp_path / "input.toml"
     toml.write_text("[input_parameters]\nLx = 10.0\nLy = 10.0\nt_max = 0.5\n[solver_parameters]\nNx = 6\nNy = 5\nNn = 3\nNm = 2\ntimesteps = 4\n"
                     "[species.electrons]\ncharge = -1\nvth = 0.2\nperturbation_amplitude = 0.05\nperturbation_axis = 'y'\n"
                     "[species.ions]\ncharge = 1\nmass = 25\nvth = 0.04\n[species.beam]\ncharge = 1\nmass = 25\nvth = 0.04\ndrift = 0.1\n")
-    output = main([str(toml), "--no-show"])
+    output = main([str(toml)])
     assert (tmp_path / "input.png").stat().st_size > 0
     assert output["Ck"].shape[1] == 3 * 3 * 2 and "electric_energy" in output
 
@@ -54,5 +54,5 @@ def test_run_applies_the_output_table_and_overrides(tmp_path):
     result = run(toml, t_max=0.25, species={"electrons": {"vth": 0.3}})
     assert (tmp_path / "fig.png").stat().st_size > 0 and set(np.load(tmp_path / "out.npz")) == {"time", "EM_energy"}
     assert float(result["time"][-1]) == 0.25 and result.summary()["saved_times"] == 4
-    main([str(toml), "species.electrons.vth=0.25", "figure=false", "save=all.npz", "keep=false", "--no-show"])
+    main([str(toml), "species.electrons.vth=0.25", "figure=false", "save=all.npz", "keep=false"])
     assert "Ck" in np.load(tmp_path / "all.npz")
