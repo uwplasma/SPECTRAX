@@ -22,7 +22,7 @@ import numpy as np
 from jax import jit
 
 __all__ = ["remap_matrix", "remap", "moment_target", "cap_target", "remap_event", "low_moments",
-           "tail_fraction"]
+           "tail_fraction", "remap_trigger"]
 
 _AXES = ((3, "n"), (2, "m"), (1, "p"))  # storage axis of the x, y, z Hermite index in (Ns, Np, Nm, Nn, ...)
 
@@ -170,3 +170,25 @@ def remap_event(Ck, basis, new_basis, Nn, Nm, Np, Ns, t=None, max_shift=1.0, max
               "tail_after": np.asarray(tail_fraction(Ck_new, Nn, Nm, Np, Ns)).tolist(),
               "moment_defect": float(jnp.max(jnp.abs(m1 - m0)) / jnp.max(jnp.abs(m0)))}
     return Ck_new, record
+
+
+def remap_trigger(Ck, basis, Nn, Nm, Np, Ns, tol=0.1, width_ratio=np.sqrt(2), max_shift=1.0, max_narrow=1.1,
+                  min_width=1.1):
+    """Decide a remap from measured moments. Call between steps with concrete arrays.
+
+    Per species, the capped moment target (:func:`moment_target`, :func:`cap_target`) is compared with the
+    current basis: it fires when ``max_i |U_i - u_i| / a_i > tol`` or ``max_i |a'_i/a_i - 1| > tol``. A
+    remap resets both measures to round-off, so an unchanged state cannot fire twice.
+
+    Returns ``(fire, new_basis, info)``: ``fire`` is a Python bool, ``new_basis`` equals ``basis`` for
+    species that do not fire, ``info`` holds the per-species measures.
+    """
+    target, sigma = moment_target(Ck, basis, Nn, Nm, Np, Ns, width_ratio)
+    capped = np.asarray(cap_target(basis, target, sigma, max_shift, max_narrow, min_width))
+    b = np.real(np.asarray(basis))
+    a = b[1].reshape(Ns, 3)
+    shift = np.max(np.abs(np.asarray(target[0]) - b[0]).reshape(Ns, 3) / a, axis=1)
+    width = np.max(np.abs(capped[1].reshape(Ns, 3) / a - 1), axis=1)
+    fire = (shift > tol) | (width > tol)
+    new = np.where(np.repeat(fire, 3)[None, :], capped, b)
+    return bool(fire.any()), new, {"shift": shift.tolist(), "width": width.tolist(), "fire": fire.tolist()}
