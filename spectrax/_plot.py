@@ -42,7 +42,7 @@ def phase_space(output, species=0, time_index=-1, n_velocity=201):
     return np.arange(f.shape[0]) * L / f.shape[0], v, f
 
 
-def plot(output, save=None, show=True):
+def plot(output, save=None, show=False):
     """Draw the standard diagnostic figure, save it to ``save`` if given, and show it if ``show``."""
     t = np.asarray(output["time"])
     Ns = int(np.asarray(output["alpha_s"]).size // 3)

@@ -1,22 +1,30 @@
-"""Command line interface: ``spectrax input.toml`` runs the case, saves ``input.png`` next to it and shows it."""
+"""Command line: ``spectrax input.toml [--show] [key=value ...]`` runs the case, saves the figure and prints a summary.
+
+``key=value`` overrides a value of the file (TOML syntax), e.g. ``Lx=2.0 Nn=64 species.electrons.vth=0.2 save=out.npz``.
+"""
 import sys
-from pathlib import Path
-from ._plot import plot
-from ._simulation import simulation
-from ._initialization import load_parameters
+try: import tomllib
+except ModuleNotFoundError: import tomli as tomllib
+from ._run import run
 
 
 def main(cl_args=sys.argv[1:]):
-    """Run SPECTRAX from the command line: ``spectrax [input.toml] [--no-show]``."""
-    files = [a for a in cl_args if not a.startswith("--")]
+    files = [a for a in cl_args if "=" not in a and not a.startswith("--")]
     if not files:
-        print("Using standard input parameters instead of an input TOML file.")
-        output = simulation()
-    else:
-        input_parameters, solver_parameters = load_parameters(files[0])
-        output = simulation(input_parameters, **solver_parameters)
-    plot(output, save=Path(files[0]).with_suffix(".png") if files else None, show="--no-show" not in cl_args)
-    return output
+        sys.exit("usage: spectrax input.toml [--show] [key=value ...]")
+    overrides = {}
+    for argument in (a for a in cl_args if "=" in a):
+        key, value = argument.split("=", 1)
+        try:
+            value = tomllib.loads(f"v = {value}")["v"]
+        except tomllib.TOMLDecodeError:
+            pass                                     # a bare word such as case.npz is a string
+        *path, leaf = key.split(".")
+        target = overrides
+        for part in path:                            # species.electrons.vth=0.2 -> {"species": {"electrons": {"vth": 0.2}}}
+            target = target.setdefault(part, {})
+        target[leaf] = value
+    return run(files[0], **({"show": True} if "--show" in cl_args else {}), **overrides)
 
 
 if __name__ == "__main__":
