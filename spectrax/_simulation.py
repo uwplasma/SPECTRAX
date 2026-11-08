@@ -8,7 +8,7 @@ from functools import partial
 from diffrax import (diffeqsolve, Dopri8, ODETerm, SaveAt, PIDController, TqdmProgressMeter,
                      NoProgressMeter, ConstantStepSize, RecursiveCheckpointAdjoint)
 from ._initialization import initialize_simulation_parameters
-from ._model import plasma_current, Hermite_Fourier_system, uniform_acceleration, dougherty_collisions
+from ._model import plasma_current, Hermite_Fourier_system, uniform_acceleration, dougherty_collisions, field_scaled_closure_rate
 from ._diagnostics import diagnostics
 
 __all__ = ["cross_product", "ode_system", "simulation"]
@@ -47,8 +47,8 @@ def cross_product(k_vec, F_vec):
     Fx, Fy, Fz = F_vec
     return jnp.array([ky * Fz - kz * Fy, kz * Fx - kx * Fz, kx * Fy - ky * Fx])
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'frame', 'collision_model'])
-def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collision_model=None):
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'frame', 'collision_model', 'closure_c'])
+def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collision_model=None, closure_c=0.0):
     """
     Right-hand side for the coupled Vlasov-Maxwell system expressed in spectral form.
 
@@ -101,6 +101,8 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collis
     F = jnp.fft.irfftn(Fk * mask23, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
     C = jnp.fft.irfftn(Ck * mask23, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
 
+    if closure_c:  # field-scaled top-mode damping on top of the configured nu
+        nu = nu + field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, closure_c)
     pump = moving and frame == "pump"
     u_dot, F0 = uniform_acceleration(F, u_s, qs, Omega_cs, Ns) if pump else (None, None)
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
@@ -132,11 +134,11 @@ def _stepsize_controller(adaptive_time_step, tolerance, dtmin=None):
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step',
                                 'dtmin', 'max_steps', 'throw', 'adjoint', 'progress_meter', 'frame',
-                                'collision_model'])
+                                'collision_model', 'closure_c'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
                timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True, dtmin=None, max_steps=1000000,
                throw=True, adjoint=RecursiveCheckpointAdjoint(), progress_meter=TqdmProgressMeter(), frame=None,
-               collision_model=None):
+               collision_model=None, closure_c=0.0):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -190,6 +192,9 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         a scalar (self collisions of every species) or an ``(Ns, Ns)`` matrix (diagonal: self;
         upper triangle ``[s, r]``: pair frequency ``nu_sr``, ``nu_rs`` from momentum conservation).
         From a TOML file: ``[collisions] model = "dougherty", nu = ...``.
+    closure_c : float, optional
+        Strength of :func:`field_scaled_closure_rate`, added to ``nu`` (use with the default order-2
+        hypercollision spectrum). Default 0 (off).
 
     Returns
     -------
@@ -238,8 +243,8 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_tolerance"], dtmin)
 
     # Solve the ODE system
-    ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns, frame=frame or "fixed",
-                                 collision_model=collision_model)
+    ode_system_partial = lambda t, y, a: ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, y, a, frame=frame or "fixed",
+                                                    collision_model=collision_model, closure_c=closure_c)
     sol = diffeqsolve(
         ODETerm(ode_system_partial), solver=solver,
         stepsize_controller=stepsize_controller,

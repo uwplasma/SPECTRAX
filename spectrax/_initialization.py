@@ -25,12 +25,8 @@ def hypercollision_spectrum(Nn, Nm, Np, order=2):
     if int(order) != order or order < 2:
         raise ValueError(f"hypercollision order must be an integer >= 2, got {order}")
     r = 2 * order - 1  # number of factors
-
-    def axis(N, i):
-        term, denom = i, N - 1
-        for j in range(1, r):
-            term, denom = term * (i - j), denom * (N - 1 - j)
-        return term / denom if N > r else jnp.zeros(i.shape, float)
+    j = jnp.arange(r, dtype=float)
+    axis = lambda N, i: jnp.prod(i[..., None] - j, -1) / jnp.prod(N - 1 - j) if N > r else jnp.zeros(i.shape)
 
     p = jnp.arange(Np)[:, None, None]
     m = jnp.arange(Nm)[None, :, None]
