@@ -299,36 +299,18 @@ def uniform_acceleration(F, u_s, qs, Omega_cs, Ns):
 
 def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c):
     """
-    Per-species closure rate that follows the field, for the asymmetric-Hermite top-mode instability.
+    Per-species closure rate ``nu_s = c |q_s/m_s| max_i sqrt(2 N_i) max_x |E_i - <E_i>| / a_{s,i}``, shaped
+    ``(Ns, 1, 1, 1, 1, 1, 1)``, over the velocity axes with ``N_i > 3``.
 
-    The truncated asymmetrically weighted (AW) Fourier-Hermite operator ``-v d/dx + (q/m) E d/dv`` is not
-    anti-self-adjoint: in a non-uniform field it has spurious growing modes that live in the top third of the
-    Hermite ladder at the largest retained ``|k|``, with growth rate of order ``0.3 sqrt(2N) |q/m| |E| / a``
-    (rising with N and with the Fourier cut-off; the symmetrically weighted basis gives exactly zero). A fixed
-    ``nu`` is overtaken once the self-consistent field grows. This returns
-
-        nu_s = c |q_s/m_s| max_i sqrt(2 N_i) max_x |E_i - <E_i>| / a_{s,i},
-
-    over the velocity axes with ``N_i > 3``, shaped ``(Ns, 1, 1, 1, 1, 1, 1)`` so it can be passed as ``nu`` to
-    :func:`Hermite_Fourier_system` together with ``hypercollision_spectrum(order>=2)``, which leaves density,
-    momentum and energy untouched. The uniform part ``<E>`` is excluded: it only shifts the distribution.
-    ``c = 0`` gives exactly zero.
-
-    Parameters
-    ----------
-    F : jnp.ndarray, shape (6, Ny, Nx, Nz)
-        Real-space fields (de-aliased), as used by the kinetic RHS.
-    alpha_s : jnp.ndarray, shape (3 * Ns,)
-    qs, Omega_cs : jnp.ndarray, shape (Ns,)
-        ``|q/m|_s = |qs * Omega_cs|`` in SPECTRAX units.
-    c : float
-        Dimensionless strength.
+    The truncated asymmetrically weighted Hermite operator is not anti-self-adjoint: in a non-uniform field
+    its top Hermite modes at the largest retained ``|k|`` grow at a rate of order ``0.3 sqrt(2N) |q/m| |E| / a``.
+    Passed as ``nu`` together with ``hypercollision_spectrum(order=2)`` (which leaves density, momentum and
+    energy untouched), this damps them in proportion. The uniform part ``<E>`` only shifts ``f`` and is
+    excluded; ``c = 0`` gives exactly zero. ``F`` is the real-space field ``(6, Ny, Nx, Nz)``; ``|q/m|_s =
+    |qs * Omega_cs|``. ``simulation(..., closure_c=c)`` applies it every right-hand-side evaluation.
     """
     E = F[:3]
     dE = jnp.max(jnp.abs(E - jnp.mean(E, axis=(-3, -2, -1), keepdims=True)), axis=(-3, -2, -1))  # (3,)
     N = jnp.array([Nn, Nm, Np], dtype=float)
-    a = alpha_s.reshape(Ns, 3)
-    active = (N > 3)[None, :]
-    per_axis = jnp.where(active, jnp.sqrt(2 * N)[None, :] * dE[None, :] / a, 0.0)
-    rate = c * jnp.abs(qs * Omega_cs) * jnp.max(per_axis, axis=1)
-    return rate.reshape(Ns, 1, 1, 1, 1, 1, 1)
+    per_axis = jnp.where(N > 3, jnp.sqrt(2 * N) * dE, 0.0) / alpha_s.reshape(Ns, 3)
+    return (c * jnp.abs(qs * Omega_cs) * jnp.max(per_axis, axis=1)).reshape(Ns, 1, 1, 1, 1, 1, 1)
