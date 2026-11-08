@@ -9,19 +9,10 @@ from spectrax._model import (dougherty_moments, dougherty_rate_real, dougherty_c
                              dougherty_cross_moments)
 from spectrax._simulation import _twothirds_mask
 from spectrax._initialize_maxwellian import compute_C_nmp
+from tests.conftest import h_table
 
 jax.config.update("jax_enable_x64", True)
 r2 = np.sqrt(2.0)
-
-
-def hermite_projection(xi, N):
-    """C_n = int f H_n(xi) / sqrt(2^n n!) dxi on a uniform grid (spectrally accurate for decaying f)."""
-    h = np.zeros((N, xi.size))
-    h[0] = 1.0
-    h[1] = r2 * xi
-    for n in range(1, N - 1):
-        h[n + 1] = np.sqrt(2 / (n + 1)) * xi * h[n] - np.sqrt(n / (n + 1)) * h[n - 1]
-    return h
 
 
 def project_2v(F, ux, ax, uy, ay, Nn, Nm, L=9.0, M=301):
@@ -30,7 +21,7 @@ def project_2v(F, ux, ax, uy, ay, Nn, Nm, L=9.0, M=301):
     dxi = xi[1] - xi[0]
     VX, VY = np.meshgrid(ux + ax * xi, uy + ay * xi, indexing="xy")  # rows: vy, cols: vx
     vals = np.asarray(F(jnp.asarray(VX), jnp.asarray(VY)))
-    hx, hy = hermite_projection(xi, Nn), hermite_projection(xi, Nm)
+    hx, hy = h_table(Nn, xi), h_table(Nm, xi)
     return np.einsum("mj,ji,ni->mn", hy, vals, hx) * dxi ** 2
 
 
@@ -118,6 +109,16 @@ def test_conservation_to_round_off_at_finite_N(Ns):
         np.testing.assert_allclose(rates[0], 0, atol=1e-12 * scale)
     else:  # but pair collisions do exchange them
         assert np.abs(rates[:, 1:]).max() > 1e-4 * scale
+
+
+def test_near_vacuum_cells_stay_finite():
+    """A cell with C_0 = 0 (and a neighbour with positive density) gives finite moments and collision rates."""
+    N, grid, Ns = (5, 4, 3), (6, 4, 3), 2
+    Ck, C, mask = random_masked_state(Ns, N, grid)
+    C = C.at[1, :, :, :, 0, 0, 0].set(0.0)
+    dCk = dougherty_collisions(C, jnp.array([[0.5, 0.4], [0.0, 0.3]]), jnp.ones(3 * Ns), jnp.zeros(3 * Ns),
+                               jnp.array([1.0, 0.25]), *N, Ns, mask)
+    assert bool(jnp.all(jnp.isfinite(dCk)))
 
 
 def test_cross_moments_make_exchange_antisymmetric():

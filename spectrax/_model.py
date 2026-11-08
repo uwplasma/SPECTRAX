@@ -317,6 +317,9 @@ def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c):
     return (c * jnp.abs(qs * Omega_cs) * jnp.max(per_axis, axis=1)).reshape(Ns, 1, 1, 1, 1, 1, 1)
 
 
+_DENSITY_FLOOR = 1e-12  # keeps U, theta and nu_rs finite in near-vacuum cells
+
+
 def _dougherty_axes(Nn, Nm, Np):
     """Velocity axes that carry the Dougherty operator: ``(i, storage axis, N_i)`` with ``N_i >= 3``.
 
@@ -354,6 +357,7 @@ def dougherty_moments(C, alpha_s, u_s, Nn, Nm, Np, Ns):
     sp = (slice(None),) + (None,) * (C.ndim - 4)
     C0 = C[:, 0, 0, 0]
     dens = jnp.prod(a, axis=1)[sp] * C0
+    C0 = jnp.maximum(C0, _DENSITY_FLOOR)
     U, theta = [u[:, i][sp] * jnp.ones_like(C0) for i in range(3)], 0.0
     for i, ax, _ in axes:
         idx1, idx2 = [0, 0, 0, 0], [0, 0, 0, 0]
@@ -434,7 +438,7 @@ def dougherty_collisions(C, nu_matrix, alpha_s, u_s, Omega_cs, Nn, Nm, Np, Ns, m
         for r in range(s + 1, Ns):
             usr, th_sr, th_rs = dougherty_cross_moments(dens, U, theta, ms, s, r, active)
             nu_sr = nu_matrix[s, r]
-            nu_rs = nu_sr * ms[s] * dens[s] / (ms[r] * dens[r])
+            nu_rs = nu_sr * ms[s] * dens[s] / (ms[r] * jnp.maximum(dens[r], _DENSITY_FLOOR))
             for a_, b_, th, nu in ((s, r, th_sr, nu_sr), (r, s, th_rs, nu_rs)):
                 one = dougherty_rate_real(C[a_:a_ + 1], usr[None], th[None], jnp.broadcast_to(nu, th.shape)[None],
                                           alpha_s.reshape(Ns, 3)[a_], u_s.reshape(Ns, 3)[a_], Nn, Nm, Np, 1)
