@@ -6,17 +6,14 @@ first mode has k vth/omega_pe = kx. The growth rate is fitted to the field energ
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
-from spectrax import load_parameters, simulation
+from spectrax import run
 
-here = Path(__file__).parent
-vth = load_parameters(here / "input_1D_two_stream.toml")[0]["alpha_s"][0]
+here, vth = Path(__file__).parent, 0.707107
 kx = np.arange(0.1, 1.02, 0.02)
 rate = []
 for k in kx:
-    input_parameters, solver_parameters = load_parameters(here / "input_1D_two_stream.toml", Lx=np.sqrt(2) * np.pi * vth / k,
-                                                          Nx=4, Nn=100, t_max=80.0, timesteps=801,
-                                                          species={name: {"perturbation_amplitude": 1e-8} for name in ("beam_right", "beam_left")})
-    output = simulation(input_parameters, **solver_parameters)
+    output = run(here / "input_1D_two_stream.toml", Lx=np.sqrt(2) * np.pi * vth / k, Nx=4, Nn=100, t_max=80.0, timesteps=801,
+                 species={name: {"perturbation_amplitude": 1e-8} for name in ("beam_right", "beam_left")}, figure=False, show=False, summary=False)
     t, W = np.asarray(output["time"]), np.asarray(output["EM_energy"])
     rate.append(np.polyfit(t[300:], np.log(W[300:]), 1)[0] / 2)
 

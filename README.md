@@ -75,7 +75,7 @@ The Hermite–Fourier spectral method replaces the Vlasov equation in the 6-dime
 * **Plotting utilities** – the `plot` function produces a multi‑panel figure showing energy evolution,
 relative energy error, density fluctuations and phase‑space distributions for each species. It reconstructs the distribution function by performing an inverse Fourier transform followed by an inverse Hermite transform. The phase‑space reconstruction uses the `inverse_HF_transform` function, which evaluates Hermite polynomials and sums over all modes. The phase-space plots assume a 1D simulation.
 
-* **Flexible initialization** – simulation parameters may be provided through simple TOML files or directly in Python. The `load_parameters` function reads a TOML file and merges it with sensible defaults that initialize a two‑stream instability. Users can also initialize their own spectral coefficients, as shown in the example scripts.
+* **Flexible initialization** – simulation parameters may be provided through simple TOML files or directly in Python. The `load_parameters` function reads a TOML file and merges it with sensible defaults that initialize a two‑stream instability. `spectrax input.toml [key=value ...]` runs a file, prints a summary and saves the figure; an `[output]` table sets the figure, `.npz` data and summary, and `spectrax.run("input.toml", Lx=2.0)` does the same from Python and returns a result with `.plot()`, `.save()` and `.summary()`. A `[initial_state] file = "x.py"` table supplies custom spectral coefficients, as in `Examples/input_2D_orszag_tang.toml`.
 
 * **Open source and extensible** – SPECTRAX is released under the MIT License. Its modular structure
 allows researchers to experiment with new closures, collision operators or boundary conditions.
