@@ -33,21 +33,14 @@ __all__ = ["hermite_nodes", "speed_apply", "gamma_minus_one_apply", "relativisti
 def hermite_nodes(N):
     """``(lam, P)``: eigenvalues (Gauss-Hermite nodes) and orthogonal eigenvectors of the Hermite recurrence matrix of size ``N``."""
     off = np.sqrt(np.arange(1, N) / 2.0)
-    T = np.diag(off, 1) + np.diag(off, -1) if N > 1 else np.zeros((1, 1))
-    lam, P = np.linalg.eigh(T)
-    return lam, P
+    return np.linalg.eigh(np.diag(off, 1) + np.diag(off, -1))
 
 
 def _node_grid(alpha, u, Nn, Nm, Np, Ns):
     """Momentum components and ``gamma^2 - 1`` over the nodal grid, each of shape ``(Ns, Np, Nm, Nn)`` (before ``inv_c2``)."""
-    a = alpha.reshape(Ns, 3)
-    uu = u.reshape(Ns, 3)
-    ux = uu[:, 0, None] + a[:, 0, None] * jnp.asarray(hermite_nodes(Nn)[0])[None]
-    uy = uu[:, 1, None] + a[:, 1, None] * jnp.asarray(hermite_nodes(Nm)[0])[None]
-    uz = uu[:, 2, None] + a[:, 2, None] * jnp.asarray(hermite_nodes(Np)[0])[None]
-    UX = ux[:, None, None, :]
-    UY = uy[:, None, :, None]
-    UZ = uz[:, :, None, None]
+    a, uu = alpha.reshape(Ns, 3), u.reshape(Ns, 3)
+    ux, uy, uz = (uu[:, i, None] + a[:, i, None] * jnp.asarray(hermite_nodes(N)[0])[None] for i, N in enumerate((Nn, Nm, Np)))
+    UX, UY, UZ = ux[:, None, None, :], uy[:, None, :, None], uz[:, :, None, None]
     return UX, UY, UZ, UX ** 2 + UY ** 2 + UZ ** 2
 
 
@@ -56,8 +49,7 @@ def _apply_nodal(Ck, g, Nn, Nm, Np, Ns):
     Pn, Pm, Pp = (jnp.asarray(hermite_nodes(N)[1]) for N in (Nn, Nm, Np))
     F = jnp.einsum("pa,mb,nc,spmn...->sabc...", Pp, Pm, Pn, Ck)
     F = F * g.reshape(g.shape + (1,) * (Ck.ndim - 4))
-    F = jnp.einsum("pa,mb,nc,sabc...->spmn...", Pp, Pm, Pn, F)
-    return F
+    return jnp.einsum("pa,mb,nc,sabc...->spmn...", Pp, Pm, Pn, F)
 
 
 def speed_apply(Ck, axis, alpha_s, u_s, inv_c2, Nn, Nm, Np, Ns):
