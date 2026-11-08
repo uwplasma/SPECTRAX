@@ -8,9 +8,7 @@ state is the starting point. One reverse-mode gradient costs a few forward solve
 for any number of controls, against 2 * n_controls solves for central differences.
 """
 
-import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from time import time
 import numpy as np
 import jax
@@ -55,7 +53,7 @@ theta0 = theta0.at[jnp.array([0, 1])].set(-U0 * Lx / (2 * jnp.pi))
 theta0 = theta0.at[2 * n_modes + jnp.array([1, 4])].set(deltaB * Lx / (2 * jnp.pi) * jnp.array([1.0, 0.5]))
 
 def initial_state(theta):
-    """Build (Ck_0, Fk_0, W_K, W_B) for controls theta = (phi amplitudes, psi amplitudes)."""
+    """Build the input parameters for controls theta = (phi amplitudes, psi amplitudes)."""
     _, phx, phy, _ = potential(theta[:2 * n_modes])
     _, psx, psy, lap = potential(theta[2 * n_modes:])
     W_K = 0.5 * (1 + mi_me) * jnp.mean(phx**2 + phy**2)
@@ -68,11 +66,11 @@ def initial_state(theta):
     p["Ck_0"] = compute_C_nmp(jnp.stack([Ue, Ui]), input_parameters["alpha_s"], input_parameters["u_s"], H, H, H, 2)
     F = jnp.stack([0 * Bx, 0 * Bx, 0 * Bx, Bx, By, jnp.ones_like(Bx)])
     p["Fk_0"] = rfftn(F, axes=(-1, -3, -2), norm="forward")
-    return p, s**2 * W_K, s**2 * W_B
+    return p
 
 def conversion(theta):
     """Fraction of E0 moved from fields to particles by t_max."""
-    EM = simulation(initial_state(theta)[0], **solver_parameters)["EM_energy"]
+    EM = simulation(initial_state(theta), **solver_parameters)["EM_energy"]
     return (EM[0] - EM[-1]) / E0
 
 J = jax.jit(conversion)
@@ -98,9 +96,8 @@ print(f'Directional derivative relative error {dir_error.min():.1e} at h = {h:.0
 history = []
 def objective(theta):
     value, grad = dJ(jnp.asarray(theta))
-    W_B = initial_state(jnp.asarray(theta))[2]
-    history.append((float(value), float(W_B / E0)))
-    print(f'  eval {len(history):3d}  J = {value:.6f}  W_B/E0 = {W_B / E0:.3f}')
+    history.append(float(value))
+    print(f'  eval {len(history):3d}  J = {value:.6f}')
     return -float(value), -np.asarray(grad)
 
 start = time()
@@ -110,7 +107,7 @@ theta_opt = jnp.asarray(result.x)
 
 # Full histories and final current sheets for the initial and optimized states.
 plot_parameters = {**solver_parameters, "timesteps": 101}
-runs = [simulation(initial_state(t)[0], **plot_parameters) for t in (theta0, theta_opt)]
+runs = [simulation(initial_state(t), **plot_parameters) for t in (theta0, theta_opt)]
 
 def Jz(output, i):
     """Real-space Jz = dBy/dx - dBx/dy at save index i."""
@@ -119,43 +116,21 @@ def Jz(output, i):
     return irfftn(Fk[1] - Fk[0], s=(1, N, N), axes=(-1, -3, -2), norm="forward")[:, :, 0]
 
 names = ('Orszag–Tang', 'optimized')
-values, W_B = map(np.array, zip(*history))
-fig = plt.figure(figsize=(15, 9), constrained_layout=True)
-grid = fig.add_gridspec(2, 4)
-
-ax = fig.add_subplot(grid[0, 0])
-ax.plot(np.arange(1, len(values) + 1), values, 'o-', ms=3)
-ax.axhline(J0, color='k', ls=':', lw=1)
-ax.set(xlabel='gradient evaluation', ylabel=r'$J=\Delta W_{EM}/E_0$', title='(a) objective')
-
-ax = fig.add_subplot(grid[0, 1])
-sc = ax.scatter(W_B, values, c=np.arange(len(values)), cmap='viridis', s=18, zorder=3)
-ax.plot(W_B, values, color='0.6', lw=0.8)
-ax.plot(W_B[0], values[0], 'k*', ms=12, label='Orszag–Tang')
-ax.plot(W_B[-1], values[-1], 'r*', ms=12, label='optimum')
-ax.set(xlabel=r'$W_B(0)/E_0$  (1 - flow fraction)', ylabel=r'$J$', title='(b) trajectory')
-ax.legend(); fig.colorbar(sc, ax=ax, label='evaluation')
-
-ax = fig.add_subplot(grid[0, 2])
-ax.loglog(steps, dir_error, 'o-')
-ax.set(xlabel='finite-difference step $h$', ylabel='relative error', title='(c) AD vs central FD, gradient direction')
-
-ax = fig.add_subplot(grid[0, 3])
+values = np.array(history)
+fig, axes = plt.subplots(1, 5, figsize=(18, 3.6), constrained_layout=True)
+axes[0].plot(np.arange(1, len(values) + 1), values, 'o-', ms=3)
+axes[0].axhline(J0, color='k', ls=':', lw=1)
+axes[0].set(xlabel='gradient evaluation', ylabel=r'$J=\Delta W_{EM}/E_0$', title='(a) objective')
 lim = np.abs(g_fd).max() * 1.1
-ax.plot([-lim, lim], [-lim, lim], 'k:', lw=1)
-ax.plot(g_fd, g0, 'o', ms=4)
-ax.set(xlabel='central FD', ylabel='reverse-mode AD', title=f'(d) {len(theta0)} components: AD {t_gradient:.0f} s, FD {2 * len(theta0) * t_forward:.0f} s')
-
-ax = fig.add_subplot(grid[1, 0])
+axes[1].plot([-lim, lim], [-lim, lim], 'k:', lw=1)
+axes[1].plot(g_fd, g0, 'o', ms=4)
+axes[1].set(xlabel='central FD', ylabel='reverse-mode AD', title=f'(b) {len(theta0)} components: AD {t_gradient:.0f} s, FD {2 * len(theta0) * t_forward:.0f} s')
 for output, name, c in zip(runs, names, ('k', 'r')):
-    ax.plot(output["time"], (output["EM_energy"][0] - output["EM_energy"]) / E0, c, label=name)
-ax.set(xlabel=r'$\omega_{pe} t$', ylabel=r'$\Delta W_{EM}/E_0$', title='(e) field-to-plasma conversion'); ax.legend()
-
-panels = [(runs[0], -1, 'Orszag–Tang'), (runs[1], 0, 'optimized'), (runs[1], -1, 'optimized')]
-for col, (output, i, name) in enumerate(panels):
-    ax = fig.add_subplot(grid[1, 1 + col])
-    im = ax.imshow(Jz(output, i), origin='lower', cmap='RdBu_r', extent=(0, Lx, 0, Ly))
-    ax.set(title=f'({"fgh"[col]}) $J_z$, {name}, $t={float(output["time"][i]):.0f}$', xlabel='$x/d_e$', ylabel='$y/d_e$')
+    axes[2].plot(output["time"], (output["EM_energy"][0] - output["EM_energy"]) / E0, c, label=name)
+axes[2].set(xlabel=r'$\omega_{pe} t$', ylabel=r'$\Delta W_{EM}/E_0$', title='(c) field-to-plasma conversion'); axes[2].legend()
+for ax, output, name in zip(axes[3:], runs, names):
+    im = ax.imshow(Jz(output, -1), origin='lower', cmap='RdBu_r', extent=(0, Lx, 0, Ly))
+    ax.set(title=f'({'d' if ax is axes[3] else 'e'}) $J_z$, {name}, $t={t_max:.0f}$', xlabel='$x/d_e$', ylabel='$y/d_e$')
     fig.colorbar(im, ax=ax)
-fig.savefig('OT_optimization.png', dpi=200)
+fig.savefig('OT_optimization.png', dpi=100)
 plt.show()
