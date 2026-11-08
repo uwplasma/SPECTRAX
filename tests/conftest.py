@@ -58,3 +58,14 @@ def ode_args(Ns, u, a, nu=0.5):
 
 def rhs(Ns, state, args):
     return ode_system(*GRID, *ORDERS, Ns, 0.0, state, args)
+
+
+B0 = jnp.array([[0.0, 0, 0], [1.0, 1, 1]])  # unit basis (u, alpha) for one species
+
+
+def maxwellian_state(N, d, r):
+    """Single-species spatially uniform state: the Maxwellian centred at d of width r projected by quadrature
+    onto the unit basis B0, Ck of shape (1, 1, 1, N, 1, 1, 1)."""
+    x, w = np.polynomial.hermite.hermgauss(N + 40)
+    g = (h_table(N, x * r + d) * w).sum(axis=1) / np.sqrt(np.pi)
+    return jnp.zeros((1, 1, 1, N, 1, 1, 1)).at[0, 0, 0, :, 0, 0, 0].set(g)
