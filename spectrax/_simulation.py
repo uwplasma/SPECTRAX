@@ -6,8 +6,7 @@ config.update("jax_enable_x64", True)
 from functools import partial
 from diffrax import (diffeqsolve, Dopri8, ODETerm, ClipStepSizeController,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
-from ._lawson import LawsonSolver, simulation_rate
-from ._lawson_streaming import hermite_streaming_factor
+from ._lawson import LawsonSolver, simulation_rate, hermite_streaming_factor
 from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
 from ._diagnostics import diagnostics
@@ -155,7 +154,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         ``spectrax._lawson`` for order and limits). Fields and all non-diagonal terms stay explicit. Steps are
         clipped onto the save times (Lawson dense output is accurate only for ``rate * h`` of order one).
         ``"streaming"``: integrate the free-streaming operator exactly per Fourier mode (Hermite tridiagonal
-        eigendecomposition, ``spectrax._lawson_streaming``), damping left explicit (putting the damping into the same
+        eigendecomposition, ``spectrax._lawson``), damping left explicit (putting the damping into the same
         factor is available through ``hermite_streaming_factor(rate_fn=...)`` but measured harmful when ``h k a sqrt(2 Nn)``
         and the rate are both large). Helps when ``nu * h`` would otherwise limit the step; no effect on cost otherwise.
 
@@ -196,7 +195,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     if integrating_factor:
         rate = lambda t, y, a: simulation_rate(a, Ns, Nn, Nm, Np, Ny, Nx, Nz)
         if integrating_factor == "streaming":
-            solver = LawsonSolver(solver, factor_fn=hermite_streaming_factor("first"))
+            solver = LawsonSolver(solver, factor_fn=hermite_streaming_factor())
         else:
             solver = LawsonSolver(solver, rate)
         if adaptive_time_step:

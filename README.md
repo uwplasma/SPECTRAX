@@ -194,7 +194,7 @@ mode and species it is `-i k (a T + u)` along each Hermite axis with `T` the sym
 so one real `eigh` (Gauss-Hermite nodal transform, shared by all `k`, species, widths and drifts) gives the exact flow for any
 step size (two `Nn x Nn` products per Hermite axis per Runge-Kutta stage; about 3.5 times the cost per step of the plain
 solver at `Nn = 128`, `Nx = 64`). The hypercollision damping can be put inside the same factor (Strang
-product, see `spectrax/_lawson_streaming.py`) at the lower level only.
+product, see `spectrax/_lawson.py`) at the lower level only.
 
 Helps: smooth runs whose explicit step is limited by streaming stability, `h k a sqrt(2 Nn) < ~3.7`, i.e. large `Nn` and `Nx`
 at loose tolerance (default two-stream, `Nx = 64, Nn = 128`, tolerance 1e-8: 497 -> 28 steps, 1.86 s -> 0.36 s; tolerance 1e-12:
