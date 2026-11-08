@@ -297,58 +297,25 @@ def uniform_acceleration(F, u_s, qs, Omega_cs, Ns):
     return accel.reshape(3 * Ns), F0
 
 
-def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c, u_s=None, magnetic=False):
+def field_scaled_closure_rate(F, alpha_s, qs, Omega_cs, Nn, Nm, Np, Ns, c, u_s=None):
     """
-    Per-species closure rate that follows the field, for the asymmetric-Hermite top-mode instability.
+    Per-species closure rate ``nu_s = c |q_s/m_s| max_i sqrt(2 N_i) S_i / a_{s,i}``, shaped
+    ``(Ns, 1, 1, 1, 1, 1, 1)``, over the velocity axes with ``N_i > 3``.
 
-    The truncated asymmetrically weighted (AW) Fourier-Hermite operator ``-v d/dx + (q/m) E d/dv`` is not
-    anti-self-adjoint: in a non-uniform field it has spurious growing modes that live in the top third of the
-    Hermite ladder at the largest retained ``|k|``, with growth rate of order ``0.3 sqrt(2N) |q/m| |E| / a``
-    (rising with N and with the Fourier cut-off; the symmetrically weighted basis gives exactly zero). A fixed
-    ``nu`` is overtaken once the self-consistent field grows. This returns
-
-        nu_s = c |q_s/m_s| max_i sqrt(2 N_i) max_x |E_i - <E_i>| / a_{s,i},
-
-    over the velocity axes with ``N_i > 3``, shaped ``(Ns, 1, 1, 1, 1, 1, 1)`` so it can be passed as ``nu`` to
-    :func:`Hermite_Fourier_system` together with ``hypercollision_spectrum(order>=2)``, which leaves density,
-    momentum and energy untouched. The uniform part ``<E>`` is excluded: it only shifts the distribution.
-    ``c = 0`` gives exactly zero.
-
-    Parameters
-    ----------
-    F : jnp.ndarray, shape (6, Ny, Nx, Nz)
-        Real-space fields (de-aliased), as used by the kinetic RHS.
-    alpha_s : jnp.ndarray, shape (3 * Ns,)
-    qs, Omega_cs : jnp.ndarray, shape (Ns,)
-        ``|q/m|_s = |qs * Omega_cs|`` in SPECTRAX units.
-    c : float
-        Dimensionless strength.
-    u_s : jnp.ndarray, shape (3 * Ns,), optional
-        Basis centres; only used with ``magnetic=True`` (default zero).
-    magnetic : bool
-        Also scale with the non-uniform magnetic force. On axis ``i`` the field scale
-        ``max_x |E_i - <E_i>|`` becomes ``max_x |E_i - <E_i>| + sum_{j != i} V_j max_x |B_l - <B_l>|``
-        (``i, j, l`` a permutation), ``V_j = |u_j| + a_j sqrt(2 N_j)`` the largest velocity the kept
-        ladder on axis ``j`` represents (turning point of its top Hermite function). The ``v x B`` term
-        gives the same non-normal top-mode growth as ``E`` once ``B`` is non-uniform (e.g. Weibel past
-        U_B ~ 1e-3, where the electric-only rate leaves it unchanged). Default ``False`` is the
-        electric-only rate above, unchanged.
+    The truncated asymmetrically weighted Hermite operator is not anti-self-adjoint: in a non-uniform force
+    its top Hermite modes at the largest retained ``|k|`` grow at a rate of order ``0.3 sqrt(2N) |q/m| S / a``.
+    The force scale on axis ``i`` is ``S_i = max_x |E_i - <E_i>| + sum_{j != i} V_j max_x |B_l - <B_l>|``
+    (``i, j, l`` a permutation), with ``V_j = |u_j| + a_j sqrt(2 N_j)`` the largest velocity the kept ladder
+    on axis ``j`` represents; the ``v x B`` term matters once ``B`` is non-uniform (Weibel), and for uniform
+    ``B`` this is the electric-only rate. Uniform parts only shift ``f`` and are excluded; ``c = 0`` gives
+    exactly zero. Passed as ``nu`` with ``hypercollision_spectrum(order=2)`` (density, momentum and energy
+    untouched) it damps those modes. ``F`` is the real-space field ``(6, Ny, Nx, Nz)``, ``|q/m|_s =
+    |qs * Omega_cs|``, ``u_s`` the basis centres (default 0). ``simulation(..., closure_c=c)`` applies it.
     """
+    dev = jnp.max(jnp.abs(F - jnp.mean(F, axis=(-3, -2, -1), keepdims=True)), axis=(-3, -2, -1))  # (6,)
     N = jnp.array([Nn, Nm, Np], dtype=float)
     a = alpha_s.reshape(Ns, 3)
-    if magnetic:
-        dev = jnp.max(jnp.abs(F - jnp.mean(F, axis=(-3, -2, -1), keepdims=True)), axis=(-3, -2, -1))  # (6,)
-        dE, dB = dev[:3], dev[3:6]
-        u = jnp.zeros_like(a) if u_s is None else u_s.reshape(Ns, 3)
-        V = jnp.abs(u) + a * jnp.sqrt(2 * N)[None, :]
-        scale = dE[None, :] + jnp.stack([V[:, 1] * dB[2] + V[:, 2] * dB[1],
-                                         V[:, 2] * dB[0] + V[:, 0] * dB[2],
-                                         V[:, 0] * dB[1] + V[:, 1] * dB[0]], axis=1)
-    else:
-        E = F[:3]
-        dE = jnp.max(jnp.abs(E - jnp.mean(E, axis=(-3, -2, -1), keepdims=True)), axis=(-3, -2, -1))  # (3,)
-        scale = jnp.broadcast_to(dE[None, :], a.shape)
-    active = (N > 3)[None, :]
-    per_axis = jnp.where(active, jnp.sqrt(2 * N)[None, :] * scale / a, 0.0)
-    rate = c * jnp.abs(qs * Omega_cs) * jnp.max(per_axis, axis=1)
-    return rate.reshape(Ns, 1, 1, 1, 1, 1, 1)
+    V = a * jnp.sqrt(2 * N) + (0.0 if u_s is None else jnp.abs(u_s.reshape(Ns, 3)))
+    S = dev[:3] + V[:, jnp.array([1, 2, 0])] * dev[jnp.array([5, 3, 4])] + V[:, jnp.array([2, 0, 1])] * dev[jnp.array([4, 5, 3])]
+    per_axis = jnp.where(N > 3, jnp.sqrt(2 * N) * S, 0.0) / a
+    return (c * jnp.abs(qs * Omega_cs) * jnp.max(per_axis, axis=1)).reshape(Ns, 1, 1, 1, 1, 1, 1)

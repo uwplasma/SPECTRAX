@@ -2,9 +2,10 @@
 import numpy as np
 import jax
 import jax.numpy as jnp
-from spectrax import field_scaled_closure_rate, hypercollision_spectrum
+from diffrax import NoProgressMeter
+from spectrax import field_scaled_closure_rate, hypercollision_spectrum, simulation
 from spectrax._remap import low_moments
-from tests.test_moving_basis import ORDERS, random_state, ode_args, rhs
+from tests.conftest import ORDERS, random_state, ode_args, rhs
 
 jax.config.update("jax_enable_x64", True)
 
@@ -51,24 +52,28 @@ def test_jit_and_per_species_nu_in_rhs_keeps_low_moments():
     assert np.all(np.isfinite(np.asarray(r)))
 
 
-def test_magnetic_option_analytic_and_default_unchanged():
-    """magnetic=True adds sum_j V_j |B_l - <B_l>| per axis; magnetic=False ignores B entirely."""
+def test_simulation_closure_c_is_off_by_default_and_damps_when_on():
+    """closure_c=0 is bitwise the plain run; closure_c>0 changes a run with a non-uniform field and stays finite."""
+    kw = dict(Nx=7, Nn=6, Nm=1, Np=1, Ns=2, timesteps=3, progress_meter=NoProgressMeter(), adaptive_time_step=False, dt=0.01)
+    params = {"t_max": 0.3, "nu": 0.1}
+    ref = simulation(params, **kw)
+    assert jnp.array_equal(simulation(params, closure_c=0.0, **kw)["Ck"], ref["Ck"])
+    on = simulation(params, closure_c=2.0, **kw)["Ck"]
+    assert bool(jnp.all(jnp.isfinite(on))) and float(jnp.abs(on - ref["Ck"]).max()) > 0
+
+
+def test_magnetic_force_scale_adds_v_cross_b_per_axis():
+    """S_x = dE_x + V_y dB_z, S_y = V_x dB_z (B_z's uniform part excluded); B uniform is the electric-only rate."""
     Nx = 16
     x = np.arange(Nx) * 2 * np.pi / Nx
     F = np.zeros((6, 1, Nx, 1))
     F[0, 0, :, 0] = 2e-3 * np.cos(x)
-    F[5, 0, :, 0] = 0.4 + 1e-3 * np.cos(x)  # B_z: uniform part excluded
+    F[5, 0, :, 0] = 0.4 + 1e-3 * np.cos(x)
     F = jnp.asarray(F)
-    a = jnp.array([0.1, 0.3, 0.1])
-    u = jnp.array([0.0, 0.2, 0.0])
-    qs, om = jnp.array([-1.0]), jnp.array([1.0])
+    a, u = jnp.array([0.1, 0.3, 0.1]), jnp.array([0.0, 0.2, 0.0])
     Nn, Nm, Np = 32, 16, 1
-    r0 = float(field_scaled_closure_rate(F, a, qs, om, Nn, Nm, Np, 1, 1.0).ravel()[0])
-    np.testing.assert_allclose(r0, np.sqrt(64) * 2e-3 / 0.1, rtol=1e-14)
-    r1 = float(field_scaled_closure_rate(F, a, qs, om, Nn, Nm, Np, 1, 1.0, u_s=u, magnetic=True).ravel()[0])
+    rate = lambda F, **kw: float(field_scaled_closure_rate(F, a, jnp.array([-1.0]), jnp.array([1.0]), Nn, Nm, Np, 1, 1.0, **kw).ravel()[0])
     V = np.abs(np.asarray(u)) + np.asarray(a) * np.sqrt(2 * np.array([Nn, Nm, Np]))
-    sx = 2e-3 + V[1] * 1e-3  # (v x B)_x = v_y B_z
-    sy = V[0] * 1e-3  # (v x B)_y = -v_x B_z
-    expect = max(np.sqrt(2 * Nn) * sx / 0.1, np.sqrt(2 * Nm) * sy / 0.3)
-    np.testing.assert_allclose(r1, expect, rtol=1e-12)
-    assert float(field_scaled_closure_rate(F, a, qs, om, Nn, Nm, Np, 1, 0.0, u_s=u, magnetic=True).ravel()[0]) == 0.0
+    expect = max(np.sqrt(2 * Nn) * (2e-3 + V[1] * 1e-3) / 0.1, np.sqrt(2 * Nm) * V[0] * 1e-3 / 0.3)
+    np.testing.assert_allclose(rate(F, u_s=u), expect, rtol=1e-12)
+    np.testing.assert_allclose(rate(F.at[5].set(0.4)), np.sqrt(2 * Nn) * 2e-3 / 0.1, rtol=1e-12)
