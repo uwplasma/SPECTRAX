@@ -7,7 +7,7 @@ from functools import partial
 from diffrax import (diffeqsolve, Dopri8, ODETerm,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
 from ._initialization import initialize_simulation_parameters
-from ._model import plasma_current, Hermite_Fourier_system
+from ._model import plasma_current, Hermite_Fourier_system, spatial_axes
 from ._diagnostics import diagnostics
 
 __all__ = ["cross_product", "ode_system", "simulation"]
@@ -87,8 +87,10 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     # Build the 2/3 mask once per call (JIT will constant-fold it since Nx/Ny/Nz are static)
     mask23 = _twothirds_mask(Ny, Nx, Nz)
 
-    F = jnp.fft.irfftn(Fk * mask23, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
-    C = jnp.fft.irfftn(Ck * mask23, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
+    ax = spatial_axes(Ny, Nz)  # skip singleton y/z axes: the same transform, cheaper
+    sh = dict(zip((-1, -3, -2), (Nz, Ny, Nx)))
+    F = jnp.fft.irfftn(Fk * mask23, s=[sh[a] for a in ax], axes=ax, norm="forward")
+    C = jnp.fft.irfftn(Ck * mask23, s=[sh[a] for a in ax], axes=ax, norm="forward")
 
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
