@@ -337,3 +337,9 @@ def test_lbo_g_rejects_beta_at_or_below_minus_one(tmp_path):
                     'beta = -1.0\n')
     with pytest.raises(ValueError, match="beta > -1"):
         load_parameters(toml)
+
+
+def test_python_path_rejects_beta_at_or_below_minus_one():
+    p = {"t_max": 0.1, "nu_dougherty": 0.5, "beta_dougherty": -1.0}
+    with pytest.raises(Exception, match="beta_dougherty"):
+        run(p, Nx=3, Nn=4, Ns=2, collision_model="dougherty")

@@ -2,6 +2,7 @@
 
 import numpy as np
 import jax.numpy as jnp
+import equinox as eqx
 from jax import jit, config
 config.update("jax_enable_x64", True)
 from functools import partial
@@ -243,7 +244,10 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     if collision_model is not None:
         nu_D = jnp.asarray(parameters.get("nu_dougherty", 0.0), dtype=float)
         args = args + (jnp.eye(Ns) * nu_D if nu_D.ndim == 0 else nu_D.reshape(Ns, Ns),)
-        args = args + (jnp.asarray(parameters.get("beta_dougherty", 0.0), dtype=float),)  # LBO-G beta
+        beta_D = jnp.asarray(parameters.get("beta_dougherty", 0.0), dtype=float)  # LBO-G beta
+        if collision_model == "dougherty":  # H-theorem needs beta > -1 (also under jit, where beta is traced)
+            beta_D = eqx.error_if(beta_D, ~(beta_D > -1), "LBO-G requires beta_dougherty > -1 (H-theorem)")
+        args = args + (beta_D,)
     
 
     stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_tolerance"], dtmin)
