@@ -74,20 +74,10 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     # Initialize distribution function as a two-stream instability
     dn1     = default_parameters["dn1"]
     dn2     = default_parameters["dn2"]
-    alpha_e = default_parameters["alpha_e"]
     values  = (dn1 + dn2) * default_parameters["Lx"] / (4 * jnp.pi * default_parameters["nx"] * default_parameters["Omega_cs"](default_parameters)[0])
     Fk_0    = jnp.zeros((6, Ny, Nx//2+1, Nz), dtype=jnp.complex128).at[0, 0, default_parameters["nx"], 0].set(values)
-    C10     = jnp.array([1 / (alpha_e[0] ** 3) + 0 * 1j,
-            0 - 1j * (1 / (2 * alpha_e[0] ** 3)) * dn1
-    ])
-    C20     = jnp.array([1 / (alpha_e[0] ** 3) + 0 * 1j,
-            0 - 1j * (1 / (2 * alpha_e[0] ** 3)) * dn2
-    ])
-    indices = jnp.array([0, default_parameters["nx"]])
     Ck_0    = jnp.zeros((Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz), dtype=jnp.complex128)
-    Ck_0    = Ck_0.at[0,  0, indices, 0].set(C10)
-    Ck_0    = Ck_0.at[Nn * Nm * Np, 0, indices, 0].set(C20)
-    
+
     default_parameters.update({
         "Ck_0": Ck_0, "Fk_0": Fk_0, "Ns": Ns,
         "timesteps": timesteps, "dt": dt, 
@@ -106,6 +96,16 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
             parameters[key] = value(parameters)
         if isinstance(value, list):
             parameters[key] = jnp.array(value)
+
+    # The default Maxwellian amplitude 1/alpha^3 follows the final alpha_s (so it is differentiable in
+    # alpha_s); alpha_s takes precedence over alpha_e, and they agree for the default alpha_s.
+    if "Ck_0" not in user_parameters:
+        a0      = parameters["alpha_s"][0]
+        indices = jnp.array([0, default_parameters["nx"]])
+        C10     = jnp.array([1 / (a0 ** 3) + 0 * 1j, 0 - 1j * (1 / (2 * a0 ** 3)) * dn1])
+        C20     = jnp.array([1 / (a0 ** 3) + 0 * 1j, 0 - 1j * (1 / (2 * a0 ** 3)) * dn2])
+        Ck_0    = parameters["Ck_0"].at[0,  0, indices, 0].set(C10)
+        parameters["Ck_0"] = Ck_0.at[Nn * Nm * Np, 0, indices, 0].set(C20)
 
     # Real-valued fft leaves only the positive-k elements on the last axis given.
     # We choose the x-axis since this gets us the savings in 1D as well as 2D/3D.
