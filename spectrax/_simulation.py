@@ -2,6 +2,7 @@
 
 import numpy as np
 import jax.numpy as jnp
+import equinox as eqx
 from jax import jit, config
 config.update("jax_enable_x64", True)
 from functools import partial
@@ -74,7 +75,7 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collis
         Cached parameter tuple produced in `simulation` providing physical constants,
         grids, and helper arrays. With ``collision_model="dougherty"`` its last entry is the
         ``(Ns, Ns)`` Dougherty collision-frequency matrix.
-    collision_model : {None, "dougherty"}
+    collision_model : {None, "dougherty", "dougherty_em"}
         Physical collision operator added to the kinetic right-hand side (see
         :func:`spectrax._model.dougherty_collisions`); independent of the numerical
         hypercollision ``nu``. None: no term, bitwise the previous right-hand side.
@@ -108,11 +109,12 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, frame="fixed", collis
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
                                       Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23=mask23, F0=F0)
-    if collision_model == "dougherty":
+    if collision_model in ("dougherty", "dougherty_em"):
         dCk_s_dt = dCk_s_dt + dougherty_collisions(C.reshape(Ns, Np, Nm, Nn, *C.shape[-3:]), args[28], alpha_s, u_s,
-                                                   Omega_cs, Nn, Nm, Np, Ns, mask23)
+                                                   Omega_cs, Nn, Nm, Np, Ns, mask23,
+                                                   beta=args[29] if collision_model == "dougherty" else None)
     elif collision_model is not None:
-        raise ValueError(f"collision_model must be None or 'dougherty', got {collision_model!r}")
+        raise ValueError(f"collision_model must be None, 'dougherty' or 'dougherty_em', got {collision_model!r}")
 
     dBk_dt = -1j * cross_product(nabla, Fk[:3])
     
@@ -185,13 +187,17 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         with zero rates the kinetic right-hand side is bitwise that of ``frame=None``.
         ``"pump"``: each centre follows the uniform acceleration ``(q/m)(E0 + u x B0)`` (oscillating-
         centre frame), and that uniform force is removed from the kinetic operator.
-    collision_model : {None, "dougherty"}, optional
+    collision_model : {None, "dougherty", "dougherty_em"}, optional
         None (default): collisionless apart from the numerical hypercollision ``nu``; bitwise
         unchanged. ``"dougherty"``: add the conservative Dougherty (Lenard-Bernstein with
         self-consistent moments) operator with frequencies ``input_parameters["nu_dougherty"]``,
         a scalar (self collisions of every species) or an ``(Ns, Ns)`` matrix (diagonal: self;
         upper triangle ``[s, r]``: pair frequency ``nu_sr``, ``nu_rs`` from momentum conservation).
-        From a TOML file: ``[collisions] model = "dougherty", nu = ...``.
+        Cross-species moments are LBO-G (Francisquez et al., JPP 88, 905880303) with
+        ``input_parameters["beta_dougherty"]`` (default 0: matches both Coulomb relaxation rates).
+        ``"dougherty_em"``: LBO-EM cross moments (twice the Morse e-i temperature exchange).
+        From a TOML file: ``[collisions] model = "dougherty", nu = ..., beta = 0.0``,
+        optionally ``cross_species = "em"``.
     closure_c : float, optional
         Strength of :func:`field_scaled_closure_rate`, added to ``nu`` (use with the default order-2
         hypercollision spectrum). Default 0 (off).
@@ -238,6 +244,10 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     if collision_model is not None:
         nu_D = jnp.asarray(parameters.get("nu_dougherty", 0.0), dtype=float)
         args = args + (jnp.eye(Ns) * nu_D if nu_D.ndim == 0 else nu_D.reshape(Ns, Ns),)
+        beta_D = jnp.asarray(parameters.get("beta_dougherty", 0.0), dtype=float)  # LBO-G beta
+        if collision_model == "dougherty":  # H-theorem needs beta > -1 (also under jit, where beta is traced)
+            beta_D = eqx.error_if(beta_D, ~(beta_D > -1), "LBO-G requires beta_dougherty > -1 (H-theorem)")
+        args = args + (beta_D,)
     
 
     stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_tolerance"], dtmin)
