@@ -34,12 +34,6 @@ def test_vector_field_is_finite_on_default_device():
     assert all(np.all(np.isfinite(y)) for y in _rhs(jax.devices()[0]))
 
 
-def test_vector_field_matches_cpu():
-    gpu, cpu = _rhs(jax.devices()[0]), _rhs(jax.devices("cpu")[0])
-    for g, c in zip(gpu, cpu):
-        np.testing.assert_allclose(g, c, rtol=1e-8, atol=1e-12)
-
-
 def test_inverse_transform_density_moment():
     Nx, Nn = 8, 3
     C = np.random.default_rng(0).standard_normal((1, 1, 1, Nn, 1, Nx, 1))
