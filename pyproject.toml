@@ -39,3 +39,5 @@ Homepage = "https://github.com/uwplasma/SPECTRAX"
 [project.scripts]
 spectrax = "spectrax.__main__:main"
  
+[tool.pytest.ini_options]
+markers = ["gpu: small smoke tests run on the self-hosted GPU runner"]
