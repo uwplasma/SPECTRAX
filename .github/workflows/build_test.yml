@@ -34,9 +34,8 @@ jobs:
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 
   build:
-    # never run fork code on the self-hosted machines
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, macOS, uwplasma-cpu]
+    # fork PRs run on hosted Ubuntu, never on the self-hosted machines
+    runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && matrix.python-version == '3.12')) && fromJSON('["self-hosted","macOS","uwplasma-cpu"]') || 'ubuntu-latest' }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
