@@ -49,8 +49,8 @@ def cross_product(k_vec, F_vec):
     Fx, Fy, Fz = F_vec
     return jnp.array([ky * Fz - kz * Fy, kz * Fx - kx * Fz, kx * Fy - ky * Fx])
 
-@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns'])
-def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
+@partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'inv_c2'])
+def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args, inv_c2=0.0):
     """
     Right-hand side for the coupled Vlasov-Maxwell system expressed in spectral form.
 
@@ -69,6 +69,9 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     args : tuple
         Cached parameter tuple produced in `simulation` providing physical constants,
         grids, and helper arrays.
+    inv_c2 : float, optional
+        ``1 / c^2`` in the code units; ``0`` (default) is the nonrelativistic model, ``> 0`` the relativistic
+        momentum-space model (:mod:`spectrax._relativistic`).
 
     Returns
     -------
@@ -92,11 +95,11 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
 
     dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
                                       sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
-                                      Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23=mask23)
+                                      Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23=mask23, inv_c2=inv_c2)
 
     dBk_dt = -1j * cross_product(nabla, Fk[:3])
     
-    current = plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns)
+    current = plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns, inv_c2=inv_c2)
     dEk_dt = 1j * cross_product(nabla, Fk[3:]) - current / Omega_cs[0]
 
     dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
@@ -109,10 +112,10 @@ def _stepsize_controller(adaptive_time_step, tolerance, dtmin=None):
     return PIDController(rtol=tolerance, atol=tolerance, dtmin=dtmin, force_dtmin=False)
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step',
-                                'dtmin', 'max_steps', 'throw'])
+                                'dtmin', 'max_steps', 'throw', 'inv_c2'])
 def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2, 
                timesteps=200, dt = 0.01, solver=Dopri8(), adaptive_time_step=True, dtmin=None, max_steps=1000000,
-               throw=True):
+               throw=True, inv_c2=0.0):
     """
     Run a spectral Vlasov-Maxwell simulation and return the solution together with
     the parameter dictionary used to produce it.
@@ -143,6 +146,10 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     max_steps : int, optional
         Step budget; exhausting it stops the solve (`RESULTS.max_steps_reached`), reported
         separately from a step below `dtmin` (`RESULTS.dt_min_reached`).
+    inv_c2 : float, optional
+        ``1 / c^2`` in the code units (velocities in units of ``c``: ``1.0`` is physical). Default ``0.0``: the
+        nonrelativistic model, bitwise the previous behaviour. ``> 0`` selects the relativistic momentum-space
+        Hermite model (:mod:`spectrax._relativistic`); not yet supported with the pump frame or collisions.
     throw : bool, optional
         Raise on integration failure; with False the failure is reported in `solver_result`,
         and only the first `num_valid_times` saved times (`valid_times`) hold a solution.
@@ -180,7 +187,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_tolerance"], dtmin)
 
     # Solve the ODE system
-    ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns)
+    ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns, inv_c2=inv_c2)
     sol = diffeqsolve(
         ODETerm(ode_system_partial), solver=solver,
         stepsize_controller=stepsize_controller,
