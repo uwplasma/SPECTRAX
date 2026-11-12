@@ -71,6 +71,10 @@ def plasma_current(qs, alpha_s, u_s, Ck, Nn, Nm, Np, Ns):
     # Sum over species → shape: (3, Ny, Nx//2+1, Nz)
     return jnp.sum(J_species, axis=1)
 
+def spatial_axes(Ny, Nz):
+    """FFT axes (z, y, x) of the (Ny, Nx//2+1, Nz) layout, skipping singleton y/z; x (real) stays last."""
+    return tuple(a for a, n in ((-1, Nz), (-3, Ny)) if n > 1) + (-2,)
+
 def _pad_hermite_axes(Ck):
     """Pad Hermite axes (p, m, n) by one cell on both sides.
 
@@ -205,7 +209,7 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         jnp.fft.rfftn((sqrt_n_minus * jnp.sqrt(2) / a0) * F[0] * shift_multi(C, dn=-1, dm=0, dp=0) +
                       (sqrt_m_minus * jnp.sqrt(2) / a1) * F[1] * shift_multi(C, dn=0, dm=-1, dp=0) + 
                       (sqrt_p_minus * jnp.sqrt(2) / a2) * F[2] * shift_multi(C, dn=0, dm=0, dp=-1) +
-                      F[3] * C_aux_x + F[4] * C_aux_y + F[5] * C_aux_z, axes=(-1, -3, -2), norm="forward") * mask23
+                      F[3] * C_aux_x + F[4] * C_aux_y + F[5] * C_aux_z, axes=spatial_axes(C.shape[-3], C.shape[-1]), norm="forward") * mask23
     ) + Col + Diff)
     
     return dCk_s_dt

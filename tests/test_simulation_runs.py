@@ -159,3 +159,13 @@ def test_continuation_from_output_matches_single_run():
                         **g, timesteps=2, **kw)
     assert jnp.allclose(second["Ck"][-1], full["Ck"][-1], rtol=0, atol=1e-13)
     assert jnp.allclose(second["Fk"][-1], full["Fk"][-1], rtol=0, atol=1e-13)
+
+def test_singleton_axes_are_left_out_of_the_spatial_transform():
+    """Skipping size-1 y/z axes is the same transform: identical bits, one or two fewer FFT passes."""
+    import jax
+    from spectrax._model import spatial_axes
+    assert spatial_axes(1, 1) == (-2,) and spatial_axes(4, 1) == (-3, -2)
+    assert spatial_axes(1, 4) == (-1, -2) and spatial_axes(4, 4) == (-1, -3, -2)
+    x = jax.random.normal(jax.random.PRNGKey(0), (3, 5, 8, 1))
+    full = jnp.fft.rfftn(x, axes=(-1, -3, -2), norm="forward")
+    assert jnp.array_equal(jnp.fft.rfftn(x, axes=spatial_axes(5, 1), norm="forward"), full)
