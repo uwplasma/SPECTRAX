@@ -159,3 +159,18 @@ def test_continuation_from_output_matches_single_run():
                         **g, timesteps=2, **kw)
     assert jnp.allclose(second["Ck"][-1], full["Ck"][-1], rtol=0, atol=1e-13)
     assert jnp.allclose(second["Fk"][-1], full["Fk"][-1], rtol=0, atol=1e-13)
+
+def test_grad_wrt_alpha_s_includes_initial_state_and_matches_finite_difference():
+    """d(loss)/d(alpha_s) is finite, depends on the default Maxwellian amplitude 1/alpha^3, and matches a central difference."""
+    import jax
+    def loss(alpha_s):
+        r = simulation({"alpha_s": alpha_s, "t_max": 0.05}, Nx=5, Nn=4, timesteps=2, dt=0.005, adaptive_time_step=False)
+        return jnp.sum(jnp.abs(r["Ck"][-1]) ** 2) + jnp.sum(jnp.abs(r["Fk"][-1]) ** 2)
+    alpha_s = jnp.array([0.7, 0.7, 0.7, 0.5, 0.5, 0.5])
+    g = jax.grad(loss)(alpha_s)
+    eps = 1e-6
+    fd = jnp.array([(loss(alpha_s.at[i].add(eps)) - loss(alpha_s.at[i].add(-eps))) / (2 * eps) for i in range(6)])
+    assert jnp.all(jnp.isfinite(g))
+    assert abs(g[0]) > 1e-3  # the initial state (not only the RHS) responds to alpha_s[0]
+    assert jnp.allclose(g, fd, rtol=1e-5, atol=1e-9)
+    print(g, fd)
