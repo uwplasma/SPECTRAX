@@ -136,6 +136,14 @@ pip install -e .
 JAX will automatically select the available hardware (CPU or GPU). For GPU support you may need the
 appropriate CUDA-enabled version of `jaxlib`; consult the [JAX installation guide](https://docs.jax.dev/en/latest/installation.html).
 
+SPECTRAX enables float64 at import and runs one simulation on JAX's default device: one GPU when a CUDA `jaxlib` is installed, else the CPU with XLA's own threads. It does not use several devices or set a compilation cache.
+
+| Setting | Default | Change it when |
+| --- | --- | --- |
+| `JAX_PLATFORMS=cpu` | GPU when a CUDA `jaxlib` is installed | The GPU is busy, or a small case runs faster on CPU; time your case |
+| `XLA_PYTHON_CLIENT_PREALLOCATE=false` | JAX preallocates most GPU memory | Several processes share one GPU |
+| `JAX_COMPILATION_CACHE_DIR` | no persistent cache | You rerun the same configuration in new processes |
+
 ---
 
 ###  Usage
