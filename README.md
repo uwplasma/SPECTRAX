@@ -166,6 +166,27 @@ python example_script.py
 The `simulation` function returns a dictionary containing the evolved Hermite coefficients `Ck`, electromagnetic coefficients `Fk`, time array, the input parameters and diagnostic quantities.
 
 
+### Exponential (Lawson) integration of the diagonal damping
+
+The hypercollision `nu * col` and hyper-diffusion `D k^2` terms are diagonal in the Hermite-Fourier state. When
+`nu * dt` is large they, not accuracy, limit the explicit step. `simulation(..., integrating_factor=True)` wraps the
+solver in `spectrax.LawsonSolver`, which integrates `-r y` exactly (`f = -r y + N`, rate frozen at the step start; the order of the
+wrapped Runge-Kutta method is retained for h -> 0 at fixed rate (Lawson 1967), with no stiff-order claim when r h >> 1 since the
+stiff order of Lawson methods drops, to 1 for Lawson-Runge (Hochbruck and Ostermann 2010, Acta Numerica 19, Thm 2.17, Ex. 2.32,
+Table 2.2); empirical support is measured agreement with plain Dopri8 records (5e-10 in H05 c=64); error estimate and dense output mapped back; steps are clipped onto the save times):
+
+```python
+from spectrax import simulation, LawsonSolver
+out = simulation(Nx=33, Nn=64, input_parameters={"nu": 4000.0, "t_max": 2.0}, integrating_factor=True)
+# any diagonal stiff rate (e.g. a field-scaled closure damping) with your own right-hand side:
+# solver = LawsonSolver(diffrax.Dopri8(), lambda t, y, args: rate)   # rate: pytree like y, >= 0
+```
+
+Helps: runs whose step is limited by a stiff diagonal rate (large `nu`, large `D k^2`, or a field-scaled closure
+rate that grows with the field). Does not help: runs where the step is accuracy-limited (default `nu`), where it costs
+about one extra right-hand-side evaluation per step; it does not remove a truncation or Hermite-closure *instability*
+(the exponential is exact, so it neither adds nor removes damping). Default (`False`) is bitwise unchanged.
+
 ###  Testing
 Run the test suite using the following command:
 ```sh
