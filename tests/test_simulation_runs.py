@@ -107,6 +107,34 @@ def test_short_transient_finishes_within_the_step_budget_without_a_default_floor
     if DIFFRAX_DTMIN:
         assert solve(_stepsize_controller(True, 1e-10, dtmin=t_max / max_steps)).result == RESULTS.dt_min_reached
 
+def test_separate_rtol_atol_default_to_ode_tolerance():
+    """ode_rtol/ode_atol default to ode_tolerance (bitwise the old run); a looser atol alone takes fewer steps."""
+    kw = dict(Nx=9, Nn=8, timesteps=3)
+    base = {"t_max": 2.0, "ode_tolerance": 1e-9}
+    ref = simulation(base, **kw)
+    same = simulation({**base, "ode_rtol": 1e-9, "ode_atol": 1e-9}, **kw)
+    assert bool(jnp.all(ref["Ck"] == same["Ck"])) and bool(jnp.all(ref["Fk"] == same["Fk"]))
+    assert float(ref["ode_rtol"]) == float(ref["ode_atol"]) == 1e-9
+    loose = simulation({**base, "ode_atol": 1e-3}, **kw)
+    assert int(loose["solver_stats"]["num_steps"]) < int(ref["solver_stats"]["num_steps"])
+
+def test_floored_pid_controller():
+    """floor=None (or all-None leaves) is bitwise PIDController; a floor on a tiny component stops it driving dt."""
+    from diffrax import ODETerm, Dopri8, diffeqsolve, PIDController, SaveAt
+    from spectrax import FlooredPIDController
+    term = ODETerm(lambda t, y, args: {"big": jnp.cos(t) * y["big"], "tiny": -30.0 * jnp.sin(30.0 * t) * y["tiny"]})
+    y0 = {"big": jnp.array([1.0, 2.0]), "tiny": jnp.array([1e-12])}
+    solve = lambda c: diffeqsolve(term, Dopri8(), 0.0, 5.0, 1e-3, y0, stepsize_controller=c, saveat=SaveAt(t1=True))
+    tol = dict(rtol=1e-10, atol=1e-16)
+    ref = solve(PIDController(**tol))
+    for floor in (None, {"big": None, "tiny": None}):
+        sol = solve(FlooredPIDController(**tol, floor=floor))
+        assert int(sol.stats["num_steps"]) == int(ref.stats["num_steps"])
+        assert all(bool(jnp.all(a == b)) for a, b in zip(sol.ys.values(), ref.ys.values()))
+    floored = solve(FlooredPIDController(**tol, floor={"big": None, "tiny": jnp.array(1e-10 * 1.0)}))
+    assert int(floored.stats["num_steps"]) < int(ref.stats["num_steps"]) // 2
+    assert bool(jnp.allclose(floored.ys["big"], ref.ys["big"], rtol=1e-8, atol=0))
+
 if __name__ == "__main__":
     pytest.main()
 

@@ -1,5 +1,6 @@
 """Time integration driver for the spectral Vlasov–Maxwell system."""
 
+import jax
 import jax.numpy as jnp
 from jax import jit, config
 config.update("jax_enable_x64", True)
@@ -10,7 +11,7 @@ from ._initialization import initialize_simulation_parameters
 from ._model import plasma_current, Hermite_Fourier_system
 from ._diagnostics import diagnostics
 
-__all__ = ["cross_product", "ode_system", "simulation"]
+__all__ = ["cross_product", "ode_system", "simulation", "FlooredPIDController"]
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz'])
 def _twothirds_mask(Ny: int, Nx: int, Nz: int):
@@ -102,11 +103,36 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     dFk_dt = jnp.concatenate([dEk_dt, dBk_dt], axis=0)
     return dCk_s_dt, dFk_dt
 
-def _stepsize_controller(adaptive_time_step, tolerance, dtmin=None):
-    """PID control at `tolerance` with an optional step floor `dtmin` (None: no floor), or constant steps."""
+def _stepsize_controller(adaptive_time_step, tolerance, dtmin=None, atol=None):
+    """PID control at relative tolerance `tolerance` and absolute tolerance `atol` (default: `tolerance`),
+    with an optional step floor `dtmin` (None: no floor), or constant steps."""
     if not adaptive_time_step:
         return ConstantStepSize()
-    return PIDController(rtol=tolerance, atol=tolerance, dtmin=dtmin, force_dtmin=False)
+    return PIDController(rtol=tolerance, atol=tolerance if atol is None else atol, dtmin=dtmin, force_dtmin=False)
+
+
+class FlooredPIDController(PIDController):
+    """PID control with an extra absolute error floor per state component.
+
+    ``floor`` is a pytree with the structure of the state ``y``; each leaf is an array broadcastable to
+    that component, or None (no floor). A component's error is scaled by ``atol + floor + rtol*|y|``
+    instead of ``atol + rtol*|y|`` (``|y| = max(|y0|, |y1|)``), so round-off in components far below
+    their own natural scale (a species many orders below another) cannot drive the step size.
+    ``floor=None`` gives exactly ``PIDController``. Use it with ``diffrax.diffeqsolve``.
+    """
+
+    floor: object = None
+
+    def adapt_step_size(self, t0, t1, y0, y1_candidate, args, y_error, error_order, controller_state):
+        if self.floor is not None:
+            def shrink(floor, err, a, b):
+                if floor is None:
+                    return err
+                y = jnp.maximum(jnp.abs(a), jnp.abs(jnp.nan_to_num(b)))
+                return err * ((self.atol + self.rtol * y) / (self.atol + floor + self.rtol * y))
+            y_error = jax.tree_util.tree_map(shrink, self.floor, y_error, y0, y1_candidate,
+                                             is_leaf=lambda x: x is None)
+        return super().adapt_step_size(t0, t1, y0, y1_candidate, args, y_error, error_order, controller_state)
 
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz', 'Nn', 'Nm', 'Np', 'Ns', 'timesteps', 'solver', 'adaptive_time_step',
                                 'dtmin', 'max_steps', 'throw'])
@@ -177,7 +203,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
             parameters["sqrt_p_plus"], parameters["sqrt_p_minus"])
     
 
-    stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_tolerance"], dtmin)
+    stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_rtol"], dtmin, parameters["ode_atol"])
 
     # Solve the ODE system
     ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns)
