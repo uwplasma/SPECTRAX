@@ -195,7 +195,8 @@ def diagnostics(output: dict) -> None:
     term1 = jnp.sqrt(2.0) * (a0 * u0 * C100 + a1 * u1 * C010 + a2 * u2 * C001)  # (Nt, Ns)
     term2 = (1.0 / jnp.sqrt(2.0)) * (a0**2 * C200 + a1**2 * C020 + a2**2 * C002)  # (Nt, Ns)
 
-    kinetic_energy_species = pref[None, :] * (term0[None, :] * C000 + term1 + term2)  # (Nt, Ns)
+    # The k=0 Hermite moments are real up to round-off; keep the energies real so they compose with optimisers.
+    kinetic_energy_species = jnp.real(pref[None, :] * (term0[None, :] * C000 + term1 + term2))  # (Nt, Ns)
     kinetic_energy = jnp.sum(kinetic_energy_species, axis=1)  # (Nt,)
     # Field energy
     rfft_weights = jnp.full(Nx_kept, 2.0)
