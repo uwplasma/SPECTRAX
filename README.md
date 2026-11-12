@@ -195,7 +195,7 @@ most important keys. Keys absent from the file fall back to sensible defaults sp
 | `dn1, dn2` | Amplitudes of initial density perturbations (see examples). |
 | `ode_tolerance` | Relative/absolute tolerance for adaptive solvers. |
 | `Nx, Ny, Nz` | Number of retained Fourier modes per spatial dimension. |
-| `Nn, Nm, Np` | Number of Hermite modes per velocity dimension. |
+| `Nn, Nm, Np` | Number of Hermite modes per velocity dimension: an int, or a tuple with one count per species (e.g. `Nn = [64, 16]` in TOML). The state is padded to the largest count and the unused modes stay zero. |
 | `Ns` | Number of species (two by default). |
 | `timesteps` | Number of solution snapshots to store between `t=0` and `t_max`. |
 | `dt` | Initial step size provided to the ODE solver. |

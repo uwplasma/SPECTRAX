@@ -159,3 +159,39 @@ def test_continuation_from_output_matches_single_run():
                         **g, timesteps=2, **kw)
     assert jnp.allclose(second["Ck"][-1], full["Ck"][-1], rtol=0, atol=1e-13)
     assert jnp.allclose(second["Fk"][-1], full["Fk"][-1], rtol=0, atol=1e-13)
+
+def _ion_acoustic(Nn, Nx=3):
+    """Two-species ion-acoustic run (k=1, cold-ish ions); `Ck` is padded to max(Nn) per species."""
+    Hn = max(Nn) if isinstance(Nn, tuple) else Nn
+    al_e, mi, Ti = 0.5, 25.0, 0.1
+    al_i = al_e * jnp.sqrt(Ti / mi)
+    Ck = jnp.zeros((2 * Hn, 1, Nx // 2 + 1, 1), dtype=jnp.complex128)
+    Ck = Ck.at[0, 0, 0, 0].set(1 / al_e**3).at[0, 0, 1, 0].set(-0.5e-3j / al_e**3).at[Hn, 0, 0, 0].set(1 / al_i**3)
+    parameters = {"Ck_0": Ck, "Fk_0": jnp.zeros((6, 1, Nx // 2 + 1, 1), dtype=jnp.complex128),
+                  "qs": jnp.array([-1.0, 1.0]), "alpha_s": jnp.array([al_e] * 3 + [al_i] * 3), "u_s": jnp.zeros(6),
+                  "Omega_cs": jnp.array([1.0, 1 / mi]), "Lx": 2 * jnp.pi, "Ly": 1.0, "Lz": 1.0, "nu": 0.5,
+                  "t_max": 5.0, "ode_tolerance": 1e-8}
+    return simulation(parameters, Nx=Nx, Nn=Nn, Ns=2, timesteps=21, dt=0.01)
+
+def test_per_species_hermite_counts_match_uniform_and_stay_inside_their_size():
+    """A tuple of equal counts is the uniform run bit for bit; ions at fewer Hermite modes track the
+    all-high run, keep the unused modes exactly zero, and err less as ion modes are added."""
+    ref = _ion_acoustic(24)
+    same = _ion_acoustic((24, 24))
+    assert jnp.array_equal(same["Ck"], ref["Ck"]) and jnp.array_equal(same["Fk"], ref["Fk"])
+    scale = jnp.abs(ref["Fk"]).max()
+    errors = []
+    for Ni in (3, 6):
+        out = _ion_acoustic((24, Ni))
+        ions = out["Ck"][:, 24:]
+        assert jnp.all(ions[:, Ni:] == 0)
+        errors.append(jnp.abs(out["Fk"] - ref["Fk"]).max() / scale)
+    assert errors[1] < errors[0] and errors[1] < 1e-3
+
+def test_per_species_hermite_counts_validated_and_read_from_toml(tmp_path):
+    from spectrax._initialization import load_parameters
+    with pytest.raises(ValueError, match="one entry per species"):
+        simulation(Nx=3, Nn=(4, 4, 4), timesteps=2)
+    toml = tmp_path / "in.toml"
+    toml.write_text("[input_parameters]\node_tolerance = 1e-8\n[solver_parameters]\nNn = [8, 4]\nNs = 2\n")
+    assert load_parameters(toml)[1]["Nn"] == (8, 4)

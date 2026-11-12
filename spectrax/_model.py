@@ -183,7 +183,7 @@ def Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col,
         jnp.sqrt(2) * sqrt_m_minus * (u0 / a1) * shift_multi(C, dn=0, dm=-1, dp=0))
 
 
-    Col  = -nu * col[None, :, :, :, None, None, None] * Ck
+    Col  = -nu * col[..., None, None, None] * Ck
     
     Diff = -D * k2_grid * Ck
         
