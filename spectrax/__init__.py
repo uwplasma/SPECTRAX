@@ -7,11 +7,20 @@ convenient access (e.g. ``from spectrax import simulation, load_parameters``).
 import os
 from pathlib import Path
 
-# Persistent compilation cache. JAX reads these variables when it is first
-# imported (during the imports below); values already set by the user win.
-os.environ.setdefault("JAX_COMPILATION_CACHE_DIR", str(Path.home() / ".cache/spectrax/jax"))
-os.environ.setdefault("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS", "0")
-os.environ.setdefault("JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES", "0")
+import jax
+
+# Persistent compilation cache. Set through jax.config (not only the environment)
+# so it also applies when jax was imported before spectrax; user-set
+# JAX_COMPILATION_CACHE_DIR / JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS win.
+jax.config.update(
+    "jax_compilation_cache_dir",
+    os.environ.get("JAX_COMPILATION_CACHE_DIR", str(Path.home() / ".cache/spectrax/jax")),
+)
+jax.config.update(
+    "jax_persistent_cache_min_compile_time_secs",
+    float(os.environ.get("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS", "0")),
+)
+jax.config.update("jax_persistent_cache_min_entry_size_bytes", 0)
 
 from .version import __version__
 
