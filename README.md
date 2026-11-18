@@ -194,6 +194,7 @@ most important keys. Keys absent from the file fall back to sensible defaults sp
 | `nx, ny, nz` | Mode numbers used to seed sinusoidal perturbations (see examples). |
 | `dn1, dn2` | Amplitudes of initial density perturbations (see examples). |
 | `ode_tolerance` | Relative/absolute tolerance for adaptive solvers. |
+| `ode_rtol`, `ode_atol` | Separate relative and absolute tolerances of the adaptive step controller (default: `ode_tolerance`). |
 | `Nx, Ny, Nz` | Number of retained Fourier modes per spatial dimension. |
 | `Nn, Nm, Np` | Number of Hermite modes per velocity dimension. |
 | `Ns` | Number of species (two by default). |
