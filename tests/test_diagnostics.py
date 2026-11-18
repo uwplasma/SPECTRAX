@@ -110,3 +110,13 @@ def test_hermite_tail_fraction_is_per_species_for_three_species():
         dCk = dCk.at[0, s * Nn + Nn - 1, 0, 1, 0].set(tail)  # outermost Hermite mode
     out = hermite_tail_fraction({"dCk": dCk, "Nx": 3, "Nn": Nn, "Nm": 1, "Np": 1, "Ns": Ns})
     assert out[0] == pytest.approx(jnp.array([0.0, 0.5, 0.9]))
+
+
+def test_public_mask_and_weights_are_the_internal_ones():
+    """Companion codes import the mask and the Parseval weights by public names."""
+    import spectrax
+    from spectrax._diagnostics import _rfft_weights
+    from spectrax._simulation import _twothirds_mask
+    assert spectrax.rfft_weights is _rfft_weights and spectrax.twothirds_mask is _twothirds_mask
+    assert spectrax.rfft_weights(7, 4).tolist() == [1.0, 2.0, 2.0, 2.0]
+    assert spectrax.twothirds_mask(1, 9, 1).shape == (1, 5, 1)
