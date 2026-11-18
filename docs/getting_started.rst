@@ -18,10 +18,11 @@ and install it using the following command:
 Run an example
 --------------
 
-To run the main example, use the following command:
+A case is one TOML file; the input reference and the Python interface are in the README (``Usage`` and
+``Input File Format``).
 
 .. code-block:: console
 
-    spectrax
+    spectrax Examples/input_1D_two_stream.toml
 
-More examples are in the `examples` folder.
+More examples are in the `Examples` folder.
