@@ -79,6 +79,32 @@ def test_fixed_step_gradient_is_independent_of_checkpoint_budget():
     assert_matches_finite_differences(gradients[0], lambda th: energy(th, **fixed), theta0)
 
 
+def many_save_objective(theta, adjoint, timesteps=201, max_steps=220):
+    """Time mean over saves that land exactly on the dt = 0.01 step grid (the Diffrax 0.7.2 trigger)."""
+    output = simulation(orszag_tang(theta, 2.0), Nx=Nx, Ny=Ny, Nz=1, Nn=Nn, Nm=Nm, Np=Np, Ns=Ns, timesteps=timesteps,
+                        dt=0.01, solver=Tsit5(), adaptive_time_step=False, max_steps=max_steps, adjoint=adjoint,
+                        progress_meter=NoProgressMeter())
+    return jnp.mean(output["EM_energy"]) + jnp.mean(jnp.sum(jnp.abs(output["Ck"]) ** 2, axis=(1, 2, 3, 4)))
+
+
+@pytest.fixture(scope="module")
+def many_save_forward():
+    return jax.jacfwd(lambda th: many_save_objective(th, ForwardMode()))(theta0)
+
+
+@pytest.mark.xfail(strict=True, reason="Diffrax 0.7.2 RecursiveCheckpointAdjoint: saves on fixed-step ends "
+                   "give wrong gradients (2.5% here); remove the xfail once Diffrax is fixed")
+def test_fixed_step_many_saves_default_adjoint_matches_forward_mode(many_save_forward):
+    reverse = jax.jit(jax.grad(lambda th: many_save_objective(th, RecursiveCheckpointAdjoint())))(theta0)
+    np.testing.assert_allclose(reverse, many_save_forward, rtol=1e-9)
+
+
+def test_fixed_step_many_saves_one_checkpoint_per_step_is_exact(many_save_forward):
+    """The documented workaround: checkpoints = max_steps (>= the number of steps) is exact."""
+    reverse = jax.jit(jax.grad(lambda th: many_save_objective(th, RecursiveCheckpointAdjoint(checkpoints=220))))(theta0)
+    np.testing.assert_allclose(reverse, many_save_forward, rtol=1e-9)
+
+
 def test_reverse_pass_workspace_is_bounded_in_the_number_of_steps():
     """With a fixed checkpoint budget the compiled reverse-pass workspace does not grow with the step count."""
     def workspace(steps):
