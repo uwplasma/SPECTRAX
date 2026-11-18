@@ -11,6 +11,13 @@ from .midpoint_solver import ImplicitMidpoint
 
 __all__ = ["load_parameters", "initialize_simulation_parameters"]
 
+def _per_species(N, Ns):
+    """Hermite counts as a length-`Ns` tuple: an int applies to every species, a sequence is per species."""
+    N = (N,) * Ns if isinstance(N, int) else tuple(N)
+    if len(N) != Ns:
+        raise ValueError(f"Hermite counts {N} must be one int or one entry per species (Ns={Ns}).")
+    return N
+
 @partial(jit, static_argnames=['Nx', 'Ny', 'Nz','Nn', 'Nm', 'Np', 'Ns', 'timesteps'])
 def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=50, Nm=1, Np=1, Ns=2, timesteps=500, dt=0.01):
     """
@@ -28,8 +35,9 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         the corresponding default before derived quantities are computed.
     Nx, Ny, Nz : int, optional
         Number of Fourier modes along each spatial direction.
-    Nn, Nm, Np : int, optional
-        Number of Hermite modes along each velocity-space axis.
+    Nn, Nm, Np : int or tuple of int, optional
+        Number of Hermite modes along each velocity-space axis; a tuple gives one count per
+        species. The state is padded to the largest count (`Nn`, `Nm`, `Np` in the output).
     Ns : int, optional
         Number of particle species represented in the simulation.
     timesteps : int, optional
@@ -43,6 +51,8 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         Dictionary containing the merged parameters, derived helper arrays, and
         initial spectral coefficients such as `Ck_0` and `Fk_0`.
     """
+    Nns, Nms, Nps = (_per_species(N, Ns) for N in (Nn, Nm, Np))
+    Nn, Nm, Np = max(Nns), max(Nms), max(Nps)
     # Define all default parameters in a single dictionary
     default_parameters = {
         "Lx": 4 * jnp.pi,
@@ -117,16 +127,17 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     k2_grid = kx_grid**2 + ky_grid**2 + kz_grid**2
     nabla = jnp.array([kx_grid / Lx, ky_grid / Ly, kz_grid / Lz])
 
-    def precompute_collisions(Nn, Nm, Np):
-        p = jnp.arange(Np)[:, None, None]
-        m = jnp.arange(Nm)[None, :, None]
-        n = jnp.arange(Nn)[None, None, :]
-        def safe(N, i):
+    def precompute_collisions():
+        """Hypercollision weights (Ns, Np, Nm, Nn), each species normalized by its own counts."""
+        def safe(Nspec, i):
+            N = jnp.array(Nspec)[:, None, None, None]
             term = i * (i - 1) * (i - 2)
             denom = (N - 1) * (N - 2) * (N - 3)
             return jnp.where(N > 3, term / denom, 0.0)
-        col = safe(Nn, n) + safe(Nm, m) + safe(Np, p)
-        return col
+        p = jnp.arange(Np)[None, :, None, None]
+        m = jnp.arange(Nm)[None, None, :, None]
+        n = jnp.arange(Nn)[None, None, None, :]
+        return safe(Nns, n) + safe(Nms, m) + safe(Nps, p)
     
     def build_coeff_tables(Nn, Nm, Np):
         p = jnp.arange(Np)[None, :, None, None, None, None, None]
@@ -146,7 +157,7 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
 
     parameters.update({
         "kx_grid": kx_grid, "ky_grid": ky_grid, "kz_grid": kz_grid, "k2_grid": k2_grid, 
-        "nabla": nabla, "collision_matrix": precompute_collisions(Nn, Nm, Np),
+        "nabla": nabla, "collision_matrix": precompute_collisions(),
         "sqrt_n_plus": sqrt_n_plus, "sqrt_n_minus": sqrt_n_minus,
         "sqrt_m_plus": sqrt_m_plus, "sqrt_m_minus": sqrt_m_minus,
         "sqrt_p_plus": sqrt_p_plus, "sqrt_p_minus": sqrt_p_minus,
@@ -184,6 +195,8 @@ def load_parameters(input_file):
             if issubclass(cls, diffrax.AbstractSolver) and cls is not diffrax.AbstractSolver and cls_name == name: return cls()
             elif name == "ImplicitMidpoint": return ImplicitMidpoint(rtol=input_parameters["ode_tolerance"], atol=input_parameters["ode_tolerance"])
         raise ValueError(f"Solver '{name}' is not supported. Choose from Diffrax solvers.")
+    for N in ("Nn", "Nm", "Np"):  # per-species lists must be hashable (static jit arguments)
+        if isinstance(solver_parameters.get(N), list): solver_parameters[N] = tuple(solver_parameters[N])
     solver_parameters["solver"] = get_solver_class(solver_parameters.get("solver", "Dopri8"))
     
     return input_parameters, solver_parameters

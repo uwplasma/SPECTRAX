@@ -6,7 +6,7 @@ config.update("jax_enable_x64", True)
 from functools import partial
 from diffrax import (diffeqsolve, Dopri8, ODETerm,
                      SaveAt, PIDController, TqdmProgressMeter, NoProgressMeter, ConstantStepSize)
-from ._initialization import initialize_simulation_parameters
+from ._initialization import initialize_simulation_parameters, _per_species
 from ._model import plasma_current, Hermite_Fourier_system
 from ._diagnostics import diagnostics
 
@@ -58,8 +58,9 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     ----------
     Nx, Ny, Nz : int
         Number of Fourier modes per spatial dimension.
-    Nn, Nm, Np : int
-        Number of Hermite modes per velocity-space dimension.
+    Nn, Nm, Np : int or tuple of int
+        Number of Hermite modes per velocity-space dimension; a tuple gives one count per
+        species, with the state padded (and kept exactly zero) beyond each species' count.
     Ns : int
         Number of species.
     t : float
@@ -82,17 +83,32 @@ def ode_system(Nx, Ny, Nz, Nn, Nm, Np, Ns, t, Ck_Fk, args):
     ) = args[7:]
 
     Ck, Fk = Ck_Fk
-
+    hs = tuple(zip(*(_per_species(N, Ns) for N in (Nn, Nm, Np))))
+    Nn, Nm, Np = (max(N) for N in zip(*hs))
 
     # Build the 2/3 mask once per call (JIT will constant-fold it since Nx/Ny/Nz are static)
     mask23 = _twothirds_mask(Ny, Nx, Nz)
 
     F = jnp.fft.irfftn(Fk * mask23, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
-    C = jnp.fft.irfftn(Ck * mask23, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
 
-    dCk_s_dt = Hermite_Fourier_system(Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col, 
-                                      sqrt_n_plus, sqrt_n_minus, sqrt_m_plus, sqrt_m_minus, sqrt_p_plus, sqrt_p_minus, 
-                                      Lx, Ly, Lz, nu, D, alpha_s, u_s, qs, Omega_cs, Nn, Nm, Np, Ns, mask23=mask23)
+    herm = lambda Ck, C, sl, ns, n, m, p: Hermite_Fourier_system(
+        Ck, C, F, kx_grid, ky_grid, kz_grid, k2_grid, col[sl, :p, :m, :n],
+        sqrt_n_plus[..., :n, :, :, :], sqrt_n_minus[..., :n, :, :, :],
+        sqrt_m_plus[..., :m, :, :, :, :], sqrt_m_minus[..., :m, :, :, :, :],
+        sqrt_p_plus[..., :p, :, :, :, :, :], sqrt_p_minus[..., :p, :, :, :, :, :],
+        Lx, Ly, Lz, nu, D, alpha_s[3 * ns[0]:3 * ns[1]], u_s[3 * ns[0]:3 * ns[1]], qs[slice(*ns)],
+        Omega_cs[slice(*ns)], n, m, p, ns[1] - ns[0], mask23=mask23)
+    if len(set(hs)) == 1:
+        C = jnp.fft.irfftn(Ck * mask23, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
+        dCk_s_dt = herm(Ck, C, slice(None), (0, Ns), Nn, Nm, Np)
+    else:  # species with different Hermite counts: each runs at its own size, then is zero-padded back
+        parts = []
+        for s, (n, m, p) in enumerate(hs):
+            Cks = Ck[s:s + 1, :p, :m, :n]
+            C = jnp.fft.irfftn(Cks * mask23, s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
+            d = herm(Cks, C, slice(s, s + 1), (s, s + 1), n, m, p)
+            parts.append(jnp.pad(d, ((0, 0), (0, Np - p), (0, Nm - m), (0, Nn - n), (0, 0), (0, 0), (0, 0))))
+        dCk_s_dt = jnp.concatenate(parts)
 
     dBk_dt = -1j * cross_product(nabla, Fk[:3])
     
@@ -123,8 +139,10 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
         User-specified overrides passed to `initialize_simulation_parameters`.
     Nx, Ny, Nz : int, optional
         Number of retained Fourier modes per spatial direction.
-    Nn, Nm, Np : int, optional
-        Number of Hermite modes per velocity-space axis.
+    Nn, Nm, Np : int or tuple of int, optional
+        Number of Hermite modes per velocity-space axis. A tuple gives one count per species
+        (e.g. ``Nn=(64, 16)`` for electrons and ions); the state is then padded to the largest
+        count, with ``Ck`` indexed as ``s*Nn_max*Nm_max*Np_max + ...`` and the unused modes zero.
     Ns : int, optional
         Number of species.
     timesteps : int, optional
@@ -155,7 +173,9 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     """
     
     # **Initialize simulation parameters**
-    parameters = initialize_simulation_parameters(input_parameters, Nx, Ny, Nz, Nn, Nm, Np, Ns, timesteps, dt)
+    hs = tuple(_per_species(N, Ns) for N in (Nn, Nm, Np))
+    parameters = initialize_simulation_parameters(input_parameters, Nx, Ny, Nz, *hs, Ns, timesteps, dt)
+    Nn, Nm, Np = (max(N) for N in hs)  # the state is padded to the largest counts
 
     # Preserve the species and Hermite axes for the integrator.
     initial_conditions = (
@@ -180,7 +200,7 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_tolerance"], dtmin)
 
     # Solve the ODE system
-    ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns)
+    ode_system_partial = partial(ode_system, Nx, Ny, Nz, *hs, Ns)
     sol = diffeqsolve(
         ODETerm(ode_system_partial), solver=solver,
         stepsize_controller=stepsize_controller,
