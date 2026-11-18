@@ -7,6 +7,8 @@ try: import tomllib
 except ModuleNotFoundError: import tomli as tomllib
 import diffrax
 import inspect
+import importlib.util
+from pathlib import Path
 from .midpoint_solver import ImplicitMidpoint
 
 __all__ = ["load_parameters", "initialize_simulation_parameters", "species_initial_state"]
@@ -245,6 +247,12 @@ def load_parameters(input_file, **overrides):
         input_parameters.update(species_initial_state(parameters["species"], **geometry, **grid))
         input_parameters.pop("Omega_ce", None), input_parameters.pop("B0", None)
         solver_parameters["Ns"] = len(parameters["species"])
+
+    if "initial_state" in parameters:        # [initial_state] file = "x.py": its initial_state(input_parameters, solver_parameters) -> dict
+        spec = importlib.util.spec_from_file_location("spectrax_initial_state", Path(input_file).parent / parameters["initial_state"]["file"])
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        input_parameters.update(module.initial_state(input_parameters, solver_parameters))
 
     # Whether to use adaptive time-stepping or constant dt.
     # Default is True.

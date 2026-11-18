@@ -22,3 +22,6 @@ charge = -1
 vth = 0.707107
 drift = -1.0
 perturbation_amplitude = 0.01
+
+[output]
+figure = "1D_two_stream.png"

@@ -21,3 +21,6 @@ perturbation_amplitude = 0.001  # density * (1 + 0.001 cos(2 pi x / Lx))
 charge = 1
 mass = 1836
 vth = 0.0023
+
+[output]
+figure = "1D_Landau_damping.png"
