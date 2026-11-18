@@ -49,3 +49,9 @@ def test_cli_runs_a_species_toml_and_saves_the_diagnostic_figure(tmp_path):
     output = main([str(toml), "--no-show"])
     assert (tmp_path / "input.png").stat().st_size > 0
     assert output["Ck"].shape[1] == 3 * 3 * 2 and "electric_energy" in output
+
+
+def test_persistent_compilation_cache_is_configured():
+    import jax
+    assert jax.config.jax_compilation_cache_dir
+    assert jax.config.jax_persistent_cache_min_compile_time_secs == 0
