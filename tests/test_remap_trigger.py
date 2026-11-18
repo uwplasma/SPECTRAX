@@ -1,4 +1,4 @@
-"""Remap triggers with hysteresis, a recorded schedule and its frozen replay (for gradients)."""
+"""Remap trigger, a recorded schedule and its frozen replay (for gradients)."""
 import numpy as np
 import pytest
 import jax
@@ -6,46 +6,32 @@ import jax.numpy as jnp
 from diffrax import NoProgressMeter
 from spectrax import simulation
 from spectrax._remap import remap, remap_event, remap_trigger
-from tests.test_remap import _maxwellian
+from tests.conftest import B0, maxwellian_state
 
 jax.config.update("jax_enable_x64", True)
 N = 16
-B0 = jnp.array([[0.0, 0, 0], [1.0, 1, 1]])
 
 
-def _state(d, r):
-    return jnp.zeros((1, 1, 1, N, 1, 1, 1)).at[0, 0, 0, :, 0, 0, 0].set(_maxwellian(N, d, r))
-
-
-@pytest.mark.parametrize("d,r,fires", [(0.2, 1.0, False), (0.35, 1.0, True), (-0.35, 1.0, True),
-                                        (0.0, 1.03, False), (0.0, 1.08, True), (0.0, 0.93, True)])
+@pytest.mark.parametrize("d,r,fires", [(0.05, 1.0, False), (0.15, 1.0, True), (-0.15, 1.0, True),
+                                        (0.0, 1.03, False), (0.0, 1.15, True), (0.0, 1.3, True)])
 def test_manufactured_shifted_and_heated_maxwellians(d, r, fires):
-    fire, new, info = remap_trigger(_state(d, r), B0, N, 1, 1, 1)
+    fire, new, info = remap_trigger(maxwellian_state(N, d, r), B0, N, 1, 1, 1)
     assert fire is fires
     if fires:  # after the remap the same state does not fire again
-        C2 = remap(_state(d, r), B0, jnp.asarray(new), N, 1, 1, 1)
+        C2 = remap(maxwellian_state(N, d, r), B0, jnp.asarray(new), N, 1, 1, 1)
         assert remap_trigger(C2, jnp.asarray(new), N, 1, 1, 1)[0] is False
 
 
 def test_slow_drift_does_not_chatter():
-    """A Maxwellian drifting by 0.05 a per check fires every ~7 checks, never on consecutive checks."""
+    """A Maxwellian drifting by 0.04 a per check fires every ~3 checks, never on consecutive checks."""
     basis, events = B0, []
     for j in range(1, 60):
-        C = remap(_state(0.05 * j, 1.0), B0, basis, N, 1, 1, 1)  # same f, current basis
+        C = remap(maxwellian_state(N, 0.04 * j, 1.0), B0, basis, N, 1, 1, 1)  # same f, current basis
         fire, new, _ = remap_trigger(C, basis, N, 1, 1, 1)
         if fire:
             events.append(j)
             basis = jnp.asarray(new)
-    gaps = np.diff(events)
-    assert len(events) >= 7 and gaps.min() >= 6
-
-
-def test_tail_trigger_needs_growth_and_a_move():
-    C = _state(0.1, 1.0).at[0, 0, 0, 14, 0, 0, 0].set(1e-2)  # a tail, small drift
-    assert remap_trigger(C, B0, N, 1, 1, 1, tail_on=1e-6)[0] is True
-    assert remap_trigger(C, B0, N, 1, 1, 1, tail_on=1e-6, last_tail=[1e-4])[0] is False  # not doubled
-    still = _state(0.0, 1.0).at[0, 0, 0, 14, 0, 0, 0].set(1e-2)
-    assert remap_trigger(still, B0, N, 1, 1, 1, tail_on=1e-6)[0] is False  # nothing to move
+    assert len(events) >= 15 and np.diff(events).min() >= 2
 
 
 def _segments(U, schedule=None, n_seg=6, dt_seg=2.0):

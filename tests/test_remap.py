@@ -8,20 +8,10 @@ from spectrax import simulation
 from spectrax._model import basis_rate_terms
 from spectrax._remap import (remap_matrix, remap, moment_target, cap_target, remap_event, low_moments,
                              tail_fraction)
-from tests.test_moving_basis import ORDERS, random_state, axis_moments
+from tests.conftest import ORDERS, B0, h_table, random_state, axis_moments, maxwellian_state
 
 jax.config.update("jax_enable_x64", True)
 Nn, Nm, Np = ORDERS
-
-
-def h_table(N, x):
-    h = np.zeros((N, x.size))
-    h[0] = 1.0
-    if N > 1:
-        h[1] = np.sqrt(2) * x
-    for n in range(1, N - 1):
-        h[n + 1] = np.sqrt(2 / (n + 1)) * x * h[n] - np.sqrt(n / (n + 1)) * h[n - 1]
-    return h
 
 
 @pytest.mark.parametrize("N,A,B", [(1, 1.3, 0.2), (2, 0.8, -0.4), (12, 1.1, 0.5), (40, 0.95, -0.3)])
@@ -82,21 +72,11 @@ def test_generator_of_the_remap_is_the_moving_basis_rate():
     assert float(jnp.abs(deriv - expect).max()) < 1e-12 * float(jnp.abs(expect).max())
 
 
-def _maxwellian(N, d, r):
-    """Exact coefficients (in a basis of centre 0, width 1) of a Maxwellian centred at d with basis-matched
-    width r: g_n = projection computed by quadrature."""
-    x, w = np.polynomial.hermite.hermgauss(N + 40)
-    v = x * r + d  # integrate f(v) h_n(v) dv with f = e^{-(v-d)^2/r^2}/(r sqrt(pi))
-    return (h_table(N, v) * w).sum(axis=1) / np.sqrt(np.pi)
-
-
 @pytest.mark.parametrize("d,r", [(0.5, 1.0), (0.9, 1.2), (-0.7, 0.9)])
 def test_target_recentres_a_shifted_heated_maxwellian_to_one_mode(d, r):
     """moment_target recovers (U, sqrt(2) sigma) exactly and the remap returns g = delta_n0."""
     N = 24
-    g = _maxwellian(N, d, r)
-    Ck = jnp.zeros((1, 1, 1, N, 1, 1, 1)).at[0, 0, 0, :, 0, 0, 0].set(g)
-    B = jnp.array([[0.0, 0, 0], [1.0, 1, 1]])
+    Ck, B = maxwellian_state(N, d, r), B0
     target, sigma = moment_target(Ck, B, N, 1, 1, 1)
     np.testing.assert_allclose(target[:, 0], [d, r], rtol=1e-13)
     np.testing.assert_allclose(sigma[0], r / np.sqrt(2), rtol=1e-13)
@@ -105,7 +85,7 @@ def test_target_recentres_a_shifted_heated_maxwellian_to_one_mode(d, r):
 
 
 def test_caps_are_enforced_and_targets_are_clipped():
-    B = jnp.array([[0.0, 0, 0], [1.0, 1, 1]])
+    B = B0
     Ck = jnp.zeros((1, 1, 1, 6, 1, 1, 1)).at[0, 0, 0, 0, 0, 0, 0].set(1.0)
     with pytest.raises(ValueError, match="caps"):
         remap_event(Ck, B, jnp.array([[1.5, 0, 0], [1.0, 1, 1]]), 6, 1, 1, 1)  # |du|/a' = 1.5
