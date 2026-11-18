@@ -72,7 +72,7 @@ output = block_until_ready(simulation(input_parameters, **solver_parameters))
 print(f"Runtime: {time() - start_time} seconds")
 
 # print('Saving results...')
-# jnp.savez('/Users/csvega/Desktop/Madison/Code/Simulations/Orszag_Tang/S17/output_orszag.npz', **output)
+# jnp.savez('output_orszag.npz', **output)
 
 # Results.
 
