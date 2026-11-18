@@ -56,7 +56,7 @@ def test_solver_state_keeps_species_and_hermite_axes(monkeypatch):
     monkeypatch.setattr(sim, "diffeqsolve", stop)
     with pytest.raises(RuntimeError, match="captured"):
         simulation(Nx=7, Nn=4, timesteps=3)
-    shapes = [(2, 1, 1, 4, 1, 4, 1), (6, 1, 4, 1)]
+    shapes = [(2, 1, 1, 4, 1, 4, 1, 2), (6, 1, 4, 1, 2)]  # trailing axis: (real, imag)
     assert [y.shape for y in captured["y0"]] == shapes
     assert [y.shape for y in captured["rhs"]] == shapes
 
@@ -139,7 +139,7 @@ def test_structured_state_maps_flat_hermite_index_to_species_p_m_n(monkeypatch):
     import jax
     with jax.disable_jit(), pytest.raises(RuntimeError, match="captured"):
         simulation(params, **g, timesteps=2)
-    Ck = captured["y0"][0]
+    Ck = captured["y0"][0][..., 0] + 1j * captured["y0"][0][..., 1]
     assert Ck.shape == (g["Ns"], g["Np"], g["Nm"], g["Nn"], g["Ny"], g["Nx"] // 2 + 1, g["Nz"])
     Nn, Nm, Np = g["Nn"], g["Nm"], g["Np"]
     for s, p, m, n in [(0, 0, 0, 1), (1, 3, 1, 2), (2, 2, 0, 0)]:
@@ -159,3 +159,25 @@ def test_continuation_from_output_matches_single_run():
                         **g, timesteps=2, **kw)
     assert jnp.allclose(second["Ck"][-1], full["Ck"][-1], rtol=0, atol=1e-13)
     assert jnp.allclose(second["Fk"][-1], full["Fk"][-1], rtol=0, atol=1e-13)
+
+@pytest.mark.filterwarnings("ignore:Complex dtype")  # the complex reference solve below warns by design
+def test_diffrax_integrates_real_and_imaginary_parts_without_complex_warning():
+    """Diffrax sees float state (no complex-dtype warning); fixed steps match a complex-state solve."""
+    import warnings
+    from functools import partial
+    from diffrax import diffeqsolve, ODETerm, Dopri8, SaveAt, ConstantStepSize
+    from spectrax import ode_system
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*omplex.*")
+        r = simulation(Nx=5, Nn=3, timesteps=3, dt=0.01, adaptive_time_step=False)
+    Nx, Nn, Ns = 5, 3, 2
+    y0 = (r["Ck_0"].reshape(Ns, 1, 1, Nn, 1, Nx // 2 + 1, 1), r["Fk_0"].reshape(6, 1, Nx // 2 + 1, 1))
+    args = (Nx, 1, 1, Nn, 1, 1, Ns, r["qs"], r["nu"], r["D"], r["Omega_cs"], r["alpha_s"], r["u_s"],
+            r["Lx"], r["Ly"], r["Lz"], r["kx_grid"], r["ky_grid"], r["kz_grid"], r["k2_grid"], r["nabla"],
+            r["collision_matrix"], r["sqrt_n_plus"], r["sqrt_n_minus"], r["sqrt_m_plus"], r["sqrt_m_minus"],
+            r["sqrt_p_plus"], r["sqrt_p_minus"])
+    ref = diffeqsolve(ODETerm(partial(ode_system, Nx, 1, 1, Nn, 1, 1, Ns)), Dopri8(), t0=0, t1=r["t_max"], dt0=0.01,
+                      y0=y0, args=args, saveat=SaveAt(ts=r["time"]), stepsize_controller=ConstantStepSize(),
+                      max_steps=100000)
+    assert jnp.allclose(r["Fk"], ref.ys[1], rtol=1e-12, atol=1e-14)
+    assert jnp.allclose(r["Ck"], ref.ys[0].reshape(r["Ck"].shape), rtol=1e-12, atol=1e-14)

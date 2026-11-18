@@ -180,17 +180,22 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     stepsize_controller = _stepsize_controller(adaptive_time_step, parameters["ode_tolerance"], dtmin)
 
     # Solve the ODE system
+    # Integrate the real and imaginary parts as float arrays (no complex dtype inside Diffrax).
     ode_system_partial = partial(ode_system, Nx, Ny, Nz, Nn, Nm, Np, Ns)
+    to_real = lambda y: tuple(jnp.stack([a.real, a.imag], -1) for a in y)
+    to_complex = lambda y: tuple(a[..., 0] + 1j * a[..., 1] for a in y)
+    rhs = lambda t, y, args: to_real(ode_system_partial(t, to_complex(y), args))
     sol = diffeqsolve(
-        ODETerm(ode_system_partial), solver=solver,
+        ODETerm(rhs), solver=solver,
         stepsize_controller=stepsize_controller,
         t0=0, t1=parameters["t_max"], dt0=dt,
-        y0=initial_conditions, args=args, saveat=SaveAt(ts=time),
+        y0=to_real(initial_conditions), args=args, saveat=SaveAt(ts=time),
         max_steps=max_steps, progress_meter=TqdmProgressMeter(), throw=throw)
         
     # Reshape the solution to extract Ck and Fk
-    Ck = sol.ys[0].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz)
-    Fk = sol.ys[1]
+    ys = to_complex(sol.ys)
+    Ck = ys[0].reshape(len(sol.ts), Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz)
+    Fk = ys[1]
     
     # Set n = 0, k = 0 mode to zero to get array with time evolution of perturbation.
     dCk = Ck.at[:, jnp.arange(Ns) * Nn * Nm * Np, 0, 0, 0].set(0)
