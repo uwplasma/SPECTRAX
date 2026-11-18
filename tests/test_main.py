@@ -56,3 +56,9 @@ def test_run_applies_the_output_table_and_overrides(tmp_path):
     assert float(result["time"][-1]) == 0.25 and result.summary()["saved_times"] == 4
     main([str(toml), "species.electrons.vth=0.25", "figure=false", "save=all.npz", "keep=false"])
     assert "Ck" in np.load(tmp_path / "all.npz")
+
+
+def test_persistent_compilation_cache_is_configured():
+    import jax
+    assert jax.config.jax_compilation_cache_dir
+    assert jax.config.jax_persistent_cache_min_compile_time_secs == 0
