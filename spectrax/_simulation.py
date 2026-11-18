@@ -201,6 +201,6 @@ def simulation(input_parameters={}, Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1, Ns=2,
     temporary_output = {"Ck": Ck, "Fk": Fk, "time": time, "dCk": dCk, "solver_stats": sol.stats,
                         "solver_result": sol.result, "valid_times": valid_times,
                         "num_valid_times": jnp.sum(valid_times)}
-    output = {**temporary_output, **parameters}
+    output = {**temporary_output, **parameters, "Nx": Nx}  # static grid length for the rFFT weights
     diagnostics(output)
     return output
