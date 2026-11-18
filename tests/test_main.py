@@ -37,3 +37,8 @@ def test_main_runs_a_2d_toml_without_an_initial_state(tmp_path, mock_plot):
 
 if __name__ == '__main__':
     unittest.main()
+
+def test_persistent_compilation_cache_is_configured():
+    import jax
+    assert jax.config.jax_compilation_cache_dir
+    assert jax.config.jax_persistent_cache_min_compile_time_secs == 0
