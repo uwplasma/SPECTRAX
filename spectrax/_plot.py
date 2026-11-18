@@ -1,128 +1,121 @@
-"""Convenience plotting for SPECTRAX 1D runs.
+"""Automatic diagnostic figure for any SPECTRAX run.
 
-This module is intentionally lightweight and expects the dictionary returned by
-``spectrax.simulation.simulation`` (or ``spectrax.__main__``) as input.
+:func:`plot` takes the dictionary returned by :func:`spectrax.simulation` and draws, for any number of
+species and any dimension, the energy budget (electric, magnetic and kinetic energy of each species), the
+relative error in total energy, the amplitude of the strongest field modes, the Hermite spectrum of each
+species over time, the phase space of each species at the last saved time, and, in 2D or 3D, the field in
+the plane.
 """
 
 import matplotlib.pyplot as plt
-import jax.numpy as jnp
+import numpy as np
 from ._inverse_transform import inverse_HF_transform
-from matplotlib.animation import FuncAnimation
 
-__all__ = ['plot']
+__all__ = ["plot"]
 
-def plot(output):
-    """Plot common diagnostics from a completed simulation output assuming two species in a 1D setup.
 
-    Parameters
-    ----------
-    output : dict
-        Simulation output dictionary containing keys like ``time``, ``Ck``,
-        ``Fk``, energies computed by :func:`spectrax._diagnostics.diagnostics`,
-        and basic grid parameters.
+def _positive(a):
+    return np.where(a > 0, a, np.nan)            # zeros would stretch a log axis to 1e-300
+
+
+def _species_names(output, Ns):
+    return list(output.get("species_names", [f"species {s + 1}" for s in range(Ns)]))
+
+
+def phase_space(output, species=0, time_index=-1, n_velocity=201):
+    """Distribution function f(position, velocity) of one species at one saved time.
+
+    Position is the longest spatial direction and velocity the matching velocity component (the first one
+    with more than one Hermite mode). Other coordinates are taken at zero. Returns (position, velocity, f).
     """
-    time = output["time"]; k_norm = output["k_norm"]
-    u_s = output["u_s"]; alpha_s = output["alpha_s"]; nu = output["nu"]
-    Lx = output["Lx"]; Ly = output["Ly"]; Lz = output["Lz"]
-    Nx = output["Nx"]; Ny = output["Ny"]; Nz = output["Nz"]
-    Nn = int(output["Nn"]); Nm = int(output["Nm"]); Np = int(output["Np"])
-    dn1 = output["dn1"]; Ck = output["Ck"]; dCk = output["dCk"]
-    t_max = output["t_max"]
-    nx = output["nx"] if Nx > 1 else 0
-    ny = output["ny"] if Ny > 1 else 0
-    nz = output["nz"] if Nz > 1 else 0
-    
-    # Setup plots
-    fig, axes = plt.subplots(2, 3, figsize=(15, 9))
-    plt.subplots_adjust(hspace=0.2, wspace=0.2)
-    fig.suptitle(rf'$kv_{{th,e}}/\omega_{{pe}} = {k_norm:.2},'
-                 +rf'\nu = {nu}, u_{{ey}} = {u_s[1]}, \alpha_e = {alpha_s[1]:.3},'
-                 +rf'N_y = {Ny}, N_n = {Nn}, \delta n = {dn1}$', fontsize=14)
-    
-    # Energy plots
-    axes[0, 0].plot(time, output["EM_energy"], label="EM Energy")
-    axes[0, 0].plot(time, output["kinetic_energy"], label="Kinetic Energy")
-    axes[0, 0].plot(time, output["kinetic_energy_species1"], label="Kinetic Energy Species 1")
-    axes[0, 0].plot(time, output["kinetic_energy_species2"], label="Kinetic Energy Species 2")
-    axes[0, 0].plot(time, output["total_energy"], label="Total Energy")
-    axes[0, 0].set(title="Energy", xlabel=r"Time ($\omega_{pe}^{-1}$)", ylabel="Energy", yscale="log")
-    axes[0, 0].legend()
-    
-    # Relative Energy Error
-    axes[1, 0].plot(time[1:], jnp.abs(output["total_energy"][1:]-output["total_energy"][0])/(output["total_energy"][0]+1e-9), label="Relative energy error")
-    axes[1, 0].set(xlabel=r"Time ($\omega_{pe}^{-1}$)", ylabel="Relative Energy Error", yscale="log")
-    
-    # Plot electron density fluctuation vs t.
-    dnk1 = jnp.abs(output["dCk"][:, 0, ny, nx, nz].imag) * alpha_s[0] * alpha_s[1] * alpha_s[2]
-    axes[1, 1].plot(time, dnk1, label=r'$|\delta n^{S1}_{k}|$', linestyle='-', linewidth=2.0)
-    axes[1, 1].set(title='Species 1 density fluctuation', ylabel=r'$log(|\delta n^{s1}_{k}|)$', xlabel=r'$t\omega_{pe}$', yscale="log")
-    
-    # Plot ion density fluctuation vs t.
-    dnk2 = jnp.abs(output["dCk"][:, Nn * Nm * Np, ny, nx, nz].imag) * alpha_s[3] * alpha_s[4] * alpha_s[5]
-    axes[1, 2].plot(time, dnk2, label=r'$|\delta n^{s2}_{k}|$', linestyle='-', linewidth=2.0)
-    axes[1, 2].set(title='Species 2 density fluctuation', ylabel=r'$log(|\delta n^{s2}_{k}|)$', xlabel=r'$t\omega_{pe}$', yscale="log")
-    
-    # Electron Phase space plot
-    i = 0
-    vy = jnp.linspace(-4 * alpha_s[1], 4 * alpha_s[1], 201)
-    Vx, Vy, Vz = jnp.meshgrid(jnp.array([0.]), vy, jnp.array([0.]), indexing='xy')
-    f1 = inverse_HF_transform(Ck[:, (i*Nn*Nm*Np):(i+1)*Nn*Nm*Np, ...], Nn, Nm, Np, int(Nx), int(Ny), int(Nz),
-                                  (Vx - u_s[3*i]) / alpha_s[3*i], 
-                                  (Vy - u_s[3*i+1]) / alpha_s[3*i+1], 
-                                  (Vz - u_s[3*i+2]) / alpha_s[3*i+2])
-    
-    # Slice explicitly to get (Ny, Nvy) -> shape (33, 201)
-    f1_2d = f1[0, :, 0, 0, :, 0, 0] 
-    
-    electron_phase_plot = axes[0, 1].imshow(jnp.transpose(f1_2d), extent=(0, Ly, vy[0], vy[-1]),
-                                            cmap='jet', origin='lower', interpolation='sinc')
-    plt.colorbar(electron_phase_plot, ax=axes[0, 1], label="$f_1$")
-    axes[0, 1].set(xlabel="y/d_e", ylabel="v_y/c", title="Species 1 Phase Space")
-    axes[0, 1].set_aspect('auto', adjustable='box')
-    electron_phase_text = axes[0, 1].text(
-        0.5, 0.9, "", transform=axes[0, 1].transAxes, ha="center", va="top",
-        fontsize=12, bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
-    
-    # Ion Phase space plot
-    i = 1
-    f2 = inverse_HF_transform(Ck[:, (i*Nn*Nm*Np):(i+1)*Nn*Nm*Np, ...], Nn, Nm, Np, int(Nx), int(Ny), int(Nz),
-                                  (Vx - u_s[3*i]) / alpha_s[3*i], 
-                                  (Vy - u_s[3*i+1]) / alpha_s[3*i+1], 
-                                  (Vz - u_s[3*i+2]) / alpha_s[3*i+2])
-    
-    f2_2d = f2[0, :, 0, 0, :, 0, 0]
-    
-    ion_phase_plot = axes[0, 2].imshow(jnp.transpose(f2_2d), extent=(0, Ly, vy[0], vy[-1]),
-                                            cmap='jet', origin='lower', interpolation='sinc')
-    plt.colorbar(ion_phase_plot, ax=axes[0, 2], label="$f_2$")
-    axes[0, 2].set(xlabel="y/d_e", ylabel="v_y/c", title="Species 2 Phase Space")
-    axes[0, 2].set_aspect('auto', adjustable='box')
-    ion_phase_text = axes[0, 2].text(
-        0.5, 0.9, "", transform=axes[0, 2].transAxes, ha="center", va="top",
-        fontsize=12, bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
-    
-    def update(frame):
-        f1_2d_frame = f1[frame, :, 0, 0, :, 0, 0]
-        electron_phase_plot.set_array(jnp.transpose(f1_2d_frame))
-        electron_phase_plot.set_clim(vmin=f1[frame].min(), vmax=f1[frame].max())
-        electron_phase_text.set_text(f"Time: {time[frame]:.1f} * ωₚ")
-        
-        f2_2d_frame = f2[frame, :, 0, 0, :, 0, 0]
-        ion_phase_plot.set_array(jnp.transpose(f2_2d_frame))
-        ion_phase_plot.set_clim(vmin=f2[frame].min(), vmax=f2[frame].max())
-        ion_phase_text.set_text(f"Time: {time[frame]:.1f} * ωₚ")
-        
-        return [electron_phase_plot, electron_phase_text, ion_phase_plot, ion_phase_text]
-    
-    ani = FuncAnimation(fig, update, frames=len(time), blit=True, interval=1, repeat_delay=1000)
+    Nn, Nm, Np, Nx, Ny, Nz = (int(output[k]) for k in ("Nn", "Nm", "Np", "Nx", "Ny", "Nz"))
+    H, alpha, u = Nn * Nm * Np, np.asarray(output["alpha_s"]).reshape(-1, 3), np.asarray(output["u_s"]).reshape(-1, 3)
+    axis = int(np.argmax([Nx, Ny, Nz]))
+    vaxis = axis if (Nn, Nm, Np)[axis] > 1 else int(np.argmax([Nn, Nm, Np]))
+    v = u[species, vaxis] + alpha[species, vaxis] * np.linspace(-4, 4, n_velocity)
+    xi = [np.zeros((1, n_velocity, 1)) for _ in range(3)]
+    xi[vaxis] = ((v - u[species, vaxis]) / alpha[species, vaxis]).reshape(1, n_velocity, 1)
+    Ck = output["Ck"][time_index:][:1, species * H:(species + 1) * H]
+    f = np.asarray(inverse_HF_transform(Ck, Nn, Nm, Np, Nx, Ny, Nz, *xi))[0, ..., 0, :, 0]   # (Ny, Nx, Nz, Nv)
+    f = np.moveaxis(f, (1, 0, 2)[axis], 0)[:, 0, 0]
+    L = float(output[("Lx", "Ly", "Lz")[axis]])
+    return np.arange(f.shape[0]) * L / f.shape[0], v, f
 
-    # Plot the time evolution of the k-averaged squared Hermite coefficients.
-    dC2 = jnp.mean(jnp.abs(dCk) ** 2, axis={-3, -2, -1})
 
-    plt.figure(figsize=(8, 6))
-    plt.imshow(jnp.log10(dC2[:, :Nm]), aspect='auto', cmap='viridis', 
-               interpolation='none', origin='lower', extent=(0, Nm, 0, t_max), vmin=-10, vmax=10)
-    plt.colorbar(label=r'$log_{10}(\langle |C_{1,m}|^2\rangle (t))$').ax.yaxis.label.set_size(16)
-    plt.title(r"$\langle |C_{1,m}|^2 \rangle$ vs Time and Mode Number", fontsize=16)
+def plot(output, save=None, show=True):
+    """Draw the standard diagnostic figure, save it to ``save`` if given, and show it if ``show``."""
+    t = np.asarray(output["time"])
+    Ns = int(np.asarray(output["alpha_s"]).size // 3)
+    names = _species_names(output, Ns)
+    Nn, Nm, Np, Nx, Ny, Nz = (int(output[k]) for k in ("Nn", "Nm", "Np", "Nx", "Ny", "Nz"))
+    H = Nn * Nm * Np
+    multi_d = sum(N > 1 for N in (Nx, Ny, Nz)) > 1
+    n_rows = 2 + (Ns + multi_d + 2) // 3
+    fig = plt.figure(figsize=(13, 3.6 * n_rows), constrained_layout=True)
+    grid = fig.add_gridspec(n_rows, 3)
 
-    plt.show()
+    ax = fig.add_subplot(grid[0, 0])
+    kinetic = np.asarray(output["kinetic_energy_species"])
+    for s in range(Ns):
+        ax.semilogy(t, _positive(np.abs(kinetic[:, s] - kinetic[0, s])), label=f"kinetic change, {names[s]}")
+    for key, style in (("electric_energy", "-"), ("magnetic_energy", "--")):
+        if key in output and np.any(np.asarray(output[key]) > 0):
+            ax.semilogy(t, _positive(np.asarray(output[key])), "k" + style, label=key.split("_")[0])
+    ax.set(xlabel=r"$t\,\omega_{pe}$", ylabel="energy", title="Field energy and kinetic energy exchange")
+    ax.legend(fontsize=7)
+
+    ax = fig.add_subplot(grid[0, 1])
+    W = np.asarray(output["total_energy"])
+    ax.semilogy(t[1:], np.abs(W[1:] / W[0] - 1) + 1e-17, "k")
+    ax.set(xlabel=r"$t\,\omega_{pe}$", ylabel=r"$|W(t)/W(0) - 1|$", title="Energy conservation")
+
+    ax = fig.add_subplot(grid[0, 2])
+    Ek = np.abs(np.asarray(output["Fk"])[:, :3]) ** 2
+    mode_energy = Ek.sum(axis=1)
+    mode_energy[:, 0, 0, 0] = 0                               # the uniform field is not a wave
+    flat = mode_energy.reshape(len(t), -1)
+    for index in np.argsort(flat.max(axis=0))[::-1][:4]:
+        if flat[:, index].max() > 0:
+            iy, ix, iz = np.unravel_index(index, mode_energy.shape[1:])
+            k = [2 * np.pi * i / float(output[L]) for i, L in ((ix, "Lx"), (int(np.fft.fftfreq(Ny, 1 / Ny)[iy]), "Ly"),
+                                                                (int(np.fft.fftfreq(Nz, 1 / Nz)[iz]), "Lz"))]
+            ax.semilogy(t, np.sqrt(flat[:, index]), label="k = (" + ", ".join(f"{q:.3g}" for q in k) + r") $\omega_{pe}/c$")
+    ax.set(xlabel=r"$t\,\omega_{pe}$", ylabel=r"$|E_k|$", title="Strongest electric-field modes")
+    ax.legend(fontsize=7)
+
+    order = np.add.outer(np.add.outer(np.arange(Np), np.arange(Nm)), np.arange(Nn)).ravel()
+    weights = np.full(Nx // 2 + 1, 2.0)
+    weights[0] = 1.0
+    if Nx % 2 == 0:
+        weights[-1] = 1.0
+    power = (np.abs(np.asarray(output["dCk"])) ** 2 * weights[None, None, None, :, None]).sum(axis=(-3, -2, -1))
+    for s in range(min(Ns, 3)):
+        spectrum = np.array([power[:, s * H:(s + 1) * H][:, order == n].sum(axis=1) for n in range(order.max() + 1)]).T
+        ax = fig.add_subplot(grid[1, s])
+        image = ax.pcolormesh(np.arange(order.max() + 1), t, np.log10(spectrum + 1e-300), shading="auto",
+                              vmin=np.log10(spectrum.max() + 1e-300) - 14, vmax=np.log10(spectrum.max() + 1e-300))
+        fig.colorbar(image, ax=ax, label=r"$\log_{10}\sum_k |\delta C_n|^2$")
+        ax.set(xlabel="Hermite order", ylabel=r"$t\,\omega_{pe}$", title=f"Hermite spectrum, {names[s]}")
+
+    panels = [(s, None) for s in range(Ns)] + ([(None, "field")] if multi_d else [])
+    for i, (s, kind) in enumerate(panels):
+        ax = fig.add_subplot(grid[2 + i // 3, i % 3])
+        if kind == "field":
+            F = np.fft.irfftn(np.asarray(output["Fk"])[-1], s=(Nz, Ny, Nx), axes=(-1, -3, -2), norm="forward")
+            component = int(np.argmax(np.abs(F - F.mean(axis=(1, 2, 3), keepdims=True)).max(axis=(1, 2, 3))))
+            image = ax.imshow(F[component, :, :, 0], origin="lower", cmap="RdBu_r",
+                              extent=(0, float(output["Lx"]), 0, float(output["Ly"])), aspect="auto")
+            fig.colorbar(image, ax=ax)
+            ax.set(xlabel="x", ylabel="y", title=f"{['Ex', 'Ey', 'Ez', 'Bx', 'By', 'Bz'][component]} at the last time")
+            continue
+        x, v, f = phase_space(output, s)
+        df = f - f.mean(axis=0)
+        limit = np.abs(df).max() or 1.0
+        image = ax.pcolormesh(x, v, df.T, shading="auto", cmap="RdBu_r", vmin=-limit, vmax=limit)
+        fig.colorbar(image, ax=ax, label=r"$f - \langle f \rangle_x$")
+        ax.set(xlabel=r"position ($c/\omega_{pe}$)", ylabel="velocity ($c$)", title=f"Phase-space perturbation, {names[s]}, last time")
+    if save:
+        fig.savefig(save, dpi=200)
+    if show:
+        plt.show()
+    return fig
