@@ -169,3 +169,4 @@ spectrax/.DS_Store
 *.npy
 *.gif
 spectrax/version.py
+Examples/*.png

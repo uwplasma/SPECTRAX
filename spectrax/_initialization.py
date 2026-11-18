@@ -203,7 +203,7 @@ def species_initial_state(species, Lx=4 * jnp.pi, Ly=1.0, Lz=1.0, Nx=33, Ny=1, N
     return dict(qs=qs, ms=ms, Omega_cs=Omega_ce / ms, alpha_s=alpha_s, u_s=u_s, Ck_0=Ck_0, Fk_0=Fk_0)
 
 
-def load_parameters(input_file):
+def load_parameters(input_file, **overrides):
     """
     Load simulation input parameters and solver configuration from a TOML file.
 
@@ -218,6 +218,9 @@ def load_parameters(input_file):
     ----------
     input_file : str or pathlib.Path
         Path to the TOML file containing simulation parameters.
+    **overrides
+        Values that replace those in the file before the initial state is built, for parameter scans. A
+        ``species`` mapping updates entries of the named species tables.
 
     Returns
     -------
@@ -228,6 +231,13 @@ def load_parameters(input_file):
     parameters = tomllib.load(open(input_file, "rb"))
     input_parameters = parameters.get('input_parameters', {})
     solver_parameters = parameters.get('solver_parameters', {})
+    solver_keys = ("Nx", "Ny", "Nz", "Nn", "Nm", "Np", "Ns", "timesteps", "dt", "solver", "adaptive_time_step")
+    for key, value in overrides.items():          # e.g. load_parameters("input.toml", Lx=2.0, Nn=64) for scans
+        if key == "species":                      # species={"electrons": {"vth": 0.2}} updates those entries
+            for name, entries in value.items():
+                parameters["species"][name].update(entries)
+        else:
+            (solver_parameters if key in solver_keys else input_parameters)[key] = value
     if "species" in parameters:              # physical species description: build the initial state here
         grid = {key: solver_parameters.get(key, default) for key, default in
                 dict(Nx=33, Ny=1, Nz=1, Nn=20, Nm=1, Np=1).items()}
