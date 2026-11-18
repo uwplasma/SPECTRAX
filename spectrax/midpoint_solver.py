@@ -1,11 +1,57 @@
 """Custom Diffrax solver: implicit midpoint with a Newton–GMRES nonlinear solve."""
 
+from collections.abc import Callable
+from typing import NamedTuple
+
 import diffrax
 import jax
 import jax.numpy as jnp
 import optimistix as optx
-from jax import lax
 from jax.scipy.sparse.linalg import gmres
+from solvax import newton_krylov
+
+
+def collision_diffusion_x_streaming_preconditioner(args, dt):
+    """Invert collision, diffusion, and x-streaming Hermite line blocks."""
+    nu, diffusion = args[-20:-18]
+    alpha = args[-17].reshape(-1, 3)[:, 0]
+    drift = args[-16].reshape(-1, 3)[:, 0]
+    length, kx, k2 = args[-15], args[-12], args[-9]
+    collision, sqrt_plus, sqrt_minus = args[-7:-4]
+    phase = (0.5j * dt / length * kx)[None, None, None]
+    species = (slice(None),) + (None,) * 6
+    diagonal = (
+        1
+        + 0.5 * dt * (
+            nu * collision[None, :, :, :, None, None, None]
+            + diffusion * k2[None, None, None, None]
+        )
+        + drift[species] * phase
+    )
+    coupling = alpha[species] * phase / jnp.sqrt(2)
+
+    def lines(value):
+        return jnp.moveaxis(jnp.broadcast_to(value, diagonal.shape), 3, -1)
+
+    main, lower = lines(diagonal), lines(coupling * sqrt_minus)
+    upper = lines(coupling * sqrt_plus).at[..., -1].set(0)
+
+    def apply(residual):
+        coefficients, fields = residual
+        rhs = jnp.moveaxis(coefficients, 3, -1)[..., None]
+        solution = jax.lax.linalg.tridiagonal_solve(lower, main, upper, rhs)[..., 0]
+        return jnp.moveaxis(solution, -1, 3), fields
+
+    return apply
+
+
+class MidpointSolverState(NamedTuple):
+    """Newton--GMRES iteration totals and per-step maxima."""
+
+    newton_iterations: jax.Array
+    linear_iterations: jax.Array
+    max_newton_iterations: jax.Array
+    max_linear_iterations: jax.Array
 
 
 class ImplicitMidpoint(diffrax.AbstractSolver):
@@ -17,11 +63,22 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
 
     The nonlinear equation for ``y_{n+1}`` is solved with Newton iterations,
     where each linearized step is solved via GMRES using JAX's linearization.
+    ``rtol`` and ``atol`` control the nonlinear residual, while
+    ``linear_rtol`` and ``linear_atol`` control each GMRES solve.
+    Newton iteration stops when ``||F|| <= max(atol, rtol * ||F_initial||)``.
+    Accepted-step diagnostics are accumulated in :class:`MidpointSolverState`.
+    An optional ``preconditioner(args, dt)`` factory supplies the inverse action
+    used by GMRES.
     """
 
     rtol: float = 1e-6
     atol: float = 1e-8
     max_iters: int = 300
+    linear_restart: int = 20
+    linear_rtol: float = 1e-4
+    linear_atol: float = 0.0
+    linear_max_restarts: int = 20
+    preconditioner: Callable | None = None
 
     term_structure = diffrax.ODETerm
     interpolation_cls = diffrax.LocalLinearInterpolation
@@ -30,13 +87,17 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
         return 2
 
     def init(self, terms, t0, t1, y0, args):
-        return None
+        del terms, t0, t1, y0, args
+        zero = jnp.int32(0)
+        return MidpointSolverState(zero, zero, zero, zero)
 
     def func(self, terms, t0, y0, args):
         return terms.vf(t0, y0, args)
 
     def step(self, terms, t0, t1, y0, args, solver_state, made_jump):
-        del solver_state, made_jump
+        del made_jump
+        if solver_state is None:
+            solver_state = self.init(terms, t0, t1, y0, args)
 
         δt = t1 - t0
         t_mid = t0 + 0.5 * δt
@@ -49,96 +110,48 @@ class ImplicitMidpoint(diffrax.AbstractSolver):
             f_mid = terms.vf(t_mid, y_mid, args)
             return jax.tree.map(lambda a, b, f: a - b - δt * f, y1, y0, f_mid)
 
-        y1, status = _newton_gmres(
-            F_fn, y0, y1_init, self.rtol, self.atol, self.max_iters
+        precond = None if self.preconditioner is None else self.preconditioner(args, δt)
+        solution = newton_krylov(
+            F_fn,
+            y1_init,
+            precond=precond,
+            rtol=self.rtol,
+            atol=self.atol,
+            max_steps=self.max_iters,
+            linear_restart=self.linear_restart,
+            linear_rtol=self.linear_rtol,
+            linear_atol=self.linear_atol,
+            linear_max_restarts=self.linear_max_restarts,
         )
+        y1 = solution.x
+        finite = jnp.all(jnp.array([jnp.all(jnp.isfinite(x)) for x in jax.tree.leaves(y1)]))
 
+        # Local error: the midpoint step minus the explicit second-order (Heun) step built on the
+        # Euler predictor, y0 + dt/2 (f(t0, y0) + f(t1, y0 + dt f0)). Both are second order, so the
+        # difference is O(dt^3), the size the controller expects from an order-2 method, and it does
+        # not vanish for linear right-hand sides. It is filtered by (I - dt/2 J)^-1, the Newton
+        # Jacobian of the step (Shampine), with the same preconditioner, so stiff damped modes do not
+        # force explicit-sized steps. A failed solve gives an infinite estimate, so an adaptive
+        # controller rejects the step and retries smaller; constant steps end the solve.
+        f_pred = terms.vf(t1, y1_init, args)
+        raw = jax.tree.map(lambda a, b, fa, fb: a - b - 0.5 * δt * (fa + fb), y1, y0, f0, f_pred)
+        _, jacobian = jax.linearize(F_fn, y1)
+        filtered, _ = gmres(jacobian, raw, tol=1e-3, maxiter=20, M=precond)
+        y_error = jax.tree.map(lambda e: jnp.where(solution.converged & finite, e, jnp.inf), filtered)
+        dense_info = dict(y0=y0, y1=y1)
         result = diffrax.RESULTS.where(
-            status == _CONVERGED,
+            solution.converged & finite,
             diffrax.RESULTS.successful,
             diffrax.RESULTS.where(
-                status == _MAX_ITERS,
+                finite,
                 diffrax.RESULTS.promote(optx.RESULTS.nonlinear_max_steps_reached),
                 diffrax.RESULTS.promote(optx.RESULTS.nonlinear_divergence),
             ),
         )
-        # Local error: the midpoint step minus the explicit second-order (Heun) step built on the
-        # Euler predictor, y0 + dt/2 (f(t0, y0) + f(t1, y0 + dt f0)). Both are second order, so the
-        # difference is O(dt^3), the size the controller expects from an order-2 method, and it does
-        # not vanish for linear right-hand sides (as the trapezoidal difference would). It is filtered
-        # by (I - dt/2 J)^-1, the Newton Jacobian of the step (Shampine), so stiff damped modes do not
-        # force explicit-sized steps. A failed nonlinear solve gives an infinite estimate, so an
-        # adaptive controller rejects the step and retries smaller; constant steps end the solve.
-        f_pred = terms.vf(t1, y1_init, args)
-        raw = jax.tree.map(lambda a, b, fa, fb: a - b - 0.5 * δt * (fa + fb), y1, y0, f0, f_pred)
-        _, jacobian = jax.linearize(F_fn, y1)
-        filtered, _ = gmres(jacobian, raw, tol=1e-3, maxiter=20)
-        y_error = jax.tree.map(lambda e: jnp.where(status == _CONVERGED, e, jnp.inf), filtered)
-        dense_info = dict(y0=y0, y1=y1)
-        return y1, y_error, dense_info, None, result
-
-
-def _newton_gmres(F_fn, y0, y_init, rtol, atol, max_iters):
-    """Solve ``F(y)=0`` using at most ``max_iters`` Newton updates with GMRES linear solves.
-
-    Returns ``(y, status)`` with status ``_CONVERGED``, ``_MAX_ITERS`` or ``_NONFINITE``.
-    Convergence is decided on the residual of the iterate that is returned: the scaled
-    residual must be finite and below one. A nonfinite residual or Newton update (e.g. a
-    failed inner solve) stops the iteration with ``_NONFINITE``; a NaN never counts as
-    converged.
-
-    Notes
-    -----
-    - The Jacobian-vector product is obtained via ``jax.linearize``.
-    - The GMRES tolerance is chosen adaptively (Eisenstat–Walker style) based on
-      the current scaled residual norm.
-    """
-
-    def scaled_norm(res, y1):
-        scaled_res = jax.tree.map(
-            lambda r, a, b: r / (atol + rtol * jnp.maximum(jnp.abs(a), jnp.abs(b))),
-            res, y0, y1,
+        next_solver_state = MidpointSolverState(
+            solver_state.newton_iterations + solution.newton_iterations,
+            solver_state.linear_iterations + solution.linear_iterations,
+            jnp.maximum(solver_state.max_newton_iterations, solution.newton_iterations),
+            jnp.maximum(solver_state.max_linear_iterations, solution.linear_iterations),
         )
-        return jnp.sqrt(sum(jnp.vdot(x, x).real for x in jax.tree.leaves(scaled_res)))
-
-    def classify(y1, norm, i):
-        finite = jnp.isfinite(norm) & _all_finite(y1)
-        return jnp.where(
-            ~finite, _NONFINITE,
-            jnp.where(norm < 1.0, _CONVERGED, jnp.where(i >= max_iters, _MAX_ITERS, _ITERATING)),
-        )
-
-    @jax.jit
-    def loop_fn(y_init):
-        def cond_fn(state):
-            return state[1] == _ITERATING
-
-        def body_fn(state):
-            y1, _, i = state
-            res, jvp = jax.linearize(F_fn, y1)
-            norm = scaled_norm(res, y1)
-            # Adaptive inner tolerance (Eisenstat–Walker).
-            delta, _ = gmres(
-                jvp,
-                jax.tree.map(jnp.negative, res),
-                tol=jnp.minimum(0.1, norm * 0.5),
-                atol=atol,
-                maxiter=max(1, min(20, max_iters // 2)),
-            )
-            y1_next = jax.tree.map(lambda y, d: y + d, y1, delta)
-            # Decide on the residual of the iterate that will be returned.
-            norm_next = scaled_norm(F_fn(y1_next), y1_next)
-            return y1_next, classify(y1_next, norm_next, i + 1), i + 1
-
-        state = (y_init, classify(y_init, scaled_norm(F_fn(y_init), y_init), 0), 0)
-        y1_final, status, _ = lax.while_loop(cond_fn, body_fn, state)
-        return y1_final, status
-
-    return loop_fn(y_init)
-
-
-_ITERATING, _CONVERGED, _MAX_ITERS, _NONFINITE = 0, 1, 2, 3
-
-
-def _all_finite(tree):
-    return jnp.all(jnp.array([jnp.all(jnp.isfinite(x)) for x in jax.tree.leaves(tree)]))
+        return y1, y_error, dense_info, next_solver_state, result
