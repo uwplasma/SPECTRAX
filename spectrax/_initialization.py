@@ -16,10 +16,10 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     """
     Assemble the parameter dictionary used to run a Hermite-Fourier Vlasov-Maxwell
     simulation, starting from library defaults and overriding them with user input.
-    The defaults include a two-stream perturbation, precomputed spectral grids, and
-    helper tables required by the RHS evaluation. Derived quantities are evaluated
-    after merging with any user-provided overrides so that dependent fields remain
-    consistent.
+    The default distribution uses a unit-density Maxwellian per species with a
+    two-stream perturbation. When no initial field is supplied, its electric
+    component satisfies Gauss's law for the nonzero Fourier modes of the initial
+    distribution. The zero mode uses an implicit uniform neutralizing background.
 
     Parameters
     ----------
@@ -71,15 +71,8 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         "vti": lambda p: p["vte"] * jnp.sqrt(1 / p["mi_me"]),
     }
     
-    # Initialize distribution function as a two-stream instability
-    dn1     = default_parameters["dn1"]
-    dn2     = default_parameters["dn2"]
-    values  = (dn1 + dn2) * default_parameters["Lx"] / (4 * jnp.pi * default_parameters["nx"] * default_parameters["Omega_cs"](default_parameters)[0])
-    Fk_0    = jnp.zeros((6, Ny, Nx//2+1, Nz), dtype=jnp.complex128).at[0, 0, default_parameters["nx"], 0].set(values)
-    Ck_0    = jnp.zeros((Ns * Nn * Nm * Np, Ny, Nx//2+1, Nz), dtype=jnp.complex128)
-
     default_parameters.update({
-        "Ck_0": Ck_0, "Fk_0": Fk_0, "Ns": Ns,
+        "Ns": Ns,
         "timesteps": timesteps, "dt": dt, 
         "Nx": Nx, "Ny": Ny, "Nz": Nz,
         "Nn": Nn, "Nm": Nm, "Np": Np,
@@ -97,16 +90,6 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
         if isinstance(value, list):
             parameters[key] = jnp.array(value)
 
-    # The default Maxwellian amplitude 1/alpha^3 follows the final alpha_s (so it is differentiable in
-    # alpha_s); alpha_s takes precedence over alpha_e, and they agree for the default alpha_s.
-    if "Ck_0" not in user_parameters:
-        a0      = parameters["alpha_s"][0]
-        indices = jnp.array([0, default_parameters["nx"]])
-        C10     = jnp.array([1 / (a0 ** 3) + 0 * 1j, 0 - 1j * (1 / (2 * a0 ** 3)) * dn1])
-        C20     = jnp.array([1 / (a0 ** 3) + 0 * 1j, 0 - 1j * (1 / (2 * a0 ** 3)) * dn2])
-        Ck_0    = parameters["Ck_0"].at[0,  0, indices, 0].set(C10)
-        parameters["Ck_0"] = Ck_0.at[Nn * Nm * Np, 0, indices, 0].set(C20)
-
     # Real-valued fft leaves only the positive-k elements on the last axis given.
     # We choose the x-axis since this gets us the savings in 1D as well as 2D/3D.
     kx_simulation = jnp.fft.rfftfreq(Nx) * Nx * 2 * jnp.pi
@@ -116,6 +99,39 @@ def initialize_simulation_parameters(user_parameters={}, Nx=33, Ny=1, Nz=1, Nn=5
     ky_grid, kx_grid, kz_grid = jnp.meshgrid(ky_simulation, kx_simulation, kz_simulation, indexing='ij')
     k2_grid = kx_grid**2 + ky_grid**2 + kz_grid**2
     nabla = jnp.array([kx_grid / Lx, ky_grid / Ly, kz_grid / Lz])
+
+    if "Ck_0" not in parameters or "Fk_0" not in parameters:
+        velocity_volume = jnp.prod(parameters["alpha_s"].reshape(Ns, 3), axis=1)
+    if "Ck_0" not in parameters:
+        nx, ny, nz = parameters["nx"], parameters["ny"], parameters["nz"]
+        # Fourier coefficients of a real sine on the solver's rFFT layout.
+        def at_mode(sign):
+            return (
+                (jnp.arange(Ny)[:, None, None] == (sign * ny) % Ny)
+                & (jnp.arange(Nx // 2 + 1)[None, :, None] == (sign * nx) % Nx)
+                & (jnp.arange(Nz)[None, None, :] == (sign * nz) % Nz)
+            )
+
+        # A Nyquist component has no distinct negative frequency on its axis.
+        # Omit it from automatic perturbations, which require a signed derivative.
+        nyquist = (
+            ((Nx % 2 == 0) & (nx % Nx == Nx // 2))
+            | ((Ny % 2 == 0) & (ny % Ny == Ny // 2))
+            | ((Nz % 2 == 0) & (nz % Nz == Nz // 2))
+        )
+        sine = -0.5j * (at_mode(1).astype(jnp.float64) - at_mode(-1)) * jnp.logical_not(nyquist)
+        amplitudes = jnp.zeros(Ns).at[0].set(parameters["dn1"]).at[1].set(parameters["dn2"], mode="drop")
+        density = (amplitudes[:, None, None, None] * sine).at[:, 0, 0, 0].set(1.0)
+        Ck_0 = jnp.zeros((Ns * Nn * Nm * Np, Ny, Nx // 2 + 1, Nz), dtype=density.dtype)
+        indices = jnp.arange(Ns) * Nn * Nm * Np
+        parameters["Ck_0"] = Ck_0.at[indices].set(density / velocity_volume[:, None, None, None])
+    if "Fk_0" not in parameters:
+        # The mean charge is neutralized by a uniform background when needed.
+        C0 = parameters["Ck_0"].reshape(Ns, Np, Nm, Nn, Ny, Nx // 2 + 1, Nz)[:, 0, 0, 0]
+        charge = jnp.einsum("s,syxz->yxz", parameters["qs"] * velocity_volume, C0)
+        k_squared = jnp.sum(nabla**2, axis=0)
+        electric = -1j * nabla * charge / (jnp.where(k_squared > 0, k_squared, 1.0) * parameters["Omega_cs"][0])
+        parameters["Fk_0"] = jnp.concatenate((electric, jnp.zeros_like(electric)))
 
     def precompute_collisions(Nn, Nm, Np):
         p = jnp.arange(Np)[:, None, None]

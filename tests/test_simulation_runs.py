@@ -1,10 +1,113 @@
 import pytest
+import jax
 import jax.numpy as jnp
 from spectrax import simulation
+from spectrax._initialization import initialize_simulation_parameters
 import diffrax
 
 # diffrax < 0.7.1 (the newest on Python 3.10) reports a dtmin stop as max_steps_reached.
 DIFFRAX_DTMIN = tuple(map(int, diffrax.__version__.split('.')[:3])) >= (0, 7, 1)
+
+def test_default_maxwellians_and_field_follow_final_parameters():
+    alpha = jnp.array([0.1, 0.11, 0.12, 0.0023, 0.0024, 0.0025])
+    charges = jnp.array([-1.0, 1.0])
+    perturbation = jnp.array([0.002, 0.004])
+    parameters = {
+        "alpha_s": alpha, "qs": charges, "Lx": 1.5, "Ly": 2.0,
+        "nx": 0, "ny": 2, "Omega_cs": jnp.array([2.0, 1.0]),
+        "dn1": perturbation[0], "dn2": perturbation[1],
+    }
+
+    def initialize(scales):
+        return initialize_simulation_parameters({**parameters, "alpha_s": scales}, Nx=9, Ny=7, Nn=4)
+
+    state = initialize(alpha)
+    volume = jnp.prod(alpha.reshape(2, 3), axis=1)
+    density = volume[:, None, None, None] * state["Ck_0"][::4]
+    assert jnp.allclose(density[:, 0, 0, 0], 1.0, rtol=0.0, atol=1e-15)
+    assert jnp.allclose(density[:, 2, 0, 0], -0.5j * perturbation, rtol=0.0, atol=1e-15)
+    assert jnp.allclose(density[:, -2, 0, 0], 0.5j * perturbation, rtol=0.0, atol=1e-15)
+    assert jnp.count_nonzero(density) == 6
+
+    electric = state["Fk_0"][:3]
+    div_e = 1j * jnp.sum(state["nabla"] * electric, axis=0)
+    charge = jnp.einsum("s,syxz->yxz", charges, density)
+    assert jnp.allclose(div_e, charge / parameters["Omega_cs"][0], rtol=0.0, atol=1e-15)
+    assert jnp.count_nonzero(state["Fk_0"][3:]) == 0
+
+    def background(scales):
+        return jnp.real(initialize(scales)["Ck_0"][4, 0, 0, 0])
+
+    delta = 1e-5 * alpha[4]
+    finite_difference = (background(alpha.at[4].add(delta)) - background(alpha.at[4].add(-delta))) / (2 * delta)
+    assert finite_difference != 0.0
+    assert jnp.allclose(jax.grad(background)(alpha)[4], finite_difference, rtol=1e-8)
+
+
+def test_explicit_initial_state_is_preserved():
+    coefficients = jnp.full((8, 1, 3, 1), 2 + 3j)
+    fields = jnp.full((6, 1, 3, 1), 3 + 4j)
+    state = initialize_simulation_parameters({"Ck_0": coefficients, "Fk_0": fields}, Nx=5, Nn=4)
+    assert jnp.array_equal(state["Ck_0"], coefficients)
+    assert jnp.array_equal(state["Fk_0"], fields)
+
+
+def test_automatic_field_uses_the_supplied_distribution_and_charge():
+    alpha = jnp.array([1.0, 2.0, 3.0, 0.5, 0.75, 1.25])
+    charges = jnp.array([-1.0, 2.0])
+    coefficients = jnp.zeros((8, 1, 3, 1), dtype=jnp.complex128)
+    coefficients = coefficients.at[0, 0, 0, 0].set(1.0)
+    coefficients = coefficients.at[0, 0, 1, 0].set(2e-3 - 1e-3j)
+    coefficients = coefficients.at[4, 0, 1, 0].set(3e-3 + 4e-3j)
+    parameters = {
+        "alpha_s": alpha, "qs": charges, "Omega_cs": jnp.array([3.0, 1.0]), "Ck_0": coefficients,
+    }
+    state = initialize_simulation_parameters(parameters, Nx=5, Nn=4)
+    assert jnp.array_equal(state["Ck_0"], coefficients)
+    mode_charge = jnp.dot(charges * jnp.prod(alpha.reshape(2, 3), axis=1), coefficients[::4, 0, 1, 0])
+    div_e = 1j * jnp.sum(state["nabla"] * state["Fk_0"][:3], axis=0)
+    assert jnp.isclose(div_e[0, 1, 0], mode_charge / 3.0, rtol=0.0, atol=1e-15)
+    assert jnp.count_nonzero(state["Fk_0"][:, 0, 0, 0]) == 0
+
+
+def test_python_integer_modes_with_jit_disabled():
+    with jax.disable_jit():
+        wave = initialize_simulation_parameters({"nx": 0, "ny": 2}, Nx=6, Ny=7, Nn=3)
+        nyquist = initialize_simulation_parameters({"nx": 3, "ny": 2}, Nx=6, Ny=7, Nn=3)
+    amplitude = jnp.prod(wave["alpha_s"][:3]) * wave["Ck_0"][0, 2, 0, 0]
+    assert jnp.isclose(amplitude, -0.5j * wave["dn1"], rtol=0.0, atol=1e-15)
+    assert jnp.count_nonzero(nyquist["Ck_0"]) == 2
+    assert jnp.count_nonzero(nyquist["Fk_0"]) == 0
+
+
+def test_default_state_follows_public_solver_dimensions():
+    parameters = {"nx": 1, "ny": 1, "nz": 1, "t_max": 0.003, "Ti_Te": 0.4, "mi_me": 4.0}
+    state = simulation(parameters, Nx=7, Ny=5, Nz=3, Nn=3, Nm=2,
+                       Np=2, timesteps=2, dt=0.001, adaptive_time_step=False)
+    assert state["Ck"].shape == (2, 24, 5, 4, 3)
+    assert state["Fk"].shape == (2, 6, 5, 4, 3)
+    assert jnp.array_equal(state["Ck"][0], state["Ck_0"])
+    assert jnp.array_equal(state["Fk"][0], state["Fk_0"])
+    velocity_volume = jnp.prod(state["alpha_s"].reshape(2, 3), axis=1)
+    charge = jnp.einsum("s,tsyxz->tyxz", state["qs"] * velocity_volume, state["Ck"][:, ::12])
+    charge = charge.at[:, 0, 0, 0].set(0)
+    div_e = 1j * jnp.sum(state["nabla"] * state["Fk"][:, :3], axis=1)
+    assert jnp.max(jnp.abs(div_e - charge / state["Omega_cs"][0])) < 1e-13
+
+
+@pytest.mark.parametrize("Ns", [1, 3])
+def test_default_state_with_explicit_species_arrays_and_singleton_grid(Ns):
+    alpha = jnp.arange(1, 3 * Ns + 1, dtype=float).reshape(Ns, 3)
+    parameters = {
+        "alpha_s": alpha.flatten(), "qs": jnp.ones(Ns),
+        "Omega_cs": jnp.ones(Ns), "u_s": jnp.zeros(3 * Ns),
+    }
+    state = initialize_simulation_parameters(parameters, Nx=1, Nn=4, Ns=Ns)
+    assert state["Ck_0"].shape == (4 * Ns, 1, 1, 1)
+    assert state["Fk_0"].shape == (6, 1, 1, 1)
+    assert jnp.allclose(state["Ck_0"][::4, 0, 0, 0] * jnp.prod(alpha, axis=1), 1.0)
+    assert jnp.count_nonzero(state["Fk_0"]) == 0
+
 
 @pytest.mark.parametrize("Ns", [1, 2, 3, 4])
 def test_perturbation_removes_every_background_density_and_keeps_mean_current(Ns):
@@ -161,7 +264,7 @@ def test_continuation_from_output_matches_single_run():
     assert jnp.allclose(second["Fk"][-1], full["Fk"][-1], rtol=0, atol=1e-13)
 
 def test_grad_wrt_alpha_s_includes_initial_state_and_matches_finite_difference():
-    """d(loss)/d(alpha_s) is finite, depends on the default Maxwellian amplitude 1/alpha^3, and matches a central difference."""
+    """The evolved coefficients respond to every species scale, with gradients matching central differences."""
     import jax
     def loss(alpha_s):
         r = simulation({"alpha_s": alpha_s, "t_max": 0.05}, Nx=5, Nn=4, timesteps=2, dt=0.005, adaptive_time_step=False)
