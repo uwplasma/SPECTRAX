@@ -55,9 +55,13 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
         enable-cache: false
+    - name: Select the job environment
+      run: |
+        echo "VIRTUAL_ENV=$RUNNER_TEMP/venv" >> "$GITHUB_ENV"
+        echo "UV_PROJECT_ENVIRONMENT=$RUNNER_TEMP/venv" >> "$GITHUB_ENV"
     - name: Install spectrax
       run: |
-        uv venv
+        uv venv "$VIRTUAL_ENV"
         uv pip install . flake8 pytest coverage pytest-cov pytest-xdist
         if [ -f requirements.txt ]; then uv pip install -r requirements.txt; fi
     - name: Lint with flake8
